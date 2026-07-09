@@ -4,6 +4,7 @@ import { ref, watch, computed } from 'vue'
 import type { Project, ProjectMember } from '@/types/project'
 import { useProjectsStore } from '@/stores/projects'
 import { useAuthStore } from '@/stores/auth'
+import { resolveMemberDisplayName } from '@/utils/displayName'
 
 const props = defineProps<{
   project?: Project | null
@@ -35,21 +36,33 @@ const liveProject = computed(() => {
   return props.project
 })
 
-/** 表示用メンバー（作成者を先頭・重複排除） */
+/** 表示用メンバー（作成者を先頭・自分の表示名はクラウドと連動） */
 const members = computed(() => {
   const project = liveProject.value
   if (!project) return [] as ProjectMember[]
   const list = [...(project.members ?? [])]
   // members が空の場合は memberIds から最低限表示
+  let result: ProjectMember[]
   if (list.length === 0 && project.memberIds?.length) {
-    return project.memberIds.map((id) => ({
+    result = project.memberIds.map((id) => ({
       userId: id,
       email: id === project.createdBy ? authStore.currentUser?.email || '' : '',
-      displayName: id === project.createdBy ? authStore.displayLabel : id.slice(0, 8),
+      displayName:
+        id === authStore.currentUser?.sub
+          ? authStore.displayLabel
+          : id === project.createdBy
+            ? authStore.displayLabel
+            : id.slice(0, 8),
+    }))
+  } else {
+    // 自分の displayName は auth ストアの最新値で上書き（スナップショット遅れ対策）
+    result = list.map((m) => ({
+      ...m,
+      displayName: resolveMemberDisplayName(m),
     }))
   }
   // 作成者を先頭に
-  return list.sort((a, b) => {
+  return result.sort((a, b) => {
     if (a.userId === project.createdBy) return -1
     if (b.userId === project.createdBy) return 1
     return (a.displayName || '').localeCompare(b.displayName || '', 'ja')
@@ -154,12 +167,12 @@ function memberRowKey(member: ProjectMember): string {
             <template #prepend>
               <v-avatar color="primary" size="36">
                 <span class="text-caption text-white">
-                  {{ (member.displayName || '?').slice(0, 2).toUpperCase() }}
+                  {{ resolveMemberDisplayName(member).slice(0, 2).toUpperCase() }}
                 </span>
               </v-avatar>
             </template>
             <v-list-item-title class="text-body-2 font-weight-medium">
-              {{ member.displayName || member.email }}
+              {{ resolveMemberDisplayName(member) }}
               <v-chip
                 v-if="isOwner(member)"
                 size="x-small"

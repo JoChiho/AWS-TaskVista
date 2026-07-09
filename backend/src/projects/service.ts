@@ -120,10 +120,11 @@ async function bindMemberIfNeeded(project: Project, actor: ActorInfo): Promise<P
   if (email && !memberEmails.has(email) && (project.createdBy === actor.userId || memberIds.has(actor.userId))) {
     memberEmails.add(email)
     if (!members.some((m) => normalizeEmail(m.email) === email)) {
+      const cloudName = await usersService.getDisplayName(actor.userId)
       members.push({
         userId: actor.userId,
         email,
-        displayName: actor.name || email,
+        displayName: cloudName || actor.name || email,
       })
       changed = true
     }
@@ -245,7 +246,8 @@ export async function updateProject(
     throw new ValidationError('更新する項目が指定されていません')
   }
 
-  return repository.updateProject(projectId, parsed.data)
+  const updated = await repository.updateProject(projectId, parsed.data)
+  return enrichProjectMembers(updated)
 }
 
 /** メンバー配列を userId / email で重複排除する */
@@ -355,16 +357,18 @@ export async function addProjectMember(
   const memberIds = new Set(project.memberIds)
   memberIds.add(project.createdBy)
 
-  // 作成者メタデータ（表示名は actor が作成者なら最新名を使う）
+  // 作成者メタデータ（表示名はクラウドプロフィールを最優先）
   const creatorEmail =
     actor.userId === project.createdBy && actor.email
       ? normalizeEmail(actor.email)
       : members.find((m) => m.userId === project.createdBy)?.email ||
         `${project.createdBy}@unknown.local`
+  const creatorCloudName = await usersService.getDisplayName(project.createdBy)
   const creatorDisplayName =
-    actor.userId === project.createdBy
+    creatorCloudName ||
+    (actor.userId === project.createdBy
       ? actor.name || creatorEmail
-      : members.find((m) => m.userId === project.createdBy)?.displayName || 'オーナー'
+      : members.find((m) => m.userId === project.createdBy)?.displayName || 'オーナー')
 
   members = members.filter(
     (m) => m.userId !== project.createdBy && normalizeEmail(m.email) !== creatorEmail,
@@ -458,14 +462,23 @@ export async function removeProjectMember(
   let nextMembers = dedupeMembers(members)
   if (!nextMembers.some((m) => m.userId === project.createdBy)) {
     const creator = before.find((m) => m.userId === project.createdBy)
+    const creatorCloud = await usersService.getDisplayName(project.createdBy)
     nextMembers.unshift(
-      creator || {
-        userId: project.createdBy,
-        email: actor.userId === project.createdBy && actor.email
-          ? normalizeEmail(actor.email)
-          : `${project.createdBy}@unknown.local`,
-        displayName: actor.userId === project.createdBy ? actor.name : 'オーナー',
-      },
+      creator
+        ? {
+            ...creator,
+            displayName: creatorCloud || creator.displayName,
+          }
+        : {
+            userId: project.createdBy,
+            email:
+              actor.userId === project.createdBy && actor.email
+                ? normalizeEmail(actor.email)
+                : `${project.createdBy}@unknown.local`,
+            displayName:
+              creatorCloud ||
+              (actor.userId === project.createdBy ? actor.name : 'オーナー'),
+          },
     )
   }
 

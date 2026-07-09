@@ -23,6 +23,11 @@ vi.mock('../../src/comments/repository.js', () => ({
   listCommentsByTask: vi.fn(),
 }))
 
+vi.mock('../../src/users/service.js', () => ({
+  getDisplayNameMap: vi.fn().mockResolvedValue(new Map()),
+  getDisplayName: vi.fn().mockResolvedValue(null),
+}))
+
 describe('tasks/service', () => {
   beforeEach(() => {
     vi.clearAllMocks()

@@ -2,6 +2,7 @@
 // かんばんタスクカードコンポーネント
 import type { Task } from '@/types/task'
 import { PRIORITY_LABELS, PRIORITY_COLORS } from '@/types/task'
+import { resolveAssigneeDisplayName } from '@/utils/displayName'
 
 defineProps<{
   task: Task
@@ -32,6 +33,10 @@ function isDueSoon(dueDate?: string): boolean {
   const now = new Date()
   const diff = (due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
   return diff >= 0 && diff <= 3
+}
+
+function assigneeLabel(task: Task): string {
+  return resolveAssigneeDisplayName(task)
 }
 </script>
 
@@ -97,17 +102,14 @@ function isDueSoon(dueDate?: string): boolean {
           {{ formatDueDate(task.dueDate) }}
         </span>
 
-        <!-- 担当者アバター（人名がある場合のみ） -->
-        <v-avatar
-          v-if="task.assigneeName"
-          size="20"
-          color="primary"
-          :title="task.assigneeName"
+        <!-- 担当者（自分ならクラウド表示名、他ユーザーは API の assigneeName） -->
+        <span
+          v-if="assigneeLabel(task)"
+          class="text-caption text-medium-emphasis ml-1"
+          :title="assigneeLabel(task)"
         >
-          <span style="font-size: 9px; color: white">
-            {{ task.assigneeName.slice(0, 2).toUpperCase() }}
-          </span>
-        </v-avatar>
+          {{ assigneeLabel(task) }}
+        </span>
       </div>
     </v-card-text>
   </v-card>

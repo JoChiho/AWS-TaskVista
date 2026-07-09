@@ -93,9 +93,20 @@ export async function getMyTasks(
     }
   }
 
-  return Array.from(map.values()).sort((a, b) => {
+  const tasks = Array.from(map.values()).sort((a, b) => {
     if (!a.dueDate) return 1
     if (!b.dueDate) return -1
     return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
   })
+
+  // 担当者名をクラウド表示名で上書き（UI が一貫して最新名を出す）
+  const ids = tasks.map((t) => t.assigneeId).filter(Boolean) as string[]
+  if (ids.length === 0) return tasks
+  const names = await usersService.getDisplayNameMap(ids)
+  if (names.size === 0) return tasks
+  return tasks.map((t) =>
+    t.assigneeId && names.has(t.assigneeId)
+      ? { ...t, assigneeName: names.get(t.assigneeId)! }
+      : t,
+  )
 }

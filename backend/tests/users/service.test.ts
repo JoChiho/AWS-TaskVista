@@ -9,6 +9,17 @@ vi.mock('../../src/users/repository.js', () => ({
   batchGetProfiles: vi.fn(),
 }))
 
+vi.mock('../../src/projects/repository.js', () => ({
+  listProjectsByCreator: vi.fn().mockResolvedValue([]),
+  listProjectsByMember: vi.fn().mockResolvedValue([]),
+  updateProject: vi.fn(),
+}))
+
+vi.mock('../../src/tasks/repository.js', () => ({
+  listTasksByAssignee: vi.fn().mockResolvedValue([]),
+  updateTask: vi.fn(),
+}))
+
 const actor = {
   userId: 'user-001',
   email: 'user@example.com',

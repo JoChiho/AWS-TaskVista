@@ -12,6 +12,7 @@ import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import axios from 'axios'
 import { getUploadUrl, getDownloadUrl, deleteAttachment } from '@/api/comments'
 import { useUiStore } from '@/stores/ui'
+import { resolveAssigneeDisplayName } from '@/utils/displayName'
 
 const props = defineProps<{
   projectId: string
@@ -31,6 +32,11 @@ const isUploading = ref(false)
 
 /** 現在表示中のタスク */
 const task = computed(() => tasksStore.currentTask)
+
+/** 担当者表示名（自分ならクラウド表示名と連動） */
+const assigneeLabel = computed(() =>
+  task.value ? resolveAssigneeDisplayName(task.value) || '未割り当て' : '未割り当て',
+)
 
 /**
  * ドロワー開閉・タスク切替でコメントを同期する
@@ -210,7 +216,7 @@ function formatFileSize(bytes: number): string {
             </tr>
             <tr>
               <td class="text-caption text-medium-emphasis">担当者</td>
-              <td class="text-body-2">{{ task.assigneeName || '未割り当て' }}</td>
+              <td class="text-body-2">{{ assigneeLabel }}</td>
             </tr>
             <tr>
               <td class="text-caption text-medium-emphasis">期日</td>

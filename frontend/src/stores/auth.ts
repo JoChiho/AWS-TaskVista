@@ -199,6 +199,8 @@ export const useAuthStore = defineStore('auth', () => {
 
   /**
    * 表示名をクラウドに保存する
+   * 1) メモリ上の projects / tasks / comments を即座に差し替え（全 UI が displayName と連動）
+   * 2) サーバーから再取得して他ユーザー視点の最新データにも揃える
    */
   async function setDisplayName(name: string): Promise<void> {
     const trimmed = name.trim()
@@ -206,6 +208,85 @@ export const useAuthStore = defineStore('auth', () => {
     const profile = await usersApi.updateMyProfile(trimmed)
     displayName.value = profile.displayName?.trim() || trimmed
     profileLoaded.value = true
+
+    const mySub = currentUser.value?.sub
+    // 楽観的更新: 再取得を待たずに画面上の自分の名前を差し替える
+    if (mySub) {
+      try {
+        await patchLocalDisplayName(mySub, displayName.value)
+      } catch (e) {
+        console.warn('表示名のローカル反映に失敗:', e)
+      }
+    }
+
+    // サーバー同期後の正規データでストアをリフレッシュ
+    try {
+      const { useProjectsStore } = await import('./projects')
+      const { useTasksStore } = await import('./tasks')
+      const { useCommentsStore } = await import('./comments')
+      const projectsStore = useProjectsStore()
+      const tasksStore = useTasksStore()
+      const commentsStore = useCommentsStore()
+      await projectsStore.fetchProjects()
+      if (projectsStore.currentProject?.projectId) {
+        await projectsStore.fetchProject(projectsStore.currentProject.projectId)
+      }
+      if (tasksStore.currentProjectId) {
+        await tasksStore.fetchTasks(tasksStore.currentProjectId)
+      }
+      if (commentsStore.activeTaskId) {
+        await commentsStore.fetchComments(commentsStore.activeTaskId)
+      }
+    } catch (e) {
+      console.warn('表示名保存後のデータ再取得に失敗（名前自体は保存済み）:', e)
+    }
+  }
+
+  /**
+   * メモリ上の projects / tasks / comments 内の自分の表示名を一括更新
+   * （UI が assigneeName / authorName / members.displayName を直接参照していても連動する）
+   */
+  async function patchLocalDisplayName(userId: string, name: string): Promise<void> {
+    const { useProjectsStore } = await import('./projects')
+    const { useTasksStore } = await import('./tasks')
+    const { useCommentsStore } = await import('./comments')
+    const projectsStore = useProjectsStore()
+    const tasksStore = useTasksStore()
+    const commentsStore = useCommentsStore()
+
+    const patchMembers = <T extends { userId?: string; displayName?: string }>(
+      members: T[] | undefined,
+    ): T[] | undefined => {
+      if (!members) return members
+      return members.map((m) =>
+        m.userId === userId ? { ...m, displayName: name } : m,
+      )
+    }
+
+    projectsStore.projects = projectsStore.projects.map((p) => ({
+      ...p,
+      members: patchMembers(p.members),
+    }))
+    if (projectsStore.currentProject) {
+      projectsStore.currentProject = {
+        ...projectsStore.currentProject,
+        members: patchMembers(projectsStore.currentProject.members),
+      }
+    }
+
+    tasksStore.tasks = tasksStore.tasks.map((t) =>
+      t.assigneeId === userId ? { ...t, assigneeName: name } : t,
+    )
+    if (tasksStore.currentTask?.assigneeId === userId) {
+      tasksStore.currentTask = {
+        ...tasksStore.currentTask,
+        assigneeName: name,
+      }
+    }
+
+    commentsStore.comments = commentsStore.comments.map((c) =>
+      c.authorId === userId ? { ...c, authorName: name } : c,
+    )
   }
 
   function logout(): void {

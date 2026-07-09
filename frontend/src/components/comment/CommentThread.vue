@@ -4,6 +4,8 @@
 import { ref, watch } from 'vue'
 import { useCommentsStore } from '@/stores/comments'
 import { useAuthStore } from '@/stores/auth'
+import { resolveAuthorDisplayName } from '@/utils/displayName'
+import type { Comment } from '@/types/comment'
 
 const props = defineProps<{
   taskId: string
@@ -38,6 +40,11 @@ function formatDateTime(dateStr: string): string {
     hour: '2-digit',
     minute: '2-digit',
   })
+}
+
+/** 投稿者表示名（自分ならクラウド表示名と連動） */
+function authorLabel(comment: Comment): string {
+  return resolveAuthorDisplayName(comment)
 }
 
 // マウント時・taskId 変更時に取得する
@@ -87,7 +94,7 @@ watch(
           <!-- 投稿者アバター -->
           <v-avatar size="32" color="primary" class="mr-3 flex-shrink-0">
             <span style="font-size: 11px; color: white">
-              {{ (comment.authorName || comment.authorId).slice(0, 2).toUpperCase() }}
+              {{ authorLabel(comment).slice(0, 2).toUpperCase() }}
             </span>
           </v-avatar>
 
@@ -95,7 +102,7 @@ watch(
             <!-- 投稿者名と日時 -->
             <div class="d-flex align-center mb-1">
               <span class="text-caption font-weight-bold mr-2">
-                {{ comment.authorName || comment.authorId }}
+                {{ authorLabel(comment) }}
               </span>
               <span class="text-caption text-medium-emphasis">
                 {{ formatDateTime(comment.createdAt) }}

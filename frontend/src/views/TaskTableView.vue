@@ -10,6 +10,7 @@ import { STATUS_COLORS, PRIORITY_LABELS, PRIORITY_COLORS } from '@/types/task'
 import TaskDetail from '@/components/task/TaskDetail.vue'
 import TaskFilters from '@/components/task/TaskFilters.vue'
 import TaskForm from '@/components/task/TaskForm.vue'
+import { resolveAssigneeDisplayName } from '@/utils/displayName'
 
 const route = useRoute()
 const tasksStore = useTasksStore()
@@ -70,8 +71,13 @@ const filteredTasks = computed<Task[]>(() => {
   return tasksStore.activeTasks.filter((task) => {
     // ステータスフィルター
     if (filterStatus.value && task.status !== filterStatus.value) return false
-    // 担当者フィルター
-    if (filterAssignee.value && (task.assigneeName || '').trim() !== filterAssignee.value) return false
+    // 担当者フィルター（表示名解決後のラベルで照合）
+    if (
+      filterAssignee.value &&
+      resolveAssigneeDisplayName(task) !== filterAssignee.value
+    ) {
+      return false
+    }
     // 優先度フィルター
     if (filterPriority.value && task.priority !== filterPriority.value) return false
     // タイトルあいまい検索（大文字小文字を区別しない）
@@ -216,10 +222,10 @@ onMounted(async () => {
         {{ formatDate(item.createdAt) }}
       </template>
 
-      <!-- 担当者カラム -->
+      <!-- 担当者カラム（クラウド表示名と連動） -->
       <template #[`item.assigneeName`]="{ item }">
         <span class="text-body-2">
-          {{ item.assigneeName || '—' }}
+          {{ resolveAssigneeDisplayName(item) || '—' }}
         </span>
       </template>
 

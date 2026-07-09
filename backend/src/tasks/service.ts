@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { ForbiddenError, NotFoundError, ValidationError } from '../shared/errors.js'
 import * as projectRepository from '../projects/repository.js'
 import { canAccessProject, TASK_STATUSES, type Task, type TaskStatus } from '../shared/types.js'
+import * as usersService from '../users/service.js'
 import * as commentRepository from '../comments/repository.js'
 import * as repository from './repository.js'
 
@@ -63,21 +64,24 @@ async function getAccessibleTask(
 /**
  * 担当者を解決する
  * - フロントのドロップダウンは userId + displayName を送る
+ * - 表示名はクラウド（TaskVista-Users）を最優先
  * - 名前のみの場合はプロジェクトメンバーから userId を推測する
  */
-function resolveAssignee(
+async function resolveAssignee(
   project: Awaited<ReturnType<typeof projectRepository.getProjectById>>,
   assigneeName?: string,
   assigneeId?: string,
-): { assigneeId?: string; assigneeName?: string } {
+): Promise<{ assigneeId?: string; assigneeName?: string }> {
   const members = project?.members ?? []
 
   // 明示的に userId が来た場合（ドロップダウン選択）
   if (assigneeId) {
+    const cloudName = await usersService.getDisplayName(assigneeId)
     const hit = members.find((m) => m.userId === assigneeId)
     return {
       assigneeId,
-      assigneeName: hit?.displayName || assigneeName?.trim() || undefined,
+      assigneeName:
+        cloudName || hit?.displayName || assigneeName?.trim() || undefined,
     }
   }
 
@@ -92,9 +96,16 @@ function resolveAssignee(
       m.email.toLowerCase() === name ||
       m.email.toLowerCase().startsWith(name),
   )
+  if (hit?.userId) {
+    const cloudName = await usersService.getDisplayName(hit.userId)
+    return {
+      assigneeId: hit.userId,
+      assigneeName: cloudName || hit.displayName || assigneeName.trim(),
+    }
+  }
   return {
-    assigneeId: hit?.userId,
-    assigneeName: hit?.displayName || assigneeName.trim(),
+    assigneeId: undefined,
+    assigneeName: assigneeName.trim(),
   }
 }
 
@@ -106,6 +117,20 @@ function toValidationFields(error: z.ZodError): Record<string, string> {
   return fields
 }
 
+/** assigneeId からクラウド表示名を付与する（UI が常に最新名を表示するため） */
+async function enrichTaskAssignees(tasks: Task[]): Promise<Task[]> {
+  const ids = tasks.map((t) => t.assigneeId).filter(Boolean) as string[]
+  if (ids.length === 0) return tasks
+  const names = await usersService.getDisplayNameMap(ids)
+  if (names.size === 0) return tasks
+  return tasks.map((t) => {
+    if (t.assigneeId && names.has(t.assigneeId)) {
+      return { ...t, assigneeName: names.get(t.assigneeId)! }
+    }
+    return t
+  })
+}
+
 /** プロジェクト内のタスク一覧を取得する */
 export async function listTasksByProject(
   projectId: string,
@@ -113,8 +138,8 @@ export async function listTasksByProject(
   email?: string,
 ): Promise<Task[]> {
   await assertProjectAccess(projectId, userId, email)
-  const tasks = await repository.listTasksByProject(projectId)
-  return tasks.filter((t) => !t.isDeleted)
+  const tasks = (await repository.listTasksByProject(projectId)).filter((t) => !t.isDeleted)
+  return enrichTaskAssignees(tasks)
 }
 
 /** タスク詳細を取得する（コメント数を含む） */
@@ -124,8 +149,9 @@ export async function getTask(
   email?: string,
 ): Promise<Task & { commentCount: number }> {
   const task = await getAccessibleTask(taskId, userId, email)
+  const [enriched] = await enrichTaskAssignees([task])
   const comments = await commentRepository.listCommentsByTask(taskId)
-  return { ...task, commentCount: comments.length }
+  return { ...enriched, commentCount: comments.length }
 }
 
 /** タスクを新規作成する */
@@ -143,7 +169,7 @@ export async function createTask(
   }
 
   const project = await projectRepository.getProjectById(projectId)
-  const assignee = resolveAssignee(
+  const assignee = await resolveAssignee(
     project,
     parsed.data.assigneeName,
     parsed.data.assigneeId,
@@ -168,7 +194,9 @@ export async function createTask(
     isDeleted: false,
   }
 
-  return repository.createTask(task)
+  const created = await repository.createTask(task)
+  const [enriched] = await enrichTaskAssignees([created])
+  return enriched
 }
 
 /** タスク情報を更新する */
@@ -201,7 +229,7 @@ export async function updateTask(
       updates.assigneeName === '' || updates.assigneeName === null
         ? undefined
         : updates.assigneeName ?? existing.assigneeName
-    const assignee = resolveAssignee(project, rawName, rawId)
+    const assignee = await resolveAssignee(project, rawName, rawId)
     // 両方クリアされた場合はフィールドを空にする
     if (!updates.assigneeId && !updates.assigneeName && !rawId && !rawName) {
       updates.assigneeId = undefined
@@ -212,7 +240,9 @@ export async function updateTask(
     }
   }
 
-  return repository.updateTask(taskId, updates)
+  const updated = await repository.updateTask(taskId, updates)
+  const [enriched] = await enrichTaskAssignees([updated])
+  return enriched
 }
 
 /** タスクのステータスのみを更新する（かんばんドラッグ専用） */

@@ -219,11 +219,15 @@ cd frontend; npm run dev     # 前端 :5173
 # ---------- 仅单测 ----------
 cd backend; npm run test:watch
 
-# ---------- 部署（稳定后再做，须在仓库根目录）----------
+# ---------- 部署（推荐在仓库根目录）----------
 npm run deploy:backend
 npm run deploy:frontend
 npm run deploy
 npm run deploy:dry-run
+
+# 子目录也可以（已转发到根脚本）:
+# cd backend  →  npm run deploy:backend
+# cd frontend →  npm run deploy:frontend
 ```
 
 ---

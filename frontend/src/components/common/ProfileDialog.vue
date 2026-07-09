@@ -22,7 +22,7 @@ const errorMessage = ref('')
 
 const nameRules = [
   (v: string) => !!v.trim() || '表示名（お名前）を入力してください',
-  (v: string) => v.trim().length <= 10 || '10 文字以内で入力してください',
+  (v: string) => v.trim().length <= 100 || '100 文字以内で入力してください',
 ]
 
 watch(modelValue, (open) => {

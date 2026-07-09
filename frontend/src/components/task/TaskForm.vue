@@ -6,6 +6,7 @@ import type { Task, TaskStatus, TaskPriority } from '@/types/task'
 import { TASK_STATUSES, PRIORITY_LABELS } from '@/types/task'
 import { useTasksStore } from '@/stores/tasks'
 import { useProjectsStore } from '@/stores/projects'
+import { resolveMemberDisplayName } from '@/utils/displayName'
 
 const props = defineProps<{
   projectId: string
@@ -60,7 +61,8 @@ const assigneeOptions = computed(() => {
   return members
     .filter((m) => !!m.userId)
     .map((m) => ({
-      title: m.displayName || m.email || m.userId!,
+      // 表示名はクラウドプロフィール（自分なら auth.displayName）と連動
+      title: resolveMemberDisplayName(m),
       value: m.userId!,
       subtitle: m.email,
     }))
