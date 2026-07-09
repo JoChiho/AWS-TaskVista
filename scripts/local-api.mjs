@@ -36,6 +36,7 @@ process.env.COMMENTS_TABLE = process.env.COMMENTS_TABLE ?? 'TaskVista-Comments'
 process.env.ATTACHMENTS_BUCKET = process.env.ATTACHMENTS_BUCKET ?? 'taskvista-attachments'
 process.env.COGNITO_USER_POOL_ID =
   process.env.COGNITO_USER_POOL_ID ?? 'us-east-1_PvLPf6TL0'
+process.env.USERS_TABLE = process.env.USERS_TABLE ?? 'TaskVista-Users'
 
 // 从 deploy.config.json 覆盖（若存在）
 try {
@@ -135,6 +136,12 @@ const ROUTES = [
   {
     methods: ['GET'],
     pattern: /^\/dashboard\/my-tasks\/?$/,
+    keys: [],
+    module: 'dashboard',
+  },
+  {
+    methods: ['GET', 'PUT'],
+    pattern: /^\/me\/?$/,
     keys: [],
     module: 'dashboard',
   },

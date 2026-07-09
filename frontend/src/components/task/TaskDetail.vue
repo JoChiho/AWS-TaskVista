@@ -32,19 +32,19 @@ const isUploading = ref(false)
 /** 現在表示中のタスク */
 const task = computed(() => tasksStore.currentTask)
 
-/** ドロワーが閉じられた / タスクが切り替わったときにコメントを正しく扱う */
-watch(modelValue, (isOpen) => {
-  if (!isOpen) {
-    commentsStore.clearComments()
-  }
-})
-
-// 表示中タスクが変わったら（ドロワーが開いたまま別カードを開いた場合など）コメントを再同期
+/**
+ * ドロワー開閉・タスク切替でコメントを同期する
+ *
+ * 重要: 同じ taskId を閉じ→再オープンしたとき、taskId の watch は発火しない。
+ * そのため「開いた瞬間」に必ず再取得する。閉じるときはクリアして世代を進める。
+ */
 watch(
-  () => task.value?.taskId,
-  (taskId) => {
-    if (modelValue.value && taskId) {
-      commentsStore.fetchComments(taskId)
+  [modelValue, () => task.value?.taskId],
+  ([isOpen, taskId]) => {
+    if (isOpen && taskId) {
+      commentsStore.fetchComments(taskId as string)
+    } else if (!isOpen) {
+      commentsStore.clearComments()
     }
   },
 )
@@ -151,7 +151,6 @@ function formatFileSize(bytes: number): string {
 <template>
   <v-navigation-drawer
     v-model="modelValue"
-    location="right"
     width="480"
     temporary
   >
@@ -205,10 +204,6 @@ function formatFileSize(bytes: number): string {
         <!-- 詳細フィールド一覧 -->
         <v-table density="compact" class="mb-4">
           <tbody>
-            <tr v-if="task.location">
-              <td class="text-caption text-medium-emphasis" style="width: 80px">場所</td>
-              <td class="text-body-2">{{ task.location }}</td>
-            </tr>
             <tr v-if="task.requirement">
               <td class="text-caption text-medium-emphasis">要望</td>
               <td class="text-body-2">{{ task.requirement }}</td>
@@ -292,8 +287,12 @@ function formatFileSize(bytes: number): string {
 
         <v-divider class="mb-4" />
 
-        <!-- コメントスレッド（taskId を key にしてコンポーネントを確実に切り替える） -->
-        <CommentThread :key="task.taskId" :task-id="task.taskId" />
+        <!-- ドロワーが開いているときだけマウントし、開くたびにコメントを取り直す -->
+        <CommentThread
+          v-if="modelValue && task.taskId"
+          :key="`comments-${task.taskId}`"
+          :task-id="task.taskId"
+        />
       </div>
     </template>
   </v-navigation-drawer>

@@ -53,7 +53,6 @@ const itemsPerPageOptions = [
 
 /** テーブルのカラム定義 */
 const headers = [
-  { title: '場所', key: 'location', sortable: true, width: '120px' },
   { title: '要望', key: 'requirement', sortable: false },
   { title: 'タイトル', key: 'title', sortable: true },
   { title: 'ステータス', key: 'status', sortable: true, width: '130px' },
@@ -224,10 +223,6 @@ onMounted(async () => {
         </span>
       </template>
 
-      <!-- 場所カラム -->
-      <template #[`item.location`]="{ item }">
-        <span class="text-body-2">{{ item.location || '—' }}</span>
-      </template>
     </v-data-table>
 
     <!-- タスク詳細サイドドロワー -->

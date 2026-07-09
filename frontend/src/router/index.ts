@@ -62,10 +62,10 @@ const router = createRouter({
 router.beforeEach((to) => {
   const authStore = useAuthStore()
 
-  // セッションストレージからトークンを復元する（ページリフレッシュ対応）
-  if (!authStore.isAuthenticated) {
-    authStore.restoreSession()
-  }
+  // 毎回セッションを同期する（トークンだけでなく currentUser / 表示名も復元）
+  // 以前は isAuthenticated のとき restore をスキップしており、
+  // リフレッシュ後に currentUser が null のまま UI だけ消える不具合があった
+  authStore.ensureSession()
 
   // 認証が必要なルートで未認証の場合はログインページへリダイレクトする
   if (to.meta.requiresAuth && !authStore.isAuthenticated) {

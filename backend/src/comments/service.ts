@@ -4,6 +4,7 @@ import { ForbiddenError, NotFoundError, ValidationError } from '../shared/errors
 import * as projectRepository from '../projects/repository.js'
 import * as taskRepository from '../tasks/repository.js'
 import { canAccessProject, type Comment } from '../shared/types.js'
+import * as usersService from '../users/service.js'
 import * as repository from './repository.js'
 
 const createCommentSchema = z.object({
@@ -35,14 +36,19 @@ async function assertTaskAccess(
   }
 }
 
-/** タスクのコメント一覧を取得する */
+/** タスクのコメント一覧を取得する（投稿者名はクラウドプロフィールで解決） */
 export async function listComments(
   taskId: string,
   userId: string,
   email?: string,
 ): Promise<Comment[]> {
   await assertTaskAccess(taskId, userId, email)
-  return repository.listCommentsByTask(taskId)
+  const comments = await repository.listCommentsByTask(taskId)
+  const names = await usersService.getDisplayNameMap(comments.map((c) => c.authorId))
+  return comments.map((c) => ({
+    ...c,
+    authorName: names.get(c.authorId) || c.authorName,
+  }))
 }
 
 /** コメントを作成する */
@@ -64,13 +70,18 @@ export async function createComment(
     throw new ValidationError('入力内容をご確認ください', fields)
   }
 
+  // クラウドに保存済みの表示名を最優先
+  const cloudName = await usersService.getDisplayName(userId)
   const now = new Date().toISOString()
   const comment: Comment = {
     commentId: uuidv4(),
     taskId,
     content: parsed.data.content,
     authorId: userId,
-    authorName: parsed.data.authorDisplayName?.trim() || authorName,
+    authorName:
+      cloudName ||
+      parsed.data.authorDisplayName?.trim() ||
+      authorName,
     createdAt: now,
     updatedAt: now,
   }

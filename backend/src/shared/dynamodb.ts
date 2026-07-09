@@ -25,3 +25,8 @@ export function getCommentsTable(): string {
 export function getAttachmentsBucket(): string {
   return process.env.ATTACHMENTS_BUCKET ?? 'taskvista-attachments'
 }
+
+/** ユーザー表示名などプロフィール用テーブル */
+export function getUsersTable(): string {
+  return process.env.USERS_TABLE ?? 'TaskVista-Users'
+}

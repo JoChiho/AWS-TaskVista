@@ -149,7 +149,6 @@ async function main() {
   const updateTask = await api('PUT', `/tasks/${taskId}`, token, {
     title: '統合テストタスク（更新）',
     description: '更新済み',
-    location: '東京オフィス',
     requirement: 'テスト要望',
   })
   record('PUT /tasks/{taskId}', updateTask.status === 200, `status=${updateTask.status}`)

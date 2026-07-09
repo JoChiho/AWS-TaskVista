@@ -75,7 +75,6 @@ export async function updateTask(
       | 'description'
       | 'status'
       | 'priority'
-      | 'location'
       | 'requirement'
       | 'assigneeId'
       | 'assigneeName'
@@ -98,7 +97,6 @@ export async function updateTask(
     ['description', 'description'],
     ['status', 'status'],
     ['priority', 'priority'],
-    ['location', 'location'],
     ['requirement', 'requirement'],
     ['assigneeId', 'assigneeId'],
     ['assigneeName', 'assigneeName'],

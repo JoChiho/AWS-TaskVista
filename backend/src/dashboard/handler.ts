@@ -1,18 +1,51 @@
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda'
-import { getAuthUser, getRequestPath } from '../shared/context.js'
+import { getAuthUser, getRequestPath, parseBody } from '../shared/context.js'
 import { withHandler } from '../shared/handler.js'
 import { logInfo } from '../shared/logger.js'
 import { errorResponse, successResponse } from '../shared/response.js'
+import * as usersService from '../users/service.js'
 import * as service from './service.js'
 
-/** Dashboard Lambda エントリポイント */
+/** Dashboard + ユーザープロフィール Lambda エントリポイント */
 export async function handler(
   event: APIGatewayProxyEventV2,
 ): Promise<APIGatewayProxyResultV2> {
   return withHandler(event, 'DASHBOARD', async (correlationId) => {
     const method = event.requestContext.http.method
     const user = getAuthUser(event)
+    const actor = { userId: user.userId, email: user.email, name: user.name }
     const path = getRequestPath(event)
+
+    // GET /me — クラウド上の表示名プロフィール
+    if (method === 'GET' && path === '/me') {
+      const profile = await usersService.getMyProfile(actor)
+      logInfo(correlationId, 'プロフィールを取得しました', {
+        requestId: event.requestContext.requestId,
+        userId: user.userId,
+        action: 'GET_ME',
+      })
+      return successResponse(
+        200,
+        profile ?? {
+          userId: user.userId,
+          email: user.email,
+          displayName: null,
+          hasDisplayName: false,
+        },
+        correlationId,
+      )
+    }
+
+    // PUT /me — 表示名をクラウドに保存
+    if (method === 'PUT' && path === '/me') {
+      const profile = await usersService.updateMyProfile(actor, parseBody(event))
+      logInfo(correlationId, 'プロフィールを更新しました', {
+        requestId: event.requestContext.requestId,
+        userId: user.userId,
+        action: 'UPDATE_ME',
+      })
+      return successResponse(200, { ...profile, hasDisplayName: true }, correlationId)
+    }
 
     if (method === 'GET' && path === '/dashboard/summary') {
       const summary = await service.getSummary(user.userId, user.email, user.name)
@@ -25,7 +58,7 @@ export async function handler(
     }
 
     if (method === 'GET' && path === '/dashboard/my-tasks') {
-      const tasks = await service.getMyTasks(user.userId)
+      const tasks = await service.getMyTasks(user.userId, user.email, user.name)
       logInfo(correlationId, '担当タスク一覧を取得しました', {
         requestId: event.requestContext.requestId,
         userId: user.userId,

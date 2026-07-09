@@ -7,6 +7,7 @@ import {
   type Project,
   type ProjectMember,
 } from '../shared/types.js'
+import * as usersService from '../users/service.js'
 import * as repository from './repository.js'
 
 const createProjectSchema = z.object({
@@ -42,6 +43,29 @@ export interface ActorInfo {
 
 function normalizeEmail(email: string): string {
   return email.trim().toLowerCase()
+}
+
+/** メンバー表示名をクラウドプロフィールで上書き（全ユーザーで同じ名前が見える） */
+async function enrichProjectMembers(project: Project): Promise<Project> {
+  const ids = [
+    project.createdBy,
+    ...(project.members ?? []).map((m) => m.userId).filter(Boolean) as string[],
+    ...project.memberIds,
+  ]
+  const names = await usersService.getDisplayNameMap(ids)
+  if (names.size === 0) return project
+
+  const members = (project.members ?? []).map((m) => {
+    if (m.userId && names.has(m.userId)) {
+      return { ...m, displayName: names.get(m.userId)! }
+    }
+    return m
+  })
+  return { ...project, members }
+}
+
+async function enrichProjects(projects: Project[]): Promise<Project[]> {
+  return Promise.all(projects.map((p) => enrichProjectMembers(p)))
 }
 
 function dedupeProjects(projects: Project[]): Project[] {
@@ -139,12 +163,13 @@ export async function listProjects(actor: ActorInfo): Promise<Project[]> {
 
   const projects = dedupeProjects([...created, ...member, ...byEmail])
   const bound = await Promise.all(projects.map((p) => bindMemberIfNeeded(p, actor)))
-  return dedupeProjects(bound)
+  return enrichProjects(dedupeProjects(bound))
 }
 
 /** プロジェクト詳細を取得する */
 export async function getProject(projectId: string, actor: ActorInfo): Promise<Project> {
-  return getAccessibleProject(projectId, actor)
+  const project = await getAccessibleProject(projectId, actor)
+  return enrichProjectMembers(project)
 }
 
 /** プロジェクトを新規作成する */
@@ -164,8 +189,10 @@ export async function createProject(
 
   const now = new Date().toISOString()
   const email = actor.email ? normalizeEmail(actor.email) : `${actor.userId}@unknown.local`
-  // 表示名はフロントで設定した氏名を最優先（Cognito の乱数 ID を使わない）
+  // 表示名: クラウドプロフィール > リクエスト > Cognito 以外の名前
+  const cloudName = await usersService.getDisplayName(actor.userId)
   const displayName =
+    cloudName ||
     parsed.data.creatorDisplayName?.trim() ||
     (actor.name && !actor.name.includes('-') && actor.name !== 'ユーザー'
       ? actor.name
@@ -193,7 +220,8 @@ export async function createProject(
     isDeleted: false,
   }
 
-  return repository.createProject(project)
+  const created = await repository.createProject(project)
+  return enrichProjectMembers(created)
 }
 
 /** プロジェクト情報を更新する */
@@ -289,8 +317,10 @@ export async function addProjectMember(
   }
 
   const resolvedUserId = cognitoUser.userId
+  const cloudName = await usersService.getDisplayName(resolvedUserId)
   const displayName =
     parsed.data.displayName?.trim() ||
+    cloudName ||
     cognitoUser.displayName ||
     email.split('@')[0] ||
     email
@@ -358,11 +388,12 @@ export async function addProjectMember(
 
   members = dedupeMembers(members)
 
-  return repository.updateProject(projectId, {
+  const updated = await repository.updateProject(projectId, {
     members,
     memberEmails: Array.from(memberEmails),
     memberIds: Array.from(memberIds),
   })
+  return enrichProjectMembers(updated)
 }
 
 /** プロジェクトメンバーを削除する */
@@ -438,11 +469,12 @@ export async function removeProjectMember(
     )
   }
 
-  return repository.updateProject(projectId, {
+  const updated = await repository.updateProject(projectId, {
     members: nextMembers,
     memberIds: [...new Set(memberIds)],
     memberEmails: [...new Set(memberEmails)],
   })
+  return enrichProjectMembers(updated)
 }
 
 /** プロジェクトを論理削除する */

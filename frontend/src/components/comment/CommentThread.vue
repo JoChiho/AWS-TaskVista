@@ -40,17 +40,16 @@ function formatDateTime(dateStr: string): string {
   })
 }
 
-// タスク ID が変わったら必ずコメントを再取得する（マウント時含む）
-// 以前は onMounted のみだったため、ドロワー内でタスクを切り替えると
-// 別タスクのコメントが表示されたままになる不具合があった
+// マウント時・taskId 変更時に取得する
+// （ドロワー側でも open 時に fetch するが、ここでも immediate で二重安全にする）
 watch(
   () => props.taskId,
-  (taskId) => {
+  (taskId, prev) => {
     newCommentContent.value = ''
-    if (taskId) {
+    if (!taskId) return
+    // 同じ ID で親が再マウントしたときも取得する（immediate で初回も実行）
+    if (taskId !== prev || prev === undefined) {
       commentsStore.fetchComments(taskId)
-    } else {
-      commentsStore.clearComments()
     }
   },
   { immediate: true },

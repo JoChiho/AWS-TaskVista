@@ -219,14 +219,6 @@ function memberRowKey(member: ProjectMember): string {
           class="mb-2"
           hide-details="auto"
         />
-        <v-text-field
-          v-model="displayName"
-          label="表示名（任意）"
-          placeholder="例：鮫島"
-          density="comfortable"
-          hide-details
-          class="mb-2"
-        />
         <div class="text-caption text-medium-emphasis mb-2">
           あなたの表示名: {{ authStore.displayLabel }}
         </div>

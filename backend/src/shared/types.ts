@@ -51,7 +51,6 @@ export interface Task {
   description?: string
   status: TaskStatus
   priority: TaskPriority
-  location?: string
   requirement?: string
   assigneeId?: string
   assigneeName?: string

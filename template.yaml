@@ -18,6 +18,7 @@ Globals:
         COMMENTS_TABLE: !Ref CommentsTableName
         ATTACHMENTS_BUCKET: !Ref AttachmentsBucketName
         COGNITO_USER_POOL_ID: !Ref CognitoUserPoolId
+        USERS_TABLE: !Ref UsersTableName
         AWS_NODEJS_CONNECTION_REUSE_ENABLED: '1'
 
 Parameters:
@@ -36,6 +37,9 @@ Parameters:
   CognitoUserPoolId:
     Type: String
     Default: us-east-1_PvLPf6TL0
+  UsersTableName:
+    Type: String
+    Default: TaskVista-Users
 
 Resources:
   TaskVistaHttpApi:
@@ -189,6 +193,12 @@ Resources:
             ApiId: !Ref TaskVistaHttpApi
             Path: /dashboard/my-tasks
             Method: GET
+        Me:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref TaskVistaHttpApi
+            Path: /me
+            Method: ANY
 
 Outputs:
   LocalApiUrl:

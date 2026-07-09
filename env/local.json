@@ -5,6 +5,7 @@
     "COMMENTS_TABLE": "TaskVista-Comments",
     "ATTACHMENTS_BUCKET": "taskvista-attachments",
     "COGNITO_USER_POOL_ID": "us-east-1_PvLPf6TL0",
+    "USERS_TABLE": "TaskVista-Users",
     "AWS_REGION": "us-east-1",
     "LOCAL_DEV": "1"
   },
@@ -14,6 +15,7 @@
     "COMMENTS_TABLE": "TaskVista-Comments",
     "ATTACHMENTS_BUCKET": "taskvista-attachments",
     "COGNITO_USER_POOL_ID": "us-east-1_PvLPf6TL0",
+    "USERS_TABLE": "TaskVista-Users",
     "AWS_REGION": "us-east-1",
     "LOCAL_DEV": "1"
   },
@@ -23,6 +25,7 @@
     "COMMENTS_TABLE": "TaskVista-Comments",
     "ATTACHMENTS_BUCKET": "taskvista-attachments",
     "COGNITO_USER_POOL_ID": "us-east-1_PvLPf6TL0",
+    "USERS_TABLE": "TaskVista-Users",
     "AWS_REGION": "us-east-1",
     "LOCAL_DEV": "1"
   },
@@ -32,6 +35,7 @@
     "COMMENTS_TABLE": "TaskVista-Comments",
     "ATTACHMENTS_BUCKET": "taskvista-attachments",
     "COGNITO_USER_POOL_ID": "us-east-1_PvLPf6TL0",
+    "USERS_TABLE": "TaskVista-Users",
     "AWS_REGION": "us-east-1",
     "LOCAL_DEV": "1"
   },
@@ -41,6 +45,7 @@
     "COMMENTS_TABLE": "TaskVista-Comments",
     "ATTACHMENTS_BUCKET": "taskvista-attachments",
     "COGNITO_USER_POOL_ID": "us-east-1_PvLPf6TL0",
+    "USERS_TABLE": "TaskVista-Users",
     "AWS_REGION": "us-east-1",
     "LOCAL_DEV": "1"
   },
@@ -50,6 +55,7 @@
     "COMMENTS_TABLE": "TaskVista-Comments",
     "ATTACHMENTS_BUCKET": "taskvista-attachments",
     "COGNITO_USER_POOL_ID": "us-east-1_PvLPf6TL0",
+    "USERS_TABLE": "TaskVista-Users",
     "AWS_REGION": "us-east-1",
     "LOCAL_DEV": "1"
   }

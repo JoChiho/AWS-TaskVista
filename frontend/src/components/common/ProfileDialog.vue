@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// 表示名（ユーザー名）設定ダイアログ
+// 表示名（ユーザー名）設定ダイアログ — クラウド（DynamoDB）に保存
 import { ref, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { useUiStore } from '@/stores/ui'
@@ -17,24 +17,39 @@ const authStore = useAuthStore()
 const uiStore = useUiStore()
 
 const nameInput = ref('')
+const isSaving = ref(false)
+const errorMessage = ref('')
 
 const nameRules = [
   (v: string) => !!v.trim() || '表示名（お名前）を入力してください',
-  (v: string) => v.trim().length <= 100 || '100 文字以内で入力してください',
+  (v: string) => v.trim().length <= 10 || '10 文字以内で入力してください',
 ]
 
 watch(modelValue, (open) => {
   if (open) {
     nameInput.value = authStore.displayName || ''
+    errorMessage.value = ''
   }
 })
 
-function handleSave() {
+async function handleSave() {
   const trimmed = nameInput.value.trim()
   if (!trimmed) return
-  authStore.setDisplayName(trimmed)
-  uiStore.showSuccess('表示名を保存しました')
-  modelValue.value = false
+  isSaving.value = true
+  errorMessage.value = ''
+  try {
+    await authStore.setDisplayName(trimmed)
+    uiStore.showSuccess('表示名を保存しました（全端末で共有されます）')
+    modelValue.value = false
+  } catch (e: unknown) {
+    const msg =
+      (e as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error
+        ?.message || '表示名の保存に失敗しました'
+    errorMessage.value = msg
+    uiStore.showError(msg)
+  } finally {
+    isSaving.value = false
+  }
 }
 
 function handleCancel() {
@@ -56,16 +71,26 @@ function handleCancel() {
       </v-card-title>
       <v-card-text class="px-5">
         <p class="text-body-2 text-medium-emphasis mb-4">
-          プロジェクトのメンバー一覧やコメントに表示される<strong>お名前</strong>です。
-          Cognito の自動生成 ID は使わず、分かりやすい氏名を設定してください。
+          お名前は<strong>クラウドに保存</strong>され、他のメンバーにも同じ表示名で見えます。
+          無痕モードや別ブラウザでログインしても、再設定は不要です。
         </p>
+        <v-alert
+          v-if="errorMessage"
+          type="error"
+          variant="tonal"
+          density="compact"
+          class="mb-3"
+        >
+          {{ errorMessage }}
+        </v-alert>
         <v-text-field
           v-model="nameInput"
           label="表示名（氏名）*"
-          placeholder="例：徐 志富 / 鮫島"
+          placeholder="例：徐 智甫 / 鮫島"
           :rules="nameRules"
           counter="100"
           autofocus
+          :disabled="isSaving"
           @keydown.enter.prevent="handleSave"
         />
         <div class="text-caption text-medium-emphasis">
@@ -74,8 +99,15 @@ function handleCancel() {
       </v-card-text>
       <v-card-actions class="px-5 pb-4">
         <v-spacer />
-        <v-btn v-if="!required" variant="text" @click="handleCancel">キャンセル</v-btn>
-        <v-btn color="primary" :disabled="!nameInput.trim()" @click="handleSave">
+        <v-btn v-if="!required" variant="text" :disabled="isSaving" @click="handleCancel">
+          キャンセル
+        </v-btn>
+        <v-btn
+          color="primary"
+          :loading="isSaving"
+          :disabled="!nameInput.trim()"
+          @click="handleSave"
+        >
           保存して続ける
         </v-btn>
       </v-card-actions>

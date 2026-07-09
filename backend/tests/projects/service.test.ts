@@ -19,6 +19,11 @@ vi.mock('../../src/shared/cognito.js', () => ({
   findCognitoUserByEmail: vi.fn(),
 }))
 
+vi.mock('../../src/users/service.js', () => ({
+  getDisplayNameMap: vi.fn().mockResolvedValue(new Map()),
+  getDisplayName: vi.fn().mockResolvedValue(null),
+}))
+
 const actor = {
   userId: USER_ID,
   email: 'user@example.com',

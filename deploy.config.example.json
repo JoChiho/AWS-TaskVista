@@ -16,6 +16,7 @@
     "TASKS_TABLE": "TaskVista-Tasks",
     "COMMENTS_TABLE": "TaskVista-Comments",
     "ATTACHMENTS_BUCKET": "taskvista-attachments",
-    "COGNITO_USER_POOL_ID": "us-east-1_PvLPf6TL0"
+    "COGNITO_USER_POOL_ID": "us-east-1_PvLPf6TL0",
+    "USERS_TABLE": "TaskVista-Users"
   }
 }

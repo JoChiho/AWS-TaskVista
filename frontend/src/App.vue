@@ -16,12 +16,18 @@ const hideNav = computed(() =>
   ['login', 'callback'].includes(route.name as string),
 )
 
-/** 初回ログイン時：表示名未設定なら強制ダイアログ */
+/** 初回のみ：クラウドに表示名が無い場合に強制設定 */
 const forceProfile = ref(false)
 
 watch(
-  () => [authStore.isAuthenticated, authStore.hasCustomDisplayName, route.name] as const,
-  ([authed, hasName, name]) => {
+  () =>
+    [
+      authStore.isAuthenticated,
+      authStore.profileLoaded,
+      authStore.hasCustomDisplayName,
+      route.name,
+    ] as const,
+  ([authed, loaded, hasName, name]) => {
     if (!authed) {
       forceProfile.value = false
       return
@@ -30,7 +36,8 @@ watch(
       forceProfile.value = false
       return
     }
-    forceProfile.value = !hasName
+    // プロフィール取得完了後、クラウドに表示名が無ければ一度だけ促す
+    forceProfile.value = loaded && !hasName
   },
   { immediate: true },
 )

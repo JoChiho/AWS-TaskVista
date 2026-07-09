@@ -58,12 +58,6 @@ function isDueSoon(dueDate?: string): boolean {
         {{ task.title }}
       </p>
 
-      <!-- 場所（存在する場合のみ表示） -->
-      <div v-if="task.location" class="d-flex align-center mb-2">
-        <v-icon size="12" color="medium-emphasis" class="mr-1">mdi-map-marker</v-icon>
-        <span class="text-caption text-medium-emphasis">{{ task.location }}</span>
-      </div>
-
       <!-- フッター：優先度・期日・担当者 -->
       <div class="d-flex align-center flex-wrap gap-1 mt-2">
         <!-- 優先度チップ -->

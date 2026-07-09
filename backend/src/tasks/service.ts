@@ -19,7 +19,6 @@ const createTaskSchema = z.object({
   description: z.string().max(5000).optional(),
   status: statusSchema.optional(),
   priority: prioritySchema.optional(),
-  location: z.string().max(200).optional(),
   requirement: z.string().max(2000).optional(),
   /** 担当者 ID（任意・メンバー選択時など） */
   assigneeId: assigneeIdSchema,
@@ -61,22 +60,42 @@ async function getAccessibleTask(
   return task
 }
 
-/** 担当者名からプロジェクトメンバーの userId を推測する */
-function resolveAssigneeId(
+/**
+ * 担当者を解決する
+ * - フロントのドロップダウンは userId + displayName を送る
+ * - 名前のみの場合はプロジェクトメンバーから userId を推測する
+ */
+function resolveAssignee(
   project: Awaited<ReturnType<typeof projectRepository.getProjectById>>,
   assigneeName?: string,
   assigneeId?: string,
-): string | undefined {
-  if (assigneeId) return assigneeId
-  if (!assigneeName || !project?.members) return undefined
+): { assigneeId?: string; assigneeName?: string } {
+  const members = project?.members ?? []
+
+  // 明示的に userId が来た場合（ドロップダウン選択）
+  if (assigneeId) {
+    const hit = members.find((m) => m.userId === assigneeId)
+    return {
+      assigneeId,
+      assigneeName: hit?.displayName || assigneeName?.trim() || undefined,
+    }
+  }
+
+  // 名前のみ（後方互換）
+  if (!assigneeName?.trim()) {
+    return { assigneeId: undefined, assigneeName: undefined }
+  }
   const name = assigneeName.trim().toLowerCase()
-  const hit = project.members.find(
+  const hit = members.find(
     (m) =>
       m.displayName.toLowerCase() === name ||
       m.email.toLowerCase() === name ||
       m.email.toLowerCase().startsWith(name),
   )
-  return hit?.userId
+  return {
+    assigneeId: hit?.userId,
+    assigneeName: hit?.displayName || assigneeName.trim(),
+  }
 }
 
 function toValidationFields(error: z.ZodError): Record<string, string> {
@@ -124,8 +143,11 @@ export async function createTask(
   }
 
   const project = await projectRepository.getProjectById(projectId)
-  const assigneeName = parsed.data.assigneeName?.trim() || undefined
-  const assigneeId = resolveAssigneeId(project, assigneeName, parsed.data.assigneeId)
+  const assignee = resolveAssignee(
+    project,
+    parsed.data.assigneeName,
+    parsed.data.assigneeId,
+  )
 
   const now = new Date().toISOString()
   const task: Task = {
@@ -135,10 +157,9 @@ export async function createTask(
     description: parsed.data.description,
     status: parsed.data.status ?? '未着手',
     priority: parsed.data.priority ?? 'medium',
-    location: parsed.data.location,
     requirement: parsed.data.requirement,
-    assigneeId,
-    assigneeName,
+    assigneeId: assignee.assigneeId,
+    assigneeName: assignee.assigneeName,
     dueDate: parsed.data.dueDate,
     attachments: [],
     createdBy: userId,
@@ -171,16 +192,24 @@ export async function updateTask(
   const project = await projectRepository.getProjectById(existing.projectId)
   const updates = { ...parsed.data }
   if (updates.assigneeName !== undefined || updates.assigneeId !== undefined) {
-    const assigneeName =
-      updates.assigneeName !== undefined
-        ? updates.assigneeName?.trim() || undefined
-        : existing.assigneeName
-    updates.assigneeName = assigneeName
-    updates.assigneeId = resolveAssigneeId(
-      project,
-      assigneeName,
-      updates.assigneeId ?? existing.assigneeId,
-    )
+    // 空文字は「担当者クリア」
+    const rawId =
+      updates.assigneeId === '' || updates.assigneeId === null
+        ? undefined
+        : updates.assigneeId ?? existing.assigneeId
+    const rawName =
+      updates.assigneeName === '' || updates.assigneeName === null
+        ? undefined
+        : updates.assigneeName ?? existing.assigneeName
+    const assignee = resolveAssignee(project, rawName, rawId)
+    // 両方クリアされた場合はフィールドを空にする
+    if (!updates.assigneeId && !updates.assigneeName && !rawId && !rawName) {
+      updates.assigneeId = undefined
+      updates.assigneeName = undefined
+    } else {
+      updates.assigneeId = assignee.assigneeId
+      updates.assigneeName = assignee.assigneeName
+    }
   }
 
   return repository.updateTask(taskId, updates)

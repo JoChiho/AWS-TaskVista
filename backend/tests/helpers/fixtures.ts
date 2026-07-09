@@ -34,7 +34,6 @@ export function makeTask(overrides: Partial<Task> = {}): Task {
     description: '説明',
     status: '未着手',
     priority: 'medium',
-    location: '東京',
     requirement: '要望',
     assigneeId: USER_ID,
     assigneeName: 'テストユーザー',

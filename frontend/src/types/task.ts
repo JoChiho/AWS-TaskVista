@@ -62,7 +62,6 @@ export interface Task {
   description?: string
   status: TaskStatus
   priority: TaskPriority
-  location?: string
   requirement?: string
   assigneeId?: string
   assigneeName?: string
@@ -81,7 +80,6 @@ export interface CreateTaskPayload {
   description?: string
   status?: TaskStatus
   priority?: TaskPriority
-  location?: string
   requirement?: string
   assigneeId?: string
   /** 担当者名（人名テキスト） */
@@ -95,7 +93,6 @@ export interface UpdateTaskPayload {
   description?: string
   status?: TaskStatus
   priority?: TaskPriority
-  location?: string
   requirement?: string
   assigneeId?: string
   /** 担当者名（人名テキスト） */
