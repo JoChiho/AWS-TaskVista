@@ -1,0 +1,21 @@
+{
+  "region": "us-east-1",
+  "accountId": "312310269639",
+  "apiGatewayId": "",
+  "cloudFrontDistributionId": "ETPA7PC3J6WOX",
+  "cloudFrontDomain": "d11ymhapp7f3dt.cloudfront.net",
+  "frontendBucket": "taskvista-frontend",
+  "lambdaRoleArn": "arn:aws:iam::312310269639:role/TaskVista-Lambda-Execution-Role",
+  "cognito": {
+    "userPoolId": "us-east-1_PvLPf6TL0",
+    "clientId": "2ouhcok50mfbsek9q3b1cg8d1h",
+    "domain": "https://us-east-1pvlpf6tl0.auth.us-east-1.amazoncognito.com"
+  },
+  "lambdaEnvironment": {
+    "PROJECTS_TABLE": "TaskVista-Projects",
+    "TASKS_TABLE": "TaskVista-Tasks",
+    "COMMENTS_TABLE": "TaskVista-Comments",
+    "ATTACHMENTS_BUCKET": "taskvista-attachments",
+    "COGNITO_USER_POOL_ID": "us-east-1_PvLPf6TL0"
+  }
+}

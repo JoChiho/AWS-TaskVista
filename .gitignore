@@ -1,0 +1,39 @@
+# デプロイ・ビルド成果物
+.deploy-tmp/
+dist/
+backend/dist/
+
+# 依存関係
+node_modules/
+venv/
+
+# 機密設定（テンプレートのみコミット）
+deploy.config.json
+frontend/.env.development
+frontend/.env.production
+backend/.env
+backend/.env.local
+.env
+.env.local
+
+# Cursor / IDE 作業ディレクトリ（プロジェクトルートのみ）
+/src/
+.vscode/
+.idea/
+*.suo
+*.sw?
+
+# OS
+.DS_Store
+Thumbs.db
+
+# ログ・キャッシュ
+*.log
+npm-debug.log*
+.eslintcache
+*.tsbuildinfo
+coverage/
+__screenshots__/
+
+# 一時ファイル
+scripts/tmp/

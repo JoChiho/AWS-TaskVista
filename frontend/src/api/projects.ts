@@ -1,0 +1,36 @@
+// プロジェクト API 呼び出し層
+import apiClient from './client'
+import type { Project, CreateProjectPayload, UpdateProjectPayload } from '@/types/project'
+import type { ApiResponse } from '@/types/comment'
+
+/** プロジェクト一覧を取得する */
+export async function fetchProjects(): Promise<Project[]> {
+  const response = await apiClient.get<ApiResponse<Project[]>>('/projects')
+  return response.data.data
+}
+
+/** プロジェクト詳細を取得する */
+export async function fetchProject(projectId: string): Promise<Project> {
+  const response = await apiClient.get<ApiResponse<Project>>(`/projects/${projectId}`)
+  return response.data.data
+}
+
+/** 新しいプロジェクトを作成する */
+export async function createProject(payload: CreateProjectPayload): Promise<Project> {
+  const response = await apiClient.post<ApiResponse<Project>>('/projects', payload)
+  return response.data.data
+}
+
+/** プロジェクト情報を更新する */
+export async function updateProject(
+  projectId: string,
+  payload: UpdateProjectPayload,
+): Promise<Project> {
+  const response = await apiClient.put<ApiResponse<Project>>(`/projects/${projectId}`, payload)
+  return response.data.data
+}
+
+/** プロジェクトを論理削除する */
+export async function deleteProject(projectId: string): Promise<void> {
+  await apiClient.delete(`/projects/${projectId}`)
+}

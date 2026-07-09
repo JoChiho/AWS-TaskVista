@@ -1,0 +1,13 @@
+{
+  "name": "taskvista",
+  "version": "1.0.0",
+  "private": true,
+  "description": "TaskVista - タスク管理 Web アプリケーション",
+  "scripts": {
+    "deploy": "node scripts/deploy.mjs",
+    "deploy:backend": "node scripts/deploy.mjs --backend",
+    "deploy:frontend": "node scripts/deploy.mjs --frontend",
+    "deploy:bootstrap": "node scripts/deploy.mjs --bootstrap",
+    "deploy:dry-run": "node scripts/deploy.mjs --dry-run"
+  }
+}

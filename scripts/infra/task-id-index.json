@@ -1,0 +1,9 @@
+[
+  {
+    "Create": {
+      "IndexName": "TaskIdIndex",
+      "KeySchema": [{ "AttributeName": "taskId", "KeyType": "HASH" }],
+      "Projection": { "ProjectionType": "ALL" }
+    }
+  }
+]

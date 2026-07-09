@@ -1,0 +1,12 @@
+[
+  {
+    "Create": {
+      "IndexName": "AssigneeIndex",
+      "KeySchema": [
+        { "AttributeName": "assigneeId", "KeyType": "HASH" },
+        { "AttributeName": "dueDate", "KeyType": "RANGE" }
+      ],
+      "Projection": { "ProjectionType": "ALL" }
+    }
+  }
+]
