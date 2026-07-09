@@ -1,0 +1,56 @@
+{
+  "Parameters": {
+    "PROJECTS_TABLE": "TaskVista-Projects",
+    "TASKS_TABLE": "TaskVista-Tasks",
+    "COMMENTS_TABLE": "TaskVista-Comments",
+    "ATTACHMENTS_BUCKET": "taskvista-attachments",
+    "COGNITO_USER_POOL_ID": "us-east-1_PvLPf6TL0",
+    "AWS_REGION": "us-east-1",
+    "LOCAL_DEV": "1"
+  },
+  "ProjectsFunction": {
+    "PROJECTS_TABLE": "TaskVista-Projects",
+    "TASKS_TABLE": "TaskVista-Tasks",
+    "COMMENTS_TABLE": "TaskVista-Comments",
+    "ATTACHMENTS_BUCKET": "taskvista-attachments",
+    "COGNITO_USER_POOL_ID": "us-east-1_PvLPf6TL0",
+    "AWS_REGION": "us-east-1",
+    "LOCAL_DEV": "1"
+  },
+  "TasksFunction": {
+    "PROJECTS_TABLE": "TaskVista-Projects",
+    "TASKS_TABLE": "TaskVista-Tasks",
+    "COMMENTS_TABLE": "TaskVista-Comments",
+    "ATTACHMENTS_BUCKET": "taskvista-attachments",
+    "COGNITO_USER_POOL_ID": "us-east-1_PvLPf6TL0",
+    "AWS_REGION": "us-east-1",
+    "LOCAL_DEV": "1"
+  },
+  "CommentsFunction": {
+    "PROJECTS_TABLE": "TaskVista-Projects",
+    "TASKS_TABLE": "TaskVista-Tasks",
+    "COMMENTS_TABLE": "TaskVista-Comments",
+    "ATTACHMENTS_BUCKET": "taskvista-attachments",
+    "COGNITO_USER_POOL_ID": "us-east-1_PvLPf6TL0",
+    "AWS_REGION": "us-east-1",
+    "LOCAL_DEV": "1"
+  },
+  "AttachmentsFunction": {
+    "PROJECTS_TABLE": "TaskVista-Projects",
+    "TASKS_TABLE": "TaskVista-Tasks",
+    "COMMENTS_TABLE": "TaskVista-Comments",
+    "ATTACHMENTS_BUCKET": "taskvista-attachments",
+    "COGNITO_USER_POOL_ID": "us-east-1_PvLPf6TL0",
+    "AWS_REGION": "us-east-1",
+    "LOCAL_DEV": "1"
+  },
+  "DashboardFunction": {
+    "PROJECTS_TABLE": "TaskVista-Projects",
+    "TASKS_TABLE": "TaskVista-Tasks",
+    "COMMENTS_TABLE": "TaskVista-Comments",
+    "ATTACHMENTS_BUCKET": "taskvista-attachments",
+    "COGNITO_USER_POOL_ID": "us-east-1_PvLPf6TL0",
+    "AWS_REGION": "us-east-1",
+    "LOCAL_DEV": "1"
+  }
+}

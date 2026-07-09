@@ -1,0 +1,196 @@
+# SAM template — 本地 sam local start-api 用
+# 生产部署仍使用 scripts/deploy.mjs（不强制改用 sam deploy）
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: TaskVista local Lambda + HTTP API (SAM)
+
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    Timeout: 30
+    MemorySize: 256
+    Architectures:
+      - x86_64
+    Environment:
+      Variables:
+        PROJECTS_TABLE: !Ref ProjectsTableName
+        TASKS_TABLE: !Ref TasksTableName
+        COMMENTS_TABLE: !Ref CommentsTableName
+        ATTACHMENTS_BUCKET: !Ref AttachmentsBucketName
+        COGNITO_USER_POOL_ID: !Ref CognitoUserPoolId
+        AWS_NODEJS_CONNECTION_REUSE_ENABLED: '1'
+
+Parameters:
+  ProjectsTableName:
+    Type: String
+    Default: TaskVista-Projects
+  TasksTableName:
+    Type: String
+    Default: TaskVista-Tasks
+  CommentsTableName:
+    Type: String
+    Default: TaskVista-Comments
+  AttachmentsBucketName:
+    Type: String
+    Default: taskvista-attachments
+  CognitoUserPoolId:
+    Type: String
+    Default: us-east-1_PvLPf6TL0
+
+Resources:
+  TaskVistaHttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: local
+      CorsConfiguration:
+        AllowOrigins:
+          - '*'
+        AllowHeaders:
+          - Content-Type
+          - Authorization
+          - X-Correlation-Id
+          - X-Dev-User-Sub
+          - X-Dev-User-Email
+          - X-Dev-User-Name
+        AllowMethods:
+          - GET
+          - POST
+          - PUT
+          - PATCH
+          - DELETE
+          - OPTIONS
+
+  ProjectsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: taskvista-projects-local
+      CodeUri: backend/
+      Handler: dist/projects/handler.handler
+      Events:
+        ListCreateProjects:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref TaskVistaHttpApi
+            Path: /projects
+            Method: ANY
+        ProjectById:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref TaskVistaHttpApi
+            Path: /projects/{projectId}
+            Method: ANY
+        ProjectMembers:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref TaskVistaHttpApi
+            Path: /projects/{projectId}/members
+            Method: ANY
+        ProjectMemberByKey:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref TaskVistaHttpApi
+            Path: /projects/{projectId}/members/{memberKey}
+            Method: ANY
+
+  TasksFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: taskvista-tasks-local
+      CodeUri: backend/
+      Handler: dist/tasks/handler.handler
+      Events:
+        ProjectTasks:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref TaskVistaHttpApi
+            Path: /projects/{projectId}/tasks
+            Method: ANY
+        TaskById:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref TaskVistaHttpApi
+            Path: /tasks/{taskId}
+            Method: ANY
+        TaskStatus:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref TaskVistaHttpApi
+            Path: /tasks/{taskId}/status
+            Method: ANY
+
+  CommentsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: taskvista-comments-local
+      CodeUri: backend/
+      Handler: dist/comments/handler.handler
+      Events:
+        TaskComments:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref TaskVistaHttpApi
+            Path: /tasks/{taskId}/comments
+            Method: ANY
+        TaskCommentById:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref TaskVistaHttpApi
+            Path: /tasks/{taskId}/comments/{commentId}
+            Method: ANY
+
+  AttachmentsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: taskvista-attachments-local
+      CodeUri: backend/
+      Handler: dist/attachments/handler.handler
+      Events:
+        ListAttachments:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref TaskVistaHttpApi
+            Path: /tasks/{taskId}/attachments
+            Method: ANY
+        UploadUrl:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref TaskVistaHttpApi
+            Path: /tasks/{taskId}/attachments/upload-url
+            Method: ANY
+        AttachmentById:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref TaskVistaHttpApi
+            Path: /tasks/{taskId}/attachments/{attachmentId}
+            Method: ANY
+        DownloadUrl:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref TaskVistaHttpApi
+            Path: /tasks/{taskId}/attachments/{attachmentId}/download-url
+            Method: ANY
+
+  DashboardFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: taskvista-dashboard-local
+      CodeUri: backend/
+      Handler: dist/dashboard/handler.handler
+      Events:
+        Summary:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref TaskVistaHttpApi
+            Path: /dashboard/summary
+            Method: GET
+        MyTasks:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref TaskVistaHttpApi
+            Path: /dashboard/my-tasks
+            Method: GET
+
+Outputs:
+  LocalApiUrl:
+    Description: SAM local API base (when using sam local start-api)
+    Value: !Sub 'https://${TaskVistaHttpApi}.execute-api.${AWS::Region}.amazonaws.com/local'

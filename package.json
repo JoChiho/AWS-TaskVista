@@ -8,6 +8,9 @@
     "deploy:backend": "node scripts/deploy.mjs --backend",
     "deploy:frontend": "node scripts/deploy.mjs --frontend",
     "deploy:bootstrap": "node scripts/deploy.mjs --bootstrap",
-    "deploy:dry-run": "node scripts/deploy.mjs --dry-run"
+    "deploy:dry-run": "node scripts/deploy.mjs --dry-run",
+    "local:build": "node scripts/local-build.mjs",
+    "local:api": "node scripts/local-api.mjs",
+    "local:sam": "node scripts/local-sam.mjs"
   }
 }

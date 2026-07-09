@@ -1,0 +1,13 @@
+# SAM CLI 本地默认参数（sam local start-api）
+version = 0.1
+
+[default.local_start_api.parameters]
+warm_containers = "EAGER"
+port = 3001
+env_vars = "env/local.json"
+# 使用本机 AWS 凭证访问真实 DynamoDB / Cognito / S3
+# 需要 Docker Desktop 运行中
+
+[default.build.parameters]
+cached = true
+parallel = true

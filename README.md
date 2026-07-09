@@ -7,10 +7,12 @@
 ```
 AWS-TaskVista/
 ├── frontend/          # Vue 3 前端（Vite 本地热更新）
-├── backend/           # Lambda 后端 TypeScript + Vitest
-├── scripts/           # 部署与运维脚本
-├── .kiro/             # 规格 / 设计文档
-├── deploy.config.json # 部署配置（勿提交密钥；见 .gitignore）
+├── backend/           # Lambda 后端 TypeScript + Vitest + dist/
+├── scripts/           # 部署 + 本地 API / SAM 脚本
+├── template.yaml      # AWS SAM 模板（sam local）
+├── env/local.json     # SAM / 本地 Lambda 环境变量
+├── samconfig.toml     # SAM CLI 默认参数
+├── deploy.config.json # 生产部署配置
 └── README.md
 ```
 
@@ -18,50 +20,142 @@ AWS-TaskVista/
 
 ## 推荐开发方式（本地优先）
 
-日常修 Bug / 加功能时，**不必每次 `deploy`**。建议：
+日常修 Bug / 加功能时，**不必每次 `deploy`**。
 
 | 改动类型 | 本地怎么做 | 何时再 deploy |
 |----------|------------|----------------|
-| 前端 UI、状态、路由 | `frontend` 下 `npm run dev` | 功能稳定后部署前端 |
-| 后端业务逻辑 | `backend` 下 `npm test` / `test:watch` | 测试通过后部署后端 |
-| 端到端（登录 + 真 API） | 本地前端 + **已部署的** API/Cognito | 仅在需要联调线上数据时 |
+| 前端 UI、状态、路由 | `frontend` → `npm run dev` | 稳定后 `deploy:frontend` |
+| 后端业务逻辑 | Vitest + **本地 Lambda API** | 稳定后 `deploy:backend` |
+| 端到端联调 | 前端 :5173 + 本地 API :3001 + 云端 DynamoDB/Cognito | 功能完成后再 deploy |
 
-后端是 Lambda，没有单独的 `npm run dev` HTTP 服务；逻辑验证以 **Vitest 单元测试** 为主，联调时连云端 API。
+### 本地后端两条路径
+
+| 路径 | 命令 | 依赖 | 说明 |
+|------|------|------|------|
+| **B. Node Local API（推荐先用）** | `npm run local:api` | 仅 Node + AWS 凭证 | 无 Docker，直接调 `backend/dist` handler |
+| **A. SAM Local** | `npm run local:sam` | **Docker Desktop + SAM CLI** | 更接近生产冷启动/容器 |
+
+两者都连 **真实 AWS** 表/桶/用户池（用本机 `aws configure` 凭证），只是 Lambda **进程在本地执行**。
+
+```
+frontend :5173  ──►  local API :3001  ──►  本地 handler (dist)
+                              │
+                              └──►  DynamoDB / Cognito / S3（云端）
+```
 
 ---
 
 ## 1. 环境准备
 
 ```powershell
-# 需要 Node.js 20+
+# Node.js 20+
 node -v
 
-# 安装依赖（首次，或 package.json 变更后）
 cd C:\my_workspace\AWS-TaskVista\frontend
 npm install
 
 cd C:\my_workspace\AWS-TaskVista\backend
 npm install
+
+# 本地 API 访问真实 DynamoDB 需要 AWS 凭证
+aws sts get-caller-identity
 ```
 
-部署到 AWS 时才需要 AWS CLI 与凭证；纯前端开发 + 后端单测可以不配置 AWS。
+### （可选）SAM Local 额外依赖
+
+1. [Docker Desktop](https://www.docker.com/products/docker-desktop/) — 保持运行  
+2. [AWS SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html)  
+3. 验证：`sam --version` / `docker version`
+
+未安装时请用 `npm run local:api`。
 
 ---
 
-## 2. 前端本地运行
+## 2. 三终端：完整本地联调（改前后端）
 
-### 2.1 配置环境变量
+### 终端 1 — 编译后端
+
+```powershell
+cd C:\my_workspace\AWS-TaskVista
+npm run local:build
+# 改代码后重复执行；或:
+cd backend
+npx tsc -w
+```
+
+### 终端 2 — 本地 Lambda API（:3001）
+
+```powershell
+# 在仓库根目录：
+cd C:\my_workspace\AWS-TaskVista
+npm run local:api
+
+# 或在 backend 目录也可以（脚本已转发到根目录）：
+# cd C:\my_workspace\AWS-TaskVista\backend
+# npm run local:build
+# npm run local:api
+
+# 已装 Docker + SAM 时：
+# npm run local:sam
+```
+
+看到 `URL: http://127.0.0.1:3001` 即成功。
+
+**认证方式：**
+
+1. **正常联调**：前端 Cognito 登录，请求自动带 ID Token  
+2. **curl / 快速 mock**（`LOCAL_DEV=1`，默认开启）：
+
+```powershell
+curl http://127.0.0.1:3001/projects `
+  -H "X-Dev-User-Sub: your-cognito-sub" `
+  -H "X-Dev-User-Email: you@example.com" `
+  -H "X-Dev-User-Name: テスト"
+```
+
+改 `backend/src` 后：再跑 `npm run local:build`，**重启** `local:api`（或设 `FORCE_RELOAD=1`）。
+
+### 终端 3 — 前端
 
 ```powershell
 cd C:\my_workspace\AWS-TaskVista\frontend
-copy .env.example .env.development
+# .env.development 中应为:
+# VITE_API_BASE_URL=http://127.0.0.1:3001
+npm run dev
 ```
 
-编辑 `frontend/.env.development`（示例，请按你的 `deploy.config.json` 填写）：
+浏览器：**http://localhost:5173**
+
+### Cognito 本地回调（必须）
+
+| 类型 | URL |
+|------|-----|
+| 回调 | `http://localhost:5173/callback` |
+| 登出 | `http://localhost:5173/login` |
+
+在 Cognito 应用客户端中与线上 CloudFront URL 一并配置。
+
+---
+
+## 3. 前端本地命令
+
+```powershell
+cd frontend
+npm run dev          # 开发服务器
+npm run type-check
+npm run build
+npm run preview
+npm run lint
+```
+
+`.env.development` 示例：
 
 ```env
-# 指向已部署的 API（本地前端 + 云端后端联调）
-VITE_API_BASE_URL=https://65suijwhx5.execute-api.us-east-1.amazonaws.com/prod
+# 本地 Lambda API（Node 或 SAM）
+VITE_API_BASE_URL=http://127.0.0.1:3001
+
+# 若要改回「前端本地 + 云端 API」则改为:
+# VITE_API_BASE_URL=https://65suijwhx5.execute-api.us-east-1.amazonaws.com/prod
 
 VITE_COGNITO_USER_POOL_ID=us-east-1_PvLPf6TL0
 VITE_COGNITO_CLIENT_ID=2ouhcok50mfbsek9q3b1cg8d1h
@@ -69,124 +163,72 @@ VITE_COGNITO_DOMAIN=https://us-east-1pvlpf6tl0.auth.us-east-1.amazoncognito.com
 VITE_COGNITO_REDIRECT_URI=http://localhost:5173/callback
 ```
 
-### 2.2 启动开发服务器
-
-```powershell
-cd C:\my_workspace\AWS-TaskVista\frontend
-npm run dev
-```
-
-浏览器打开：**http://localhost:5173**
-
-修改 `src/` 下 Vue/TS 会热更新，保存即生效。
-
-### 2.3 Cognito 本地回调（必须）
-
-在 AWS Cognito → 应用客户端 → 托管 UI / 回调 URL 中，确保包含：
-
-| 类型 | URL |
-|------|-----|
-| 回调 URL | `http://localhost:5173/callback` |
-| 登出 URL | `http://localhost:5173/login` |
-
-同时保留线上 CloudFront 的 callback/login。未配置时本地登录会跳转失败。
-
-### 2.4 前端其他命令
-
-```powershell
-cd frontend
-npm run type-check   # vue-tsc 类型检查
-npm run build        # 生产构建（dist/）
-npm run preview      # 预览构建结果
-npm run lint         # ESLint / oxlint
-npm run format       # Prettier
-```
-
 ---
 
-## 3. 后端本地开发与测试
+## 4. 后端单元测试（不启 HTTP）
 
-后端以 **单元测试驱动** 开发：改 `backend/src/` → 跑测试 → 通过后再 deploy。
+改 Service 逻辑时先用 Vitest（不访问 AWS）：
 
 ```powershell
-cd C:\my_workspace\AWS-TaskVista\backend
-
-npm test             # 跑完全部单元测试（当前约 53 项）
-npm run test:watch   # 监视模式：改文件自动重跑（推荐日常开发）
-npm run type-check   # tsc --noEmit
-npm run build        # 编译到 dist/（部署前脚本会自动执行）
+cd backend
+npm test
+npm run test:watch
+npm run type-check
 ```
-
-### 测试覆盖
 
 | 目录 | 内容 |
 |------|------|
-| `tests/shared/` | context、response、types、权限 |
-| `tests/projects/` | 项目 CRUD、成员添加/删除 |
-| `tests/tasks/` | 任务 CRUD、状态更新 |
-| `tests/comments/` | 评论创建/删除权限 |
-| `tests/attachments/` | 文件大小、预签名 URL |
-| `tests/dashboard/` | 统计聚合、担当任务 |
+| `tests/shared/` | context、response、types |
+| `tests/projects/` | 项目 / 成员 |
+| `tests/tasks/` | 任务 |
+| `tests/comments/` | 评论 |
+| `tests/attachments/` | 附件 |
+| `tests/dashboard/` | 仪表盘 |
 
-测试用 mock，**不访问真实 AWS**，可离线反复跑。
-
-### 建议工作流（后端）
-
-```text
-1. 在 backend/src 修改逻辑
-2. 在 backend/tests 补充或改测试用例
-3. npm run test:watch  确认通过
-4. 需要联调真实 DynamoDB / Cognito 时再：
-   cd ..  &&  npm run deploy:backend
-```
+建议：`test:watch` 绿 → `local:build` + 重启 `local:api` → 浏览器验证 → 最后 `deploy:backend`。
 
 ---
 
-## 4. 本地前端 + 云端 API 联调
+## 5. SAM 相关文件说明
 
-适合验证：登录、项目成员、评论、担当者、真实 DynamoDB 数据。
-
-```powershell
-# 终端 1：只开前端
-cd frontend
-npm run dev
-```
-
-- API 走 `VITE_API_BASE_URL`（已部署的 API Gateway）
-- 登录走 Cognito Hosted UI，回调回 `localhost:5173`
-- 改前端代码立即可见；**后端改动需 deploy:backend 后才影响联调结果**
-
-纯前端逻辑（布局、表单校验、Pinia 状态）不必等 deploy。
+| 文件 | 作用 |
+|------|------|
+| `template.yaml` | 5 个 Function + HTTP API 路由（与线上一致） |
+| `env/local.json` | `sam local --env-vars` 表名 / 池 ID |
+| `samconfig.toml` | 默认端口 3001 等 |
+| `scripts/local-api.mjs` | 无 Docker 的本地网关 |
+| `scripts/local-jwt.mjs` | 解析 Bearer JWT / Dev mock 头 |
+| `scripts/local-sam.mjs` | 封装 `sam local start-api` |
+| `scripts/local-build.mjs` | `backend` tsc 编译 |
 
 ---
 
-## 5. 常用命令速查（PowerShell）
-
-在仓库根目录 `C:\my_workspace\AWS-TaskVista`：
+## 6. 常用命令速查
 
 ```powershell
-# ---------- 前端本地开发 ----------
-cd frontend; npm install; npm run dev
+cd C:\my_workspace\AWS-TaskVista
 
-# ---------- 后端测试 ----------
-cd backend; npm install; npm test
+# ---------- 本地 Lambda + 前端 ----------
+npm run local:build          # 编译 backend → dist
+npm run local:api            # 本地 API :3001（推荐）
+npm run local:sam            # SAM Local（需 Docker）
+# 在 backend 目录也可: cd backend; npm run local:build; npm run local:api
+
+cd frontend; npm run dev     # 前端 :5173
+
+# ---------- 仅单测 ----------
 cd backend; npm run test:watch
 
-# ---------- 类型检查 ----------
-cd frontend; npm run type-check
-cd backend; npm run type-check
-
-# ---------- 部署（功能稳定后再做）----------
-npm run deploy:backend     # 仅 Lambda
-npm run deploy:frontend    # 仅 S3 + CloudFront
-npm run deploy             # 后端 + 前端
-npm run deploy:dry-run     # 只打印步骤，不调 AWS
-npm run deploy:bootstrap   # 首次：Lambda + API 路由等
+# ---------- 部署（稳定后再做，须在仓库根目录）----------
+npm run deploy:backend
+npm run deploy:frontend
+npm run deploy
+npm run deploy:dry-run
 ```
 
 ---
 
-## 6. AWS 部署（简要）
+## 7. AWS 部署（简要）
 
 部署脚本：`scripts/deploy.mjs`。配置文件：`deploy.config.json`（从 `deploy.config.example.json` 复制）。
 
@@ -229,7 +271,7 @@ aws sts get-caller-identity
 
 ---
 
-## 7. 环境变量参考
+## 8. 环境变量参考
 
 ### Lambda（`deploy.config.json` → `lambdaEnvironment`）
 
@@ -253,7 +295,7 @@ aws sts get-caller-identity
 
 ---
 
-## 8. 常见问题
+## 9. 常见问题
 
 **Q: 本地改了前端，线上没变化？**  
 A: 正常。本地只影响 `localhost`。上线需 `npm run deploy:frontend`。

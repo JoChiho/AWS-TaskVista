@@ -8,7 +8,10 @@
     "type-check": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "clean": "node -e \"import('fs').then(fs=>fs.rmSync('dist',{recursive:true,force:true}))\""
+    "clean": "node -e \"import('fs').then(fs=>fs.rmSync('dist',{recursive:true,force:true}))\"",
+    "local:build": "tsc",
+    "local:api": "node ../scripts/local-api.mjs",
+    "local:sam": "node ../scripts/local-sam.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-cognito-identity-provider": "^3.1083.0",
