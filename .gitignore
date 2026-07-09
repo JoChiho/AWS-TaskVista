@@ -2,10 +2,12 @@
 .deploy-tmp/
 dist/
 backend/dist/
+frontend/dist/
 
 # 依存関係
 node_modules/
 venv/
+.venv/
 
 # 機密設定（テンプレートのみコミット）
 deploy.config.json
@@ -15,25 +17,53 @@ backend/.env
 backend/.env.local
 .env
 .env.local
+*.pem
+*.key
 
-# Cursor / IDE 作業ディレクトリ（プロジェクトルートのみ）
+# Grok / Cursor / IDE 作業ディレクトリ
 /src/
 .vscode/
 .idea/
 *.suo
 *.sw?
+*.ntvs*
+*.njsproj
+*.sln
 
 # OS
 .DS_Store
 Thumbs.db
+Desktop.ini
 
 # ログ・キャッシュ
 *.log
 npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 .eslintcache
 *.tsbuildinfo
 coverage/
 __screenshots__/
+.cache/
 
-# 一時ファイル
+# 一時ファイル・エージェント用 MCP プッシュ作業物（コミット不要）
 scripts/tmp/
+scripts/_*/
+scripts/_*
+scripts/mcp-*
+scripts/mcp-*/
+scripts/single-files/
+scripts/batch-*.json
+scripts/all-paths.json
+scripts/files-manifest.json
+scripts/push-*
+scripts/split-*.js
+scripts/split-*.mjs
+scripts/collect-files.mjs
+scripts/check-remote*.mjs
+scripts/count-remote-files.mjs
+scripts/list-*.mjs
+scripts/load-batch.mjs
+scripts/make-push-batches.mjs
+scripts/run-all-mcp-pushes.mjs
