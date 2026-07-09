@@ -10,6 +10,8 @@ vi.mock('../../src/projects/service.js', () => ({
   getProject: vi.fn(),
   updateProject: vi.fn(),
   deleteProject: vi.fn(),
+  addProjectMember: vi.fn(),
+  removeProjectMember: vi.fn(),
 }))
 
 describe('projects/handler', () => {

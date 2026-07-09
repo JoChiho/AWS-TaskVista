@@ -57,7 +57,7 @@ const headers = [
   { title: '要望', key: 'requirement', sortable: false },
   { title: 'タイトル', key: 'title', sortable: true },
   { title: 'ステータス', key: 'status', sortable: true, width: '130px' },
-  { title: '担当者', key: 'assigneeId', sortable: true, width: '120px' },
+  { title: '担当者', key: 'assigneeName', sortable: true, width: '120px' },
   { title: '優先度', key: 'priority', sortable: true, width: '100px' },
   { title: '期日', key: 'dueDate', sortable: true, width: '120px' },
   { title: '作成日', key: 'createdAt', sortable: true, width: '120px' },
@@ -72,7 +72,7 @@ const filteredTasks = computed<Task[]>(() => {
     // ステータスフィルター
     if (filterStatus.value && task.status !== filterStatus.value) return false
     // 担当者フィルター
-    if (filterAssignee.value && task.assigneeId !== filterAssignee.value) return false
+    if (filterAssignee.value && (task.assigneeName || '').trim() !== filterAssignee.value) return false
     // 優先度フィルター
     if (filterPriority.value && task.priority !== filterPriority.value) return false
     // タイトルあいまい検索（大文字小文字を区別しない）
@@ -218,9 +218,9 @@ onMounted(async () => {
       </template>
 
       <!-- 担当者カラム -->
-      <template #[`item.assigneeId`]="{ item }">
+      <template #[`item.assigneeName`]="{ item }">
         <span class="text-body-2">
-          {{ item.assigneeName || (item.assigneeId ? item.assigneeId.slice(0, 8) + '…' : '—') }}
+          {{ item.assigneeName || '—' }}
         </span>
       </template>
 

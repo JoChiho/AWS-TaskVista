@@ -14,6 +14,8 @@ export interface Comment {
 /** コメント作成リクエスト */
 export interface CreateCommentPayload {
   content: string
+  /** 表示用の投稿者名 */
+  authorDisplayName?: string
 }
 
 /** 添付ファイルアップロード URL リクエスト */

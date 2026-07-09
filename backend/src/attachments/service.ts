@@ -17,7 +17,7 @@ const uploadUrlSchema = z.object({
     .max(MAX_FILE_SIZE, 'ファイルサイズが上限（50MB）を超えています'),
 })
 
-async function getAccessibleTask(taskId: string, userId: string) {
+async function getAccessibleTask(taskId: string, userId: string, email?: string) {
   const task = await repository.getTaskById(taskId)
   if (!task || task.isDeleted) {
     throw new NotFoundError('タスクが見つかりません')
@@ -28,7 +28,7 @@ async function getAccessibleTask(taskId: string, userId: string) {
     throw new NotFoundError('プロジェクトが見つかりません')
   }
 
-  if (!canAccessProject(project, userId)) {
+  if (!canAccessProject(project, userId, email)) {
     throw new ForbiddenError('このタスクへのアクセス権限がありません')
   }
 

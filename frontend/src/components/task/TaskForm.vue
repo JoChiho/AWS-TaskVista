@@ -25,7 +25,7 @@ const status = ref<TaskStatus>('未着手')
 const priority = ref<TaskPriority>('medium')
 const location = ref('')
 const requirement = ref('')
-const assigneeId = ref('')
+const assigneeName = ref('')
 const dueDate = ref('')
 
 // バリデーションルール
@@ -54,7 +54,7 @@ watch(modelValue, (isOpen) => {
       priority.value = props.task.priority
       location.value = props.task.location ?? ''
       requirement.value = props.task.requirement ?? ''
-      assigneeId.value = props.task.assigneeId ?? ''
+      assigneeName.value = props.task.assigneeName ?? ''
       dueDate.value = props.task.dueDate ?? ''
     } else {
       // 作成モード：デフォルト値を設定する
@@ -64,7 +64,7 @@ watch(modelValue, (isOpen) => {
       priority.value = 'medium'
       location.value = ''
       requirement.value = ''
-      assigneeId.value = ''
+      assigneeName.value = ''
       dueDate.value = ''
     }
   }
@@ -81,7 +81,7 @@ async function handleSubmit() {
     priority: priority.value,
     location: location.value.trim() || undefined,
     requirement: requirement.value.trim() || undefined,
-    assigneeId: assigneeId.value.trim() || undefined,
+    assigneeName: assigneeName.value.trim() || undefined,
     dueDate: dueDate.value || undefined,
   }
 
@@ -164,10 +164,11 @@ const isEditMode = !!props.task
           <v-row dense class="mb-1 mt-3">
             <v-col cols="6">
               <v-text-field
-                v-model="assigneeId"
-                label="担当者 ID（任意）"
-                placeholder="Cognito sub を入力"
-                hide-details
+                v-model="assigneeName"
+                label="担当者（任意）"
+                placeholder="例：鮫島 / 徐"
+                hint="人名で記録します"
+                persistent-hint
               />
             </v-col>
             <v-col cols="6">

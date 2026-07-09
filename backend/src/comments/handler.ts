@@ -20,7 +20,7 @@ export async function handler(
     }
 
     if (method === 'GET') {
-      const comments = await service.listComments(taskId, user.userId)
+      const comments = await service.listComments(taskId, user.userId, user.email)
       logInfo(correlationId, 'コメント一覧を取得しました', {
         requestId: event.requestContext.requestId,
         userId: user.userId,
@@ -36,6 +36,7 @@ export async function handler(
         user.userId,
         user.name,
         parseBody(event),
+        user.email,
       )
       logInfo(correlationId, 'コメントを作成しました', {
         requestId: event.requestContext.requestId,
@@ -47,7 +48,7 @@ export async function handler(
     }
 
     if (method === 'DELETE' && commentId) {
-      await service.deleteComment(taskId, commentId, user.userId)
+      await service.deleteComment(taskId, commentId, user.userId, user.email)
       logInfo(correlationId, 'コメントを削除しました', {
         requestId: event.requestContext.requestId,
         userId: user.userId,

@@ -3,6 +3,13 @@
 /** プロジェクトのステータス */
 export type ProjectStatus = 'active' | 'archived'
 
+/** プロジェクトメンバー */
+export interface ProjectMember {
+  userId?: string
+  email: string
+  displayName: string
+}
+
 /** プロジェクトエンティティ */
 export interface Project {
   projectId: string
@@ -11,6 +18,8 @@ export interface Project {
   status: ProjectStatus
   createdBy: string
   memberIds: string[]
+  memberEmails?: string[]
+  members?: ProjectMember[]
   createdAt: string
   updatedAt: string
   isDeleted: boolean
@@ -20,6 +29,7 @@ export interface Project {
 export interface CreateProjectPayload {
   name: string
   description?: string
+  creatorDisplayName?: string
 }
 
 /** プロジェクト更新リクエスト */
@@ -28,6 +38,12 @@ export interface UpdateProjectPayload {
   description?: string
   status?: ProjectStatus
   memberIds?: string[]
+}
+
+/** メンバー追加リクエスト */
+export interface AddProjectMemberPayload {
+  email: string
+  displayName?: string
 }
 
 /** ダッシュボード用のプロジェクト概要 */

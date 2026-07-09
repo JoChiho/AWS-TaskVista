@@ -103,15 +103,15 @@ function isDueSoon(dueDate?: string): boolean {
           {{ formatDueDate(task.dueDate) }}
         </span>
 
-        <!-- 担当者アバター（存在する場合のみ） -->
+        <!-- 担当者アバター（人名がある場合のみ） -->
         <v-avatar
-          v-if="task.assigneeId"
+          v-if="task.assigneeName"
           size="20"
           color="primary"
-          :title="task.assigneeName || task.assigneeId"
+          :title="task.assigneeName"
         >
           <span style="font-size: 9px; color: white">
-            {{ (task.assigneeName || task.assigneeId).slice(0, 2).toUpperCase() }}
+            {{ task.assigneeName.slice(0, 2).toUpperCase() }}
           </span>
         </v-avatar>
       </div>

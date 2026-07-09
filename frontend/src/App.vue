@@ -1,16 +1,38 @@
 <script setup lang="ts">
 // アプリケーションルートコンポーネント
 import { RouterView, useRoute } from 'vue-router'
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useUiStore } from '@/stores/ui'
+import { useAuthStore } from '@/stores/auth'
 import AppNav from '@/components/layout/AppNav.vue'
+import ProfileDialog from '@/components/common/ProfileDialog.vue'
 
 const uiStore = useUiStore()
+const authStore = useAuthStore()
 const route = useRoute()
 
 // ナビゲーションを非表示にするルート（ログイン、コールバック）
 const hideNav = computed(() =>
-  ['login', 'callback'].includes(route.name as string)
+  ['login', 'callback'].includes(route.name as string),
+)
+
+/** 初回ログイン時：表示名未設定なら強制ダイアログ */
+const forceProfile = ref(false)
+
+watch(
+  () => [authStore.isAuthenticated, authStore.hasCustomDisplayName, route.name] as const,
+  ([authed, hasName, name]) => {
+    if (!authed) {
+      forceProfile.value = false
+      return
+    }
+    if (name === 'login' || name === 'callback') {
+      forceProfile.value = false
+      return
+    }
+    forceProfile.value = !hasName
+  },
+  { immediate: true },
 )
 </script>
 
@@ -24,6 +46,9 @@ const hideNav = computed(() =>
     <v-main>
       <RouterView />
     </v-main>
+
+    <!-- 初回表示名の強制設定（キャンセル不可） -->
+    <ProfileDialog v-model="forceProfile" :required="true" />
 
     <!-- グローバルスナックバー通知 -->
     <v-snackbar

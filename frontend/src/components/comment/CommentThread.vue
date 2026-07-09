@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // コメントスレッドコンポーネント
 // タスク詳細内でコメント一覧の表示と投稿を担当する
-import { ref, onMounted } from 'vue'
+import { ref, watch } from 'vue'
 import { useCommentsStore } from '@/stores/comments'
 import { useAuthStore } from '@/stores/auth'
 
@@ -18,7 +18,7 @@ const newCommentContent = ref('')
 /** コメントを投稿する */
 async function submitComment() {
   const content = newCommentContent.value.trim()
-  if (!content) return
+  if (!content || !props.taskId) return
 
   await commentsStore.createComment(props.taskId, { content })
   newCommentContent.value = ''
@@ -40,9 +40,21 @@ function formatDateTime(dateStr: string): string {
   })
 }
 
-onMounted(() => {
-  commentsStore.fetchComments(props.taskId)
-})
+// タスク ID が変わったら必ずコメントを再取得する（マウント時含む）
+// 以前は onMounted のみだったため、ドロワー内でタスクを切り替えると
+// 別タスクのコメントが表示されたままになる不具合があった
+watch(
+  () => props.taskId,
+  (taskId) => {
+    newCommentContent.value = ''
+    if (taskId) {
+      commentsStore.fetchComments(taskId)
+    } else {
+      commentsStore.clearComments()
+    }
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
@@ -117,7 +129,7 @@ onMounted(() => {
     <div class="d-flex align-start gap-2">
       <v-avatar size="32" color="primary" class="flex-shrink-0 mt-1">
         <span style="font-size: 11px; color: white">
-          {{ (authStore.currentUser?.name || '?').slice(0, 2).toUpperCase() }}
+          {{ (authStore.displayLabel || '?').slice(0, 2).toUpperCase() }}
         </span>
       </v-avatar>
       <div class="flex-grow-1">

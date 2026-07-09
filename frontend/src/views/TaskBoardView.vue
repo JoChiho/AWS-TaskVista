@@ -38,7 +38,7 @@ const filteredTasksByStatus = computed(() => {
   const result: Record<TaskStatus, Task[]> = {} as Record<TaskStatus, Task[]>
   for (const status of TASK_STATUSES) {
     result[status] = tasksStore.tasksByStatus[status].filter((task) => {
-      if (filterAssignee.value && task.assigneeId !== filterAssignee.value) return false
+      if (filterAssignee.value && (task.assigneeName || '').trim() !== filterAssignee.value) return false
       if (filterPriority.value && task.priority !== filterPriority.value) return false
       return true
     })

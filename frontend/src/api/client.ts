@@ -19,8 +19,10 @@ const apiClient: AxiosInstance = axios.create({
  */
 apiClient.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
-    // メモリからアクセストークンを取得する
-    const token = sessionStorage.getItem('accessToken')
+    // ID トークンを優先する（email クレームを含むためメンバー招待の照合に必要）
+    // 無い場合のみアクセストークンにフォールバックする
+    const token =
+      sessionStorage.getItem('idToken') || sessionStorage.getItem('accessToken')
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
     }
@@ -78,10 +80,12 @@ apiClient.interceptors.response.use(
 
         // 新しいトークンを保存する
         sessionStorage.setItem('accessToken', access_token)
-        sessionStorage.setItem('idToken', id_token)
+        if (id_token) {
+          sessionStorage.setItem('idToken', id_token)
+        }
 
-        // 元のリクエストを新しいトークンで再試行する
-        originalRequest.headers.Authorization = `Bearer ${access_token}`
+        // 再試行時も ID トークンを優先する（email クレーム用）
+        originalRequest.headers.Authorization = `Bearer ${id_token || access_token}`
         return apiClient(originalRequest)
       } catch (refreshError) {
         // リフレッシュに失敗した場合、セッション情報を削除してログインページへ遷移する

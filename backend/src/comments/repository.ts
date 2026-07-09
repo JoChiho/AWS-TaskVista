@@ -27,27 +27,36 @@ export async function getCommentById(
   return (result.Item as Comment | undefined) ?? null
 }
 
-/** タスクのコメント一覧を GSI で取得する（作成日時昇順） */
+/**
+ * タスクのコメント一覧を取得する（作成日時昇順）
+ * テーブル PK は (taskId, commentId) なのでベーステーブルを Query する。
+ * GSI 経由だと整合遅延や取り違えの余地があるため使わない。
+ */
 export async function listCommentsByTask(taskId: string): Promise<Comment[]> {
   const result = await docClient.send(
     new QueryCommand({
       TableName: TABLE(),
-      IndexName: 'TaskCommentsIndex',
       KeyConditionExpression: 'taskId = :taskId',
       ExpressionAttributeValues: { ':taskId': taskId },
-      ScanIndexForward: true,
     }),
   )
-  return (result.Items as Comment[] | undefined) ?? []
+  const items = ((result.Items as Comment[] | undefined) ?? []).filter(
+    (c) => c.taskId === taskId,
+  )
+  return items.sort((a, b) => a.createdAt.localeCompare(b.createdAt))
 }
 
 /** コメントを新規作成する */
 export async function createComment(comment: Comment): Promise<Comment> {
+  if (!comment.taskId || !comment.commentId) {
+    throw new Error('taskId と commentId は必須です')
+  }
   await docClient.send(
     new PutCommand({
       TableName: TABLE(),
       Item: comment,
-      ConditionExpression: 'attribute_not_exists(commentId)',
+      ConditionExpression:
+        'attribute_not_exists(taskId) AND attribute_not_exists(commentId)',
     }),
   )
   return comment

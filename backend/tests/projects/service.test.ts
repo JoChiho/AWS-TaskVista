@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ForbiddenError, NotFoundError, ValidationError } from '../../src/shared/errors.js'
+import * as cognito from '../../src/shared/cognito.js'
 import * as repository from '../../src/projects/repository.js'
 import * as service from '../../src/projects/service.js'
 import { makeProject, OTHER_USER, USER_ID } from '../helpers/fixtures.js'
@@ -8,14 +9,29 @@ vi.mock('../../src/projects/repository.js', () => ({
   getProjectById: vi.fn(),
   listProjectsByCreator: vi.fn(),
   listProjectsByMember: vi.fn(),
+  listProjectsByMemberEmail: vi.fn(),
   createProject: vi.fn(),
   updateProject: vi.fn(),
   softDeleteProject: vi.fn(),
 }))
 
+vi.mock('../../src/shared/cognito.js', () => ({
+  findCognitoUserByEmail: vi.fn(),
+}))
+
+const actor = {
+  userId: USER_ID,
+  email: 'user@example.com',
+  name: 'テストユーザー',
+}
+
 describe('projects/service', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(repository.listProjectsByMemberEmail).mockResolvedValue([])
+    vi.mocked(repository.updateProject).mockImplementation(async (_id, updates) =>
+      makeProject(updates as never),
+    )
   })
 
   it('作成者とメンバーのプロジェクトを重複なく一覧取得する', async () => {
@@ -29,7 +45,7 @@ describe('projects/service', () => {
     vi.mocked(repository.listProjectsByCreator).mockResolvedValue([created])
     vi.mocked(repository.listProjectsByMember).mockResolvedValue([member, created])
 
-    const result = await service.listProjects(USER_ID)
+    const result = await service.listProjects(actor)
     expect(result).toHaveLength(2)
     expect(result[0].projectId).toBe('p2')
   })
@@ -37,30 +53,71 @@ describe('projects/service', () => {
   it('プロジェクトを正常に作成する', async () => {
     vi.mocked(repository.createProject).mockImplementation(async (p) => p)
 
-    const result = await service.createProject(USER_ID, {
+    const result = await service.createProject(actor, {
       name: '新規プロジェクト',
       description: '説明',
+      creatorDisplayName: '徐',
     })
 
     expect(result.name).toBe('新規プロジェクト')
     expect(result.createdBy).toBe(USER_ID)
     expect(result.memberIds).toContain(USER_ID)
+    expect(result.members?.[0].displayName).toBe('徐')
+    expect(result.memberEmails).toContain('user@example.com')
   })
 
   it('名前が空の場合は ValidationError', async () => {
-    await expect(service.createProject(USER_ID, { name: '' })).rejects.toThrow(ValidationError)
+    await expect(service.createProject(actor, { name: '' })).rejects.toThrow(ValidationError)
   })
 
   it('存在しないプロジェクトは NotFoundError', async () => {
     vi.mocked(repository.getProjectById).mockResolvedValue(null)
-    await expect(service.getProject('missing', USER_ID)).rejects.toThrow(NotFoundError)
+    await expect(service.getProject('missing', actor)).rejects.toThrow(NotFoundError)
   })
 
   it('権限のないプロジェクトは ForbiddenError', async () => {
     vi.mocked(repository.getProjectById).mockResolvedValue(
-      makeProject({ createdBy: OTHER_USER, memberIds: [OTHER_USER] }),
+      makeProject({ createdBy: OTHER_USER, memberIds: [OTHER_USER], members: [], memberEmails: [] }),
     )
-    await expect(service.getProject('proj-001', USER_ID)).rejects.toThrow(ForbiddenError)
+    await expect(service.getProject('proj-001', actor)).rejects.toThrow(ForbiddenError)
+  })
+
+  it('Cognito 上のユーザーを即時メンバーに追加する', async () => {
+    const project = makeProject({
+      members: [
+        { userId: USER_ID, email: 'user@example.com', displayName: 'テスト' },
+      ],
+      memberEmails: ['user@example.com'],
+    })
+    vi.mocked(repository.getProjectById).mockResolvedValue(project)
+    vi.mocked(repository.updateProject).mockImplementation(async (_id, updates) => ({
+      ...project,
+      ...updates,
+    }))
+    vi.mocked(cognito.findCognitoUserByEmail).mockResolvedValue({
+      userId: OTHER_USER,
+      email: 'h-sameshima@findix.co.jp',
+      displayName: '鮫島',
+    })
+
+    const result = await service.addProjectMember(project.projectId, actor, {
+      email: 'h-sameshima@findix.co.jp',
+      displayName: '鮫島',
+    })
+
+    expect(result.members?.some((m) => m.email === 'h-sameshima@findix.co.jp')).toBe(true)
+    expect(result.memberEmails).toContain('h-sameshima@findix.co.jp')
+    expect(result.memberIds).toContain(OTHER_USER)
+    expect(cognito.findCognitoUserByEmail).toHaveBeenCalledWith('h-sameshima@findix.co.jp')
+  })
+
+  it('Cognito にいないメールは ValidationError', async () => {
+    vi.mocked(repository.getProjectById).mockResolvedValue(makeProject())
+    vi.mocked(cognito.findCognitoUserByEmail).mockResolvedValue(null)
+
+    await expect(
+      service.addProjectMember('proj-001', actor, { email: 'nobody@example.com' }),
+    ).rejects.toThrow(ValidationError)
   })
 
   it('プロジェクトを更新する', async () => {
@@ -69,13 +126,13 @@ describe('projects/service', () => {
     vi.mocked(repository.getProjectById).mockResolvedValue(project)
     vi.mocked(repository.updateProject).mockResolvedValue(updated)
 
-    const result = await service.updateProject('proj-001', USER_ID, { name: '更新後' })
+    const result = await service.updateProject('proj-001', actor, { name: '更新後' })
     expect(result.name).toBe('更新後')
   })
 
   it('更新項目が空の場合は ValidationError', async () => {
     vi.mocked(repository.getProjectById).mockResolvedValue(makeProject())
-    await expect(service.updateProject('proj-001', USER_ID, {})).rejects.toThrow(ValidationError)
+    await expect(service.updateProject('proj-001', actor, {})).rejects.toThrow(ValidationError)
   })
 
   it('プロジェクトを論理削除する', async () => {
@@ -84,7 +141,7 @@ describe('projects/service', () => {
     vi.mocked(repository.getProjectById).mockResolvedValue(project)
     vi.mocked(repository.softDeleteProject).mockResolvedValue(deleted)
 
-    const result = await service.deleteProject('proj-001', USER_ID)
+    const result = await service.deleteProject('proj-001', actor)
     expect(result.isDeleted).toBe(true)
   })
 })

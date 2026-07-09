@@ -25,6 +25,12 @@ export const LAMBDAS = [
 export const API_ROUTES = [
   { methods: ['GET', 'POST'], path: '/projects', lambda: 'taskvista-projects' },
   { methods: ['GET', 'PUT', 'DELETE'], path: '/projects/{projectId}', lambda: 'taskvista-projects' },
+  { methods: ['POST'], path: '/projects/{projectId}/members', lambda: 'taskvista-projects' },
+  {
+    methods: ['DELETE'],
+    path: '/projects/{projectId}/members/{memberKey}',
+    lambda: 'taskvista-projects',
+  },
   { methods: ['GET', 'POST'], path: '/projects/{projectId}/tasks', lambda: 'taskvista-tasks' },
   { methods: ['GET', 'PUT', 'DELETE'], path: '/tasks/{taskId}', lambda: 'taskvista-tasks' },
   { methods: ['PATCH'], path: '/tasks/{taskId}/status', lambda: 'taskvista-tasks' },

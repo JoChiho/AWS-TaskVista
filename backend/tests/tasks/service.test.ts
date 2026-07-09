@@ -84,7 +84,12 @@ describe('tasks/service', () => {
 
   it('権限のないプロジェクトのタスクは ForbiddenError', async () => {
     vi.mocked(projectRepository.getProjectById).mockResolvedValue(
-      makeProject({ createdBy: OTHER_USER, memberIds: [OTHER_USER] }),
+      makeProject({
+        createdBy: OTHER_USER,
+        memberIds: [OTHER_USER],
+        members: [{ userId: OTHER_USER, email: 'other@example.com', displayName: '他ユーザー' }],
+        memberEmails: ['other@example.com'],
+      }),
     )
     await expect(service.listTasksByProject(PROJECT_ID, USER_ID)).rejects.toThrow(ForbiddenError)
   })

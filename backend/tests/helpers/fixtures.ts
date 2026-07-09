@@ -15,6 +15,10 @@ export function makeProject(overrides: Partial<Project> = {}): Project {
     status: 'active',
     createdBy: USER_ID,
     memberIds: [USER_ID],
+    memberEmails: ['user@example.com'],
+    members: [
+      { userId: USER_ID, email: 'user@example.com', displayName: 'テストユーザー' },
+    ],
     createdAt: NOW,
     updatedAt: NOW,
     isDeleted: false,
@@ -33,6 +37,7 @@ export function makeTask(overrides: Partial<Task> = {}): Task {
     location: '東京',
     requirement: '要望',
     assigneeId: USER_ID,
+    assigneeName: 'テストユーザー',
     dueDate: '2026-07-15',
     attachments: [],
     createdBy: USER_ID,

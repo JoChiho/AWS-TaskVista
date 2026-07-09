@@ -37,6 +37,23 @@ export function getCorrelationId(event: APIGatewayProxyEventV2): string {
   return headers['x-correlation-id'] ?? headers['X-Correlation-Id'] ?? uuidv4()
 }
 
+/** クレームからメールアドレスを可能な限り取り出す */
+function extractEmail(claims: Record<string, string>): string | undefined {
+  const candidates = [
+    claims.email,
+    claims['custom:email'],
+    // cognito:username がメール形式の場合
+    claims['cognito:username'],
+    claims.username,
+  ]
+  for (const c of candidates) {
+    if (c && c.includes('@')) {
+      return c.trim().toLowerCase()
+    }
+  }
+  return claims.email?.trim().toLowerCase() || undefined
+}
+
 /** API Gateway JWT Authorizer からユーザー情報を抽出する */
 export function getAuthUser(event: APIGatewayProxyEventV2): AuthUser {
   const requestContext = event.requestContext as APIGatewayProxyEventV2['requestContext'] &
@@ -48,10 +65,17 @@ export function getAuthUser(event: APIGatewayProxyEventV2): AuthUser {
     throw new UnauthorizedError()
   }
 
+  const email = claims ? extractEmail(claims) : undefined
+
   return {
     userId,
-    email: claims?.email,
-    name: claims?.name ?? claims?.email ?? claims?.['cognito:username'] ?? 'ユーザー',
+    email,
+    name:
+      claims?.name ||
+      claims?.preferred_username ||
+      email ||
+      claims?.['cognito:username'] ||
+      'ユーザー',
   }
 }
 

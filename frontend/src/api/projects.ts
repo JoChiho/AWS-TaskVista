@@ -1,6 +1,11 @@
 // プロジェクト API 呼び出し層
 import apiClient from './client'
-import type { Project, CreateProjectPayload, UpdateProjectPayload } from '@/types/project'
+import type {
+  Project,
+  CreateProjectPayload,
+  UpdateProjectPayload,
+  AddProjectMemberPayload,
+} from '@/types/project'
 import type { ApiResponse } from '@/types/comment'
 
 /** プロジェクト一覧を取得する */
@@ -27,6 +32,29 @@ export async function updateProject(
   payload: UpdateProjectPayload,
 ): Promise<Project> {
   const response = await apiClient.put<ApiResponse<Project>>(`/projects/${projectId}`, payload)
+  return response.data.data
+}
+
+/** プロジェクトメンバーを追加する */
+export async function addProjectMember(
+  projectId: string,
+  payload: AddProjectMemberPayload,
+): Promise<Project> {
+  const response = await apiClient.post<ApiResponse<Project>>(
+    `/projects/${projectId}/members`,
+    payload,
+  )
+  return response.data.data
+}
+
+/** プロジェクトメンバーを削除する（email または userId） */
+export async function removeProjectMember(
+  projectId: string,
+  memberKey: string,
+): Promise<Project> {
+  const response = await apiClient.delete<ApiResponse<Project>>(
+    `/projects/${projectId}/members/${encodeURIComponent(memberKey)}`,
+  )
   return response.data.data
 }
 

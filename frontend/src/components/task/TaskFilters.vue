@@ -14,23 +14,22 @@ const emit = defineEmits<{
   reset: []
 }>()
 
-// v-model バインディング（各フィルター条件）
+// v-model バインディング（各フィルター条件）— 担当者は表示名テキストで照合
 const assignee = defineModel<string | null>('assignee')
 const priority = defineModel<string | null>('priority')
 const status = defineModel<string | null>('status')
 
-/** フィルターに使用できる担当者の一覧を動的に生成する */
+/** フィルターに使用できる担当者名の一覧を動的に生成する */
 const assigneeOptions = computed(() => {
-  const map = new Map<string, string>()
+  const names = new Set<string>()
   for (const task of props.tasks) {
-    if (task.assigneeId) {
-      map.set(
-        task.assigneeId,
-        task.assigneeName || task.assigneeId.slice(0, 8) + '…',
-      )
+    if (task.assigneeName?.trim()) {
+      names.add(task.assigneeName.trim())
     }
   }
-  return Array.from(map.entries()).map(([value, title]) => ({ title, value }))
+  return Array.from(names)
+    .sort((a, b) => a.localeCompare(b, 'ja'))
+    .map((name) => ({ title: name, value: name }))
 })
 
 /** 優先度の選択肢 */

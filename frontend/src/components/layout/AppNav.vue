@@ -1,14 +1,16 @@
 <script setup lang="ts">
 // トップナビゲーションバーコンポーネント
 import { useRouter, useRoute } from 'vue-router'
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { useProjectsStore } from '@/stores/projects'
+import ProfileDialog from '@/components/common/ProfileDialog.vue'
 
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
 const projectsStore = useProjectsStore()
+const showProfile = ref(false)
 
 // 現在のプロジェクト ID をルートパラメーターから取得する
 const currentProjectId = computed(() => route.params.projectId as string | undefined)
@@ -44,7 +46,7 @@ function handleLogout() {
 
 /** ユーザーのイニシャルを取得する（アバター表示用） */
 const userInitials = computed(() => {
-  const name = authStore.currentUser?.name || authStore.currentUser?.email || '?'
+  const name = authStore.displayLabel || '?'
   return name.slice(0, 2).toUpperCase()
 })
 </script>
@@ -109,14 +111,18 @@ const userInitials = computed(() => {
           <span class="text-caption font-weight-bold text-white">{{ userInitials }}</span>
         </v-avatar>
       </template>
-      <v-list min-width="160">
+      <v-list min-width="220">
         <v-list-item
           prepend-icon="mdi-account"
-          :title="authStore.currentUser?.name || authStore.currentUser?.email || 'ユーザー'"
-          subtitle="アカウント情報"
-          disabled
+          :title="authStore.displayLabel"
+          :subtitle="authStore.currentUser?.email || 'アカウント'"
         />
         <v-divider />
+        <v-list-item
+          prepend-icon="mdi-account-edit"
+          title="表示名を設定する"
+          @click="showProfile = true"
+        />
         <v-list-item
           prepend-icon="mdi-logout"
           title="ログアウト"
@@ -124,5 +130,7 @@ const userInitials = computed(() => {
         />
       </v-list>
     </v-menu>
+
+    <ProfileDialog v-model="showProfile" />
   </v-app-bar>
 </template>

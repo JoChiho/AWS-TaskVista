@@ -1,3 +1,13 @@
+/** プロジェクトメンバー（表示用メタデータ） */
+export interface ProjectMember {
+  /** Cognito sub（招待直後は未確定の場合がある） */
+  userId?: string
+  /** 招待・識別用メールアドレス（小文字推奨） */
+  email: string
+  /** 画面表示用の名前 */
+  displayName: string
+}
+
 /** プロジェクトエンティティ */
 export interface Project {
   projectId: string
@@ -5,7 +15,12 @@ export interface Project {
   description?: string
   status: 'active' | 'archived'
   createdBy: string
+  /** アクセス制御用の Cognito sub 一覧 */
   memberIds: string[]
+  /** アクセス制御用のメール一覧（小文字） */
+  memberEmails?: string[]
+  /** メンバー表示情報 */
+  members?: ProjectMember[]
   createdAt: string
   updatedAt: string
   isDeleted: boolean
@@ -75,8 +90,23 @@ export const TASK_STATUSES: TaskStatus[] = [
   '保留',
 ]
 
-/** プロジェクトへのアクセス権限を確認する */
-export function canAccessProject(project: Project, userId: string): boolean {
+/** プロジェクトへのアクセス権限を確認する（sub または招待メール） */
+export function canAccessProject(
+  project: Project,
+  userId: string,
+  email?: string,
+): boolean {
   if (project.isDeleted) return false
-  return project.createdBy === userId || project.memberIds.includes(userId)
+  if (project.createdBy === userId || project.memberIds.includes(userId)) {
+    return true
+  }
+  if (project.members?.some((m) => m.userId === userId)) {
+    return true
+  }
+  const normalized = email?.trim().toLowerCase()
+  if (normalized) {
+    if (project.memberEmails?.includes(normalized)) return true
+    if (project.members?.some((m) => m.email.toLowerCase() === normalized)) return true
+  }
+  return false
 }

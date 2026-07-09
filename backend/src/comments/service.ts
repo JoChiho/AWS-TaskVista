@@ -11,9 +11,15 @@ const createCommentSchema = z.object({
     .string({ required_error: 'コメント内容は必須項目です' })
     .min(1, 'コメント内容は必須項目です')
     .max(2000, 'コメントは2000文字以内で入力してください'),
+  /** 表示名（フロントのプロフィール名を優先） */
+  authorDisplayName: z.string().min(1).max(100).optional(),
 })
 
-async function assertTaskAccess(taskId: string, userId: string): Promise<void> {
+async function assertTaskAccess(
+  taskId: string,
+  userId: string,
+  email?: string,
+): Promise<void> {
   const task = await taskRepository.getTaskById(taskId)
   if (!task || task.isDeleted) {
     throw new NotFoundError('タスクが見つかりません')
@@ -24,14 +30,18 @@ async function assertTaskAccess(taskId: string, userId: string): Promise<void> {
     throw new NotFoundError('プロジェクトが見つかりません')
   }
 
-  if (!canAccessProject(project, userId)) {
+  if (!canAccessProject(project, userId, email)) {
     throw new ForbiddenError('このタスクへのアクセス権限がありません')
   }
 }
 
 /** タスクのコメント一覧を取得する */
-export async function listComments(taskId: string, userId: string): Promise<Comment[]> {
-  await assertTaskAccess(taskId, userId)
+export async function listComments(
+  taskId: string,
+  userId: string,
+  email?: string,
+): Promise<Comment[]> {
+  await assertTaskAccess(taskId, userId, email)
   return repository.listCommentsByTask(taskId)
 }
 
@@ -41,8 +51,9 @@ export async function createComment(
   userId: string,
   authorName: string,
   body: unknown,
+  email?: string,
 ): Promise<Comment> {
-  await assertTaskAccess(taskId, userId)
+  await assertTaskAccess(taskId, userId, email)
 
   const parsed = createCommentSchema.safeParse(body)
   if (!parsed.success) {
@@ -59,7 +70,7 @@ export async function createComment(
     taskId,
     content: parsed.data.content,
     authorId: userId,
-    authorName,
+    authorName: parsed.data.authorDisplayName?.trim() || authorName,
     createdAt: now,
     updatedAt: now,
   }
@@ -72,8 +83,9 @@ export async function deleteComment(
   taskId: string,
   commentId: string,
   userId: string,
+  email?: string,
 ): Promise<void> {
-  await assertTaskAccess(taskId, userId)
+  await assertTaskAccess(taskId, userId, email)
 
   const comment = await repository.getCommentById(taskId, commentId)
   if (!comment) {

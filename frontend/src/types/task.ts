@@ -84,6 +84,8 @@ export interface CreateTaskPayload {
   location?: string
   requirement?: string
   assigneeId?: string
+  /** 担当者名（人名テキスト） */
+  assigneeName?: string
   dueDate?: string
 }
 
@@ -96,6 +98,8 @@ export interface UpdateTaskPayload {
   location?: string
   requirement?: string
   assigneeId?: string
+  /** 担当者名（人名テキスト） */
+  assigneeName?: string
   dueDate?: string
 }
 

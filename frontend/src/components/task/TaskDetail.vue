@@ -32,12 +32,22 @@ const isUploading = ref(false)
 /** 現在表示中のタスク */
 const task = computed(() => tasksStore.currentTask)
 
-/** ドロワーが閉じられたときにコメントをクリアする */
+/** ドロワーが閉じられた / タスクが切り替わったときにコメントを正しく扱う */
 watch(modelValue, (isOpen) => {
   if (!isOpen) {
     commentsStore.clearComments()
   }
 })
+
+// 表示中タスクが変わったら（ドロワーが開いたまま別カードを開いた場合など）コメントを再同期
+watch(
+  () => task.value?.taskId,
+  (taskId) => {
+    if (modelValue.value && taskId) {
+      commentsStore.fetchComments(taskId)
+    }
+  },
+)
 
 /** 日付をフォーマットする */
 function formatDate(dateStr?: string): string {
@@ -205,7 +215,7 @@ function formatFileSize(bytes: number): string {
             </tr>
             <tr>
               <td class="text-caption text-medium-emphasis">担当者</td>
-              <td class="text-body-2">{{ task.assigneeName || task.assigneeId || '未割り当て' }}</td>
+              <td class="text-body-2">{{ task.assigneeName || '未割り当て' }}</td>
             </tr>
             <tr>
               <td class="text-caption text-medium-emphasis">期日</td>
@@ -282,8 +292,8 @@ function formatFileSize(bytes: number): string {
 
         <v-divider class="mb-4" />
 
-        <!-- コメントスレッド -->
-        <CommentThread :task-id="task.taskId" />
+        <!-- コメントスレッド（taskId を key にしてコンポーネントを確実に切り替える） -->
+        <CommentThread :key="task.taskId" :task-id="task.taskId" />
       </div>
     </template>
   </v-navigation-drawer>

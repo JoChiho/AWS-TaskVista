@@ -15,7 +15,7 @@ export async function handler(
     const path = getRequestPath(event)
 
     if (method === 'GET' && path === '/dashboard/summary') {
-      const summary = await service.getSummary(user.userId)
+      const summary = await service.getSummary(user.userId, user.email, user.name)
       logInfo(correlationId, 'ダッシュボード統計を取得しました', {
         requestId: event.requestContext.requestId,
         userId: user.userId,

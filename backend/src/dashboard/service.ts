@@ -3,8 +3,16 @@ import * as taskRepository from '../tasks/repository.js'
 import { TASK_STATUSES, type ProjectSummary, type Task } from '../shared/types.js'
 
 /** ダッシュボード用のプロジェクト横断統計を取得する */
-export async function getSummary(userId: string): Promise<ProjectSummary[]> {
-  const projects = await projectService.listProjects(userId)
+export async function getSummary(
+  userId: string,
+  email?: string,
+  name?: string,
+): Promise<ProjectSummary[]> {
+  const projects = await projectService.listProjects({
+    userId,
+    email,
+    name: name || email || 'ユーザー',
+  })
 
   const summaries = await Promise.all(
     projects.map(async (project) => {

@@ -17,7 +17,7 @@ export async function handler(
     const path = getRequestPath(event)
 
     if (method === 'GET' && projectId && path.endsWith('/tasks')) {
-      const tasks = await service.listTasksByProject(projectId, user.userId)
+      const tasks = await service.listTasksByProject(projectId, user.userId, user.email)
       logInfo(correlationId, 'タスク一覧を取得しました', {
         requestId: event.requestContext.requestId,
         userId: user.userId,
@@ -28,7 +28,7 @@ export async function handler(
     }
 
     if (method === 'POST' && projectId && path.endsWith('/tasks')) {
-      const task = await service.createTask(projectId, user.userId, parseBody(event))
+      const task = await service.createTask(projectId, user.userId, parseBody(event), user.email)
       logInfo(correlationId, 'タスクを作成しました', {
         requestId: event.requestContext.requestId,
         userId: user.userId,
@@ -39,7 +39,7 @@ export async function handler(
     }
 
     if (method === 'GET' && taskId && !path.includes('/status')) {
-      const task = await service.getTask(taskId, user.userId)
+      const task = await service.getTask(taskId, user.userId, user.email)
       logInfo(correlationId, 'タスク詳細を取得しました', {
         requestId: event.requestContext.requestId,
         userId: user.userId,
@@ -50,7 +50,7 @@ export async function handler(
     }
 
     if (method === 'PUT' && taskId) {
-      const task = await service.updateTask(taskId, user.userId, parseBody(event))
+      const task = await service.updateTask(taskId, user.userId, parseBody(event), user.email)
       logInfo(correlationId, 'タスクを更新しました', {
         requestId: event.requestContext.requestId,
         userId: user.userId,
@@ -61,7 +61,7 @@ export async function handler(
     }
 
     if (method === 'PATCH' && taskId && path.endsWith('/status')) {
-      const task = await service.updateTaskStatus(taskId, user.userId, parseBody(event))
+      const task = await service.updateTaskStatus(taskId, user.userId, parseBody(event), user.email)
       logInfo(correlationId, 'タスクのステータスを更新しました', {
         requestId: event.requestContext.requestId,
         userId: user.userId,
@@ -72,7 +72,7 @@ export async function handler(
     }
 
     if (method === 'DELETE' && taskId) {
-      const task = await service.deleteTask(taskId, user.userId)
+      const task = await service.deleteTask(taskId, user.userId, user.email)
       logInfo(correlationId, 'タスクを削除しました', {
         requestId: event.requestContext.requestId,
         userId: user.userId,

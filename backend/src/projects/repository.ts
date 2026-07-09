@@ -49,6 +49,24 @@ export async function listProjectsByMember(userId: string): Promise<Project[]> {
   return (result.Items as Project[] | undefined) ?? []
 }
 
+/** 招待メールで参加可能なプロジェクトをスキャンで取得する */
+export async function listProjectsByMemberEmail(email: string): Promise<Project[]> {
+  const normalized = email.trim().toLowerCase()
+  if (!normalized) return []
+
+  const result = await docClient.send(
+    new ScanCommand({
+      TableName: TABLE(),
+      FilterExpression: 'contains(memberEmails, :email) AND isDeleted = :false',
+      ExpressionAttributeValues: {
+        ':email': normalized,
+        ':false': false,
+      },
+    }),
+  )
+  return (result.Items as Project[] | undefined) ?? []
+}
+
 /** プロジェクトを新規作成する */
 export async function createProject(project: Project): Promise<Project> {
   await docClient.send(
@@ -64,7 +82,9 @@ export async function createProject(project: Project): Promise<Project> {
 /** プロジェクトを更新する */
 export async function updateProject(
   projectId: string,
-  updates: Partial<Pick<Project, 'name' | 'description' | 'status' | 'memberIds'>>,
+  updates: Partial<
+    Pick<Project, 'name' | 'description' | 'status' | 'memberIds' | 'memberEmails' | 'members'>
+  >,
 ): Promise<Project> {
   const expressions: string[] = ['updatedAt = :updatedAt']
   const values: Record<string, unknown> = { ':updatedAt': new Date().toISOString() }
@@ -87,6 +107,14 @@ export async function updateProject(
   if (updates.memberIds !== undefined) {
     expressions.push('memberIds = :memberIds')
     values[':memberIds'] = updates.memberIds
+  }
+  if (updates.memberEmails !== undefined) {
+    expressions.push('memberEmails = :memberEmails')
+    values[':memberEmails'] = updates.memberEmails
+  }
+  if (updates.members !== undefined) {
+    expressions.push('members = :members')
+    values[':members'] = updates.members
   }
 
   const result = await docClient.send(

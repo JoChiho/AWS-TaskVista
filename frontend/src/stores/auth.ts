@@ -8,8 +8,27 @@ import axios from 'axios'
 interface AuthUser {
   sub: string
   email: string
+  /** Cognito クレーム由来の名前（UUID っぽい場合がある） */
   name?: string
   picture?: string
+}
+
+const DISPLAY_NAME_PREFIX = 'taskvista.displayName.'
+
+function isUglyCognitoUsername(value?: string): boolean {
+  if (!value) return true
+  // Cognito 自動生成ユーザー名や UUID 形式は表示に向かない
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)) {
+    return true
+  }
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}_?/i.test(value)) {
+    return true
+  }
+  // 長いランダム文字列
+  if (/^[a-z0-9_-]{20,}$/i.test(value) && !value.includes('@') && !/[\u3040-\u30ff\u4e00-\u9faf]/.test(value)) {
+    return true
+  }
+  return false
 }
 
 export const useAuthStore = defineStore('auth', () => {
@@ -19,11 +38,55 @@ export const useAuthStore = defineStore('auth', () => {
   const idToken = ref<string | null>(sessionStorage.getItem('idToken'))
   // 現在のユーザー情報
   const currentUser = ref<AuthUser | null>(null)
+  // ユーザーが設定した表示名
+  const displayName = ref<string>('')
   // ローディング状態
   const isLoading = ref(false)
 
   /** 認証済みかどうかを返す計算プロパティ */
-  const isAuthenticated = computed(() => !!accessToken.value)
+  const isAuthenticated = computed(() => !!accessToken.value || !!idToken.value)
+
+  /**
+   * ユーザーが明示的に表示名を設定済みか
+   * （未設定の場合は初回ログイン時に設定を促す）
+   */
+  const hasCustomDisplayName = computed(() => !!displayName.value.trim())
+
+  /**
+   * 画面表示用の名前
+   * 優先順位: ユーザー設定の表示名 > きれいな Cognito name > メールローカル部 > メール全体
+   */
+  const displayLabel = computed(() => {
+    if (displayName.value.trim()) return displayName.value.trim()
+    const user = currentUser.value
+    if (!user) return 'ユーザー'
+    if (user.name && !isUglyCognitoUsername(user.name)) return user.name
+    if (user.email) {
+      const local = user.email.split('@')[0]
+      return local || user.email
+    }
+    return 'ユーザー'
+  })
+
+  function loadDisplayName(sub: string): void {
+    const stored = localStorage.getItem(DISPLAY_NAME_PREFIX + sub)
+    displayName.value = stored ?? ''
+  }
+
+  /**
+   * 表示名を保存する（端末の localStorage）
+   */
+  function setDisplayName(name: string): void {
+    const trimmed = name.trim()
+    displayName.value = trimmed
+    const sub = currentUser.value?.sub
+    if (!sub) return
+    if (trimmed) {
+      localStorage.setItem(DISPLAY_NAME_PREFIX + sub, trimmed)
+    } else {
+      localStorage.removeItem(DISPLAY_NAME_PREFIX + sub)
+    }
+  }
 
   /**
    * Cognito Hosted UI へのログイン URL を構築する
@@ -121,6 +184,7 @@ export const useAuthStore = defineStore('auth', () => {
         name: payload.name || payload['cognito:username'],
         picture: payload.picture,
       }
+      if (payload.sub) loadDisplayName(payload.sub)
     } catch {
       // トークンの解析に失敗した場合は無視する
       currentUser.value = null
@@ -136,6 +200,7 @@ export const useAuthStore = defineStore('auth', () => {
     accessToken.value = null
     idToken.value = null
     currentUser.value = null
+    displayName.value = ''
 
     // ストレージからもトークンを削除する
     sessionStorage.removeItem('accessToken')
@@ -169,11 +234,15 @@ export const useAuthStore = defineStore('auth', () => {
     accessToken,
     idToken,
     currentUser,
+    displayName,
+    displayLabel,
+    hasCustomDisplayName,
     isLoading,
     isAuthenticated,
     login,
     logout,
     handleCallback,
     restoreSession,
+    setDisplayName,
   }
 })

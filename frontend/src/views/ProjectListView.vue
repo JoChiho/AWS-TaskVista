@@ -5,6 +5,7 @@ import { useRouter } from 'vue-router'
 import { useProjectsStore } from '@/stores/projects'
 import type { Project } from '@/types/project'
 import ProjectForm from '@/components/project/ProjectForm.vue'
+import ProjectMembersDialog from '@/components/project/ProjectMembersDialog.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 
 const router = useRouter()
@@ -18,6 +19,9 @@ const editingProject = ref<Project | null>(null)
 const showDeleteConfirm = ref(false)
 // 削除対象のプロジェクト
 const deletingProject = ref<Project | null>(null)
+// メンバー管理ダイアログ
+const showMembers = ref(false)
+const membersProject = ref<Project | null>(null)
 
 /** 新規プロジェクト作成ダイアログを開く */
 function openCreateForm() {
@@ -48,6 +52,17 @@ async function handleDelete() {
 /** プロジェクトのかんばんビューへ移動する */
 function goToBoard(projectId: string) {
   router.push({ name: 'task-board', params: { projectId } })
+}
+
+/** メンバー管理ダイアログを開く */
+function openMembers(project: Project) {
+  membersProject.value = project
+  showMembers.value = true
+}
+
+/** メンバー数を表示する */
+function memberCount(project: Project): number {
+  return project.members?.length || project.memberIds?.length || 1
 }
 
 /** ステータスのラベルを返す */
@@ -138,9 +153,12 @@ onMounted(() => {
               説明なし
             </p>
 
-            <div class="text-caption text-medium-emphasis">
+            <div class="d-flex align-center text-caption text-medium-emphasis">
               <v-icon size="14" class="mr-1">mdi-calendar</v-icon>
               作成日: {{ formatDate(project.createdAt) }}
+              <v-spacer />
+              <v-icon size="14" class="mr-1">mdi-account-group</v-icon>
+              {{ memberCount(project) }} 人
             </div>
           </v-card-text>
 
@@ -156,6 +174,14 @@ onMounted(() => {
               かんばんを開く
             </v-btn>
             <v-spacer />
+            <!-- メンバー管理 -->
+            <v-btn
+              icon="mdi-account-multiple-plus"
+              variant="text"
+              size="small"
+              title="メンバーを管理する"
+              @click.stop="openMembers(project)"
+            />
             <!-- 編集ボタン -->
             <v-btn
               icon="mdi-pencil"
@@ -197,6 +223,12 @@ onMounted(() => {
     <ProjectForm
       v-model="showForm"
       :project="editingProject ?? undefined"
+    />
+
+    <!-- メンバー管理ダイアログ -->
+    <ProjectMembersDialog
+      v-model="showMembers"
+      :project="membersProject ?? projectsStore.currentProject"
     />
 
     <!-- 削除確認ダイアログ -->
