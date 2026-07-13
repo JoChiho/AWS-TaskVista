@@ -1,15 +1,34 @@
 <script setup lang="ts">
 // アプリケーションルートコンポーネント
 import { RouterView, useRoute } from 'vue-router'
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 import { useUiStore } from '@/stores/ui'
 import { useAuthStore } from '@/stores/auth'
+import { useDisplayNamesStore } from '@/stores/displayNames'
 import AppNav from '@/components/layout/AppNav.vue'
 import ProfileDialog from '@/components/common/ProfileDialog.vue'
 
 const uiStore = useUiStore()
 const authStore = useAuthStore()
+const displayNamesStore = useDisplayNamesStore()
 const route = useRoute()
+
+/** タブ復帰時に他ユーザーの表示名をクラウドから再取得（数秒以内の更新を反映） */
+function onWindowFocus() {
+  if (!authStore.isAuthenticated) return
+  void displayNamesStore.refreshKnownUsers()
+}
+
+onMounted(() => {
+  window.addEventListener('focus', onWindowFocus)
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') onWindowFocus()
+  })
+})
+
+onUnmounted(() => {
+  window.removeEventListener('focus', onWindowFocus)
+})
 
 // ナビゲーションを非表示にするルート（ログイン、コールバック）
 const hideNav = computed(() =>

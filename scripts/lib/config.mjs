@@ -47,6 +47,7 @@ export const API_ROUTES = [
   { methods: ['GET'], path: '/dashboard/summary', lambda: 'taskvista-dashboard' },
   { methods: ['GET'], path: '/dashboard/my-tasks', lambda: 'taskvista-dashboard' },
   { methods: ['GET', 'PUT'], path: '/me', lambda: 'taskvista-dashboard' },
+  { methods: ['POST'], path: '/users/display-names', lambda: 'taskvista-dashboard' },
 ]
 
 /** deploy.config.json を読み込む */

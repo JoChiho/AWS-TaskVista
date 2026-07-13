@@ -145,6 +145,12 @@ const ROUTES = [
     keys: [],
     module: 'dashboard',
   },
+  {
+    methods: ['POST'],
+    pattern: /^\/users\/display-names\/?$/,
+    keys: [],
+    module: 'dashboard',
+  },
 ]
 
 /** @type {Map<string, { handler: Function }>} */

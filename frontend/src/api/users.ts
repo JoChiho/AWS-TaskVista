@@ -24,3 +24,17 @@ export async function updateMyProfile(displayName: string): Promise<UserProfile>
   })
   return response.data.data
 }
+
+/**
+ * 複数 userId の表示名を一括取得する（他ユーザーのクラウド表示名）
+ * @returns userId → displayName
+ */
+export async function fetchDisplayNames(
+  userIds: string[],
+): Promise<Record<string, string>> {
+  if (userIds.length === 0) return {}
+  const response = await apiClient.post<
+    ApiResponse<{ names: Record<string, string> }>
+  >('/users/display-names', { userIds })
+  return response.data.data?.names ?? {}
+}

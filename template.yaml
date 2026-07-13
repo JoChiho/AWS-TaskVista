@@ -199,6 +199,12 @@ Resources:
             ApiId: !Ref TaskVistaHttpApi
             Path: /me
             Method: ANY
+        DisplayNames:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref TaskVistaHttpApi
+            Path: /users/display-names
+            Method: POST
 
 Outputs:
   LocalApiUrl:

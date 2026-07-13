@@ -117,15 +117,79 @@ function toValidationFields(error: z.ZodError): Record<string, string> {
   return fields
 }
 
-/** assigneeId からクラウド表示名を付与する（UI が常に最新名を表示するため） */
-async function enrichTaskAssignees(tasks: Task[]): Promise<Task[]> {
-  const ids = tasks.map((t) => t.assigneeId).filter(Boolean) as string[]
-  if (ids.length === 0) return tasks
-  const names = await usersService.getDisplayNameMap(ids)
-  if (names.size === 0) return tasks
+/**
+ * 担当者表示名を解決する
+ * 優先: Users クラウド名 > プロジェクト members.displayName
+ * 古いデータで assigneeName にメールが入っている場合も members.email から人名に変換する
+ */
+async function enrichTaskAssignees(
+  tasks: Task[],
+  projectId: string,
+): Promise<Task[]> {
+  if (tasks.length === 0) return tasks
+
+  const project = await projectRepository.getProjectById(projectId)
+  const members = project?.members ?? []
+
+  const memberIds = [
+    ...members.map((m) => m.userId).filter(Boolean) as string[],
+    ...tasks.map((t) => t.assigneeId).filter(Boolean) as string[],
+  ]
+  const cloudNames = await usersService.getDisplayNameMap(memberIds)
+
+  const byUserId = new Map<string, string>()
+  const byEmail = new Map<string, { name: string; userId?: string }>()
+
+  for (const m of members) {
+    const name =
+      (m.userId && cloudNames.get(m.userId)) ||
+      (m.displayName && !m.displayName.includes('@') ? m.displayName : null) ||
+      null
+    if (!name) continue
+    if (m.userId) byUserId.set(m.userId, name)
+    if (m.email) {
+      byEmail.set(m.email.trim().toLowerCase(), {
+        name,
+        userId: m.userId,
+      })
+    }
+  }
+  // クラウドのみ（members に無い assigneeId）
+  for (const [id, name] of cloudNames) {
+    if (!byUserId.has(id)) byUserId.set(id, name)
+  }
+
   return tasks.map((t) => {
-    if (t.assigneeId && names.has(t.assigneeId)) {
-      return { ...t, assigneeName: names.get(t.assigneeId)! }
+    // 1) assigneeId → 表示名
+    if (t.assigneeId && byUserId.has(t.assigneeId)) {
+      return { ...t, assigneeName: byUserId.get(t.assigneeId)! }
+    }
+    // 2) assigneeName がメール → メンバー表
+    const raw = t.assigneeName?.trim()
+    if (raw && raw.includes('@')) {
+      const hit = byEmail.get(raw.toLowerCase())
+      if (hit) {
+        return {
+          ...t,
+          assigneeId: t.assigneeId || hit.userId,
+          assigneeName: hit.name,
+        }
+      }
+    }
+    // 3) assigneeName がメンバー displayName と一致 → userId 補完
+    if (raw && !raw.includes('@')) {
+      const hit = members.find(
+        (m) => m.displayName?.toLowerCase() === raw.toLowerCase(),
+      )
+      if (hit) {
+        const name =
+          (hit.userId && byUserId.get(hit.userId)) || hit.displayName || raw
+        return {
+          ...t,
+          assigneeId: t.assigneeId || hit.userId,
+          assigneeName: name,
+        }
+      }
     }
     return t
   })
@@ -139,7 +203,7 @@ export async function listTasksByProject(
 ): Promise<Task[]> {
   await assertProjectAccess(projectId, userId, email)
   const tasks = (await repository.listTasksByProject(projectId)).filter((t) => !t.isDeleted)
-  return enrichTaskAssignees(tasks)
+  return enrichTaskAssignees(tasks, projectId)
 }
 
 /** タスク詳細を取得する（コメント数を含む） */
@@ -149,7 +213,7 @@ export async function getTask(
   email?: string,
 ): Promise<Task & { commentCount: number }> {
   const task = await getAccessibleTask(taskId, userId, email)
-  const [enriched] = await enrichTaskAssignees([task])
+  const [enriched] = await enrichTaskAssignees([task], task.projectId)
   const comments = await commentRepository.listCommentsByTask(taskId)
   return { ...enriched, commentCount: comments.length }
 }
@@ -195,7 +259,7 @@ export async function createTask(
   }
 
   const created = await repository.createTask(task)
-  const [enriched] = await enrichTaskAssignees([created])
+  const [enriched] = await enrichTaskAssignees([created], projectId)
   return enriched
 }
 
@@ -241,7 +305,7 @@ export async function updateTask(
   }
 
   const updated = await repository.updateTask(taskId, updates)
-  const [enriched] = await enrichTaskAssignees([updated])
+  const [enriched] = await enrichTaskAssignees([updated], existing.projectId)
   return enriched
 }
 

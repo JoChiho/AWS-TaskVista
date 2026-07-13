@@ -1,8 +1,10 @@
 <script setup lang="ts">
 // かんばんタスクカードコンポーネント
+import { storeToRefs } from 'pinia'
 import type { Task } from '@/types/task'
 import { PRIORITY_LABELS, PRIORITY_COLORS } from '@/types/task'
 import { resolveAssigneeDisplayName } from '@/utils/displayName'
+import { useDisplayNamesStore } from '@/stores/displayNames'
 
 defineProps<{
   task: Task
@@ -11,6 +13,10 @@ defineProps<{
 defineEmits<{
   click: [task: Task]
 }>()
+
+// 表示名ディレクトリの変更でカードが再描画されるように依存を張る
+const displayNamesStore = useDisplayNamesStore()
+const { byUserId, byEmail } = storeToRefs(displayNamesStore)
 
 /** 期日をフォーマットする */
 function formatDueDate(dueDate: string): string {
@@ -36,6 +42,9 @@ function isDueSoon(dueDate?: string): boolean {
 }
 
 function assigneeLabel(task: Task): string {
+  // byUserId / byEmail を参照してリアクティブ依存を確保
+  void byUserId.value
+  void byEmail.value
   return resolveAssigneeDisplayName(task)
 }
 </script>
@@ -102,7 +111,7 @@ function assigneeLabel(task: Task): string {
           {{ formatDueDate(task.dueDate) }}
         </span>
 
-        <!-- 担当者（自分ならクラウド表示名、他ユーザーは API の assigneeName） -->
+        <!-- 担当者（displayNames ストア経由で自分・他人ともクラウド表示名） -->
         <span
           v-if="assigneeLabel(task)"
           class="text-caption text-medium-emphasis ml-1"

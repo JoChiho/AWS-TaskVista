@@ -12,6 +12,7 @@ vi.mock('../../src/users/repository.js', () => ({
 vi.mock('../../src/projects/repository.js', () => ({
   listProjectsByCreator: vi.fn().mockResolvedValue([]),
   listProjectsByMember: vi.fn().mockResolvedValue([]),
+  listProjectsByMemberEmail: vi.fn().mockResolvedValue([]),
   updateProject: vi.fn(),
 }))
 

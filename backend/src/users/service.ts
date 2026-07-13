@@ -52,9 +52,9 @@ export async function updateMyProfile(
   await repository.putProfile(profile)
 
   // プロジェクト members / タスク assigneeName のスナップショットも更新
-  // （フロントが古いキャッシュを持っていても、再取得で最新名になる）
+  // （他ユーザーが再取得したときも最新の表示名が見える）
   try {
-    await syncDisplayNameAcrossRecords(actor.userId, displayName)
+    await syncDisplayNameAcrossRecords(actor.userId, displayName, actor.email)
   } catch (e) {
     console.error('表示名の関連データ同期に失敗（プロフィール自体は保存済み）:', e)
   }
@@ -63,43 +63,79 @@ export async function updateMyProfile(
 }
 
 /**
- * この userId が登場するプロジェクト・タスクの表示名を一括更新
+ * この userId（および email）が登場するプロジェクト・タスクの表示名を一括更新
+ * 他ユーザーが再取得したときに最新の表示名が見えるようにする
  */
 async function syncDisplayNameAcrossRecords(
   userId: string,
   displayName: string,
+  email?: string,
 ): Promise<void> {
-  // 1) 自分が作成した or メンバーのプロジェクト
-  const [created, memberOf] = await Promise.all([
+  const emailNorm = email?.trim().toLowerCase()
+
+  // 1) 自分が作成した or メンバーのプロジェクト（email 招待のみのプロジェクトも含む）
+  const [created, memberOf, byEmail] = await Promise.all([
     projectRepository.listProjectsByCreator(userId),
     projectRepository.listProjectsByMember(userId),
+    emailNorm
+      ? projectRepository.listProjectsByMemberEmail(emailNorm)
+      : Promise.resolve([]),
   ])
   const projectsMap = new Map<string, (typeof created)[0]>()
-  for (const p of [...created, ...memberOf]) {
+  for (const p of [...created, ...memberOf, ...byEmail]) {
     if (!p.isDeleted) projectsMap.set(p.projectId, p)
   }
 
   await Promise.all(
     [...projectsMap.values()].map(async (project) => {
-      const members = (project.members ?? []).map((m) =>
-        m.userId === userId ? { ...m, displayName } : m,
-      )
-      // members に userId が無い古いデータでも memberIds にいれば足す
+      let touched = false
+      const members = (project.members ?? []).map((m) => {
+        const sameUser =
+          m.userId === userId ||
+          (!!emailNorm && (m.email || '').trim().toLowerCase() === emailNorm)
+        if (!sameUser) return m
+        if (m.displayName === displayName && m.userId === userId) return m
+        touched = true
+        return {
+          ...m,
+          userId: m.userId || userId,
+          displayName,
+        }
+      })
+
+      // members に居ないが memberIds にある場合は追加
       if (
         project.memberIds.includes(userId) &&
         !members.some((m) => m.userId === userId)
       ) {
         members.push({
           userId,
-          email: '',
+          email: emailNorm || '',
           displayName,
         })
+        touched = true
       }
-      const changed = (project.members ?? []).some(
-        (m) => m.userId === userId && m.displayName !== displayName,
-      )
-      if (changed || !(project.members ?? []).some((m) => m.userId === userId)) {
-        await projectRepository.updateProject(project.projectId, { members })
+
+      // memberIds に userId を必ず含める（email 招待後の紐付け）
+      let memberIds = project.memberIds
+      if (!memberIds.includes(userId)) {
+        const invitedByEmail =
+          !!emailNorm &&
+          ((project.memberEmails ?? []).map((e) => e.toLowerCase()).includes(emailNorm) ||
+            (project.members ?? []).some(
+              (m) => (m.email || '').toLowerCase() === emailNorm,
+            ))
+        if (invitedByEmail || project.createdBy === userId) {
+          memberIds = [...memberIds, userId]
+          touched = true
+        }
+      }
+
+      if (touched) {
+        await projectRepository.updateProject(project.projectId, {
+          members,
+          memberIds,
+        })
       }
     }),
   )

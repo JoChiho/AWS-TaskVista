@@ -115,10 +115,11 @@ function resetFilters() {
 }
 
 onMounted(async () => {
-  await Promise.all([
-    tasksStore.fetchTasks(projectId.value),
-    projectsStore.fetchProject(projectId.value),
-  ])
+  // 先に members 表示名を入れてからタスクを読む（メール担当 → 人名）
+  await projectsStore.fetchProject(projectId.value)
+  await tasksStore.fetchTasks(projectId.value)
+  const { useDisplayNamesStore } = await import('@/stores/displayNames')
+  await useDisplayNamesStore().applyToEntityStores()
 })
 </script>
 

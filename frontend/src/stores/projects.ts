@@ -10,6 +10,7 @@ import type {
 import * as projectsApi from '@/api/projects'
 import { useUiStore } from './ui'
 import { useAuthStore } from './auth'
+import { useDisplayNamesStore } from './displayNames'
 
 export const useProjectsStore = defineStore('projects', () => {
   // プロジェクト一覧
@@ -28,6 +29,15 @@ export const useProjectsStore = defineStore('projects', () => {
     isLoading.value = true
     try {
       projects.value = await projectsApi.fetchProjects()
+      const displayNames = useDisplayNamesStore()
+      displayNames.ingestProjects(projects.value)
+      // メンバーのクラウド最新表示名を一括で揃える（他ユーザー含む）
+      const ids = projects.value.flatMap((p) => [
+        ...(p.memberIds ?? []),
+        ...(p.members ?? []).map((m) => m.userId).filter(Boolean) as string[],
+        p.createdBy,
+      ])
+      await displayNames.refreshUserIds(ids)
     } catch (error: any) {
       uiStore.showError('プロジェクトの読み込みに失敗しました')
       console.error('プロジェクト一覧取得エラー:', error)
@@ -45,6 +55,26 @@ export const useProjectsStore = defineStore('projects', () => {
     isLoading.value = true
     try {
       currentProject.value = await projectsApi.fetchProject(projectId)
+      const displayNames = useDisplayNamesStore()
+      displayNames.ingestProject(currentProject.value)
+      if (currentProject.value) {
+        const p = currentProject.value
+        const ids = [
+          ...(p.memberIds ?? []),
+          ...(p.members ?? []).map((m) => m.userId).filter(Boolean) as string[],
+          p.createdBy,
+        ]
+        await displayNames.refreshUserIds(ids)
+      }
+      // 一覧側も同期
+      if (currentProject.value) {
+        const idx = projects.value.findIndex(
+          (p) => p.projectId === currentProject.value!.projectId,
+        )
+        if (idx !== -1) {
+          projects.value[idx] = currentProject.value
+        }
+      }
     } catch (error: any) {
       uiStore.showError('プロジェクトの取得に失敗しました')
       console.error('プロジェクト詳細取得エラー:', error)
@@ -68,6 +98,7 @@ export const useProjectsStore = defineStore('projects', () => {
       })
       // 一覧の先頭に追加する
       projects.value.unshift(newProject)
+      useDisplayNamesStore().ingestProject(newProject)
       uiStore.showSuccess('プロジェクトを作成しました')
       return newProject
     } catch (error: any) {
@@ -128,6 +159,7 @@ export const useProjectsStore = defineStore('projects', () => {
     if (currentProject.value?.projectId === updated.projectId) {
       currentProject.value = updated
     }
+    useDisplayNamesStore().ingestProject(updated)
   }
 
   /**

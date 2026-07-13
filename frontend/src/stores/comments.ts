@@ -5,6 +5,7 @@ import type { Comment, CreateCommentPayload } from '@/types/comment'
 import * as commentsApi from '@/api/comments'
 import { useUiStore } from './ui'
 import { useAuthStore } from './auth'
+import { useDisplayNamesStore } from './displayNames'
 
 export const useCommentsStore = defineStore('comments', () => {
   // 現在のタスクのコメント一覧
@@ -38,6 +39,10 @@ export const useCommentsStore = defineStore('comments', () => {
       }
       // サーバー側の taskId と一致するコメントのみ表示する
       comments.value = data.filter((c) => c.taskId === taskId)
+      const displayNames = useDisplayNamesStore()
+      displayNames.ingestComments(comments.value)
+      const authorIds = comments.value.map((c) => c.authorId).filter(Boolean)
+      await displayNames.refreshUserIds(authorIds)
     } catch (error: unknown) {
       if (generation === fetchGeneration && activeTaskId.value === taskId) {
         uiStore.showError('コメントの読み込みに失敗しました')
@@ -71,6 +76,7 @@ export const useCommentsStore = defineStore('comments', () => {
       // 投稿完了時点でも同じタスクを見ている場合のみ追加する
       if (activeTaskId.value === taskId && newComment.taskId === taskId) {
         comments.value.push(newComment)
+        useDisplayNamesStore().ingestComments([newComment])
       }
     } catch (error: unknown) {
       uiStore.showError('コメントの投稿に失敗しました')

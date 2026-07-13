@@ -47,6 +47,23 @@ export async function handler(
       return successResponse(200, { ...profile, hasDisplayName: true }, correlationId)
     }
 
+    // POST /users/display-names — 複数 userId の表示名を一括取得（他ユーザー名の統一表示用）
+    if (method === 'POST' && path === '/users/display-names') {
+      const body = parseBody<{ userIds?: string[] }>(event)
+      const userIds = Array.isArray(body?.userIds) ? body.userIds : []
+      const map = await usersService.getDisplayNameMap(userIds)
+      const names: Record<string, string> = {}
+      for (const [id, name] of map) {
+        names[id] = name
+      }
+      logInfo(correlationId, '表示名を一括取得しました', {
+        requestId: event.requestContext.requestId,
+        userId: user.userId,
+        action: 'LOOKUP_DISPLAY_NAMES',
+      })
+      return successResponse(200, { names }, correlationId)
+    }
+
     if (method === 'GET' && path === '/dashboard/summary') {
       const summary = await service.getSummary(user.userId, user.email, user.name)
       logInfo(correlationId, 'ダッシュボード統計を取得しました', {

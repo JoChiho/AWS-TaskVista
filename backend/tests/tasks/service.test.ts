@@ -44,6 +44,38 @@ describe('tasks/service', () => {
     expect(result).toHaveLength(1)
   })
 
+  it('assigneeName がメールでもプロジェクト members の表示名に解決する', async () => {
+    vi.mocked(projectRepository.getProjectById).mockResolvedValue(
+      makeProject({
+        members: [
+          {
+            userId: OTHER_USER,
+            email: 'h-sameshima@findix.co.jp',
+            displayName: '鮫島',
+          },
+          {
+            userId: USER_ID,
+            email: 'user@example.com',
+            displayName: 'テストユーザー',
+          },
+        ],
+        memberIds: [USER_ID, OTHER_USER],
+        memberEmails: ['user@example.com', 'h-sameshima@findix.co.jp'],
+      }),
+    )
+    vi.mocked(repository.listTasksByProject).mockResolvedValue([
+      makeTask({
+        assigneeId: undefined,
+        assigneeName: 'h-sameshima@findix.co.jp',
+      }),
+    ])
+
+    const result = await service.listTasksByProject(PROJECT_ID, USER_ID)
+    expect(result).toHaveLength(1)
+    expect(result[0].assigneeName).toBe('鮫島')
+    expect(result[0].assigneeId).toBe(OTHER_USER)
+  })
+
   it('タスク詳細にコメント数を含める', async () => {
     vi.mocked(repository.getTaskById).mockResolvedValue(makeTask())
     vi.mocked(commentRepository.listCommentsByTask).mockResolvedValue([

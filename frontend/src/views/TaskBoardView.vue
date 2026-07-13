@@ -85,10 +85,13 @@ function resetFilters() {
 }
 
 onMounted(async () => {
-  await Promise.all([
-    tasksStore.fetchTasks(projectId.value),
-    projectsStore.fetchProject(projectId.value),
-  ])
+  // 先にプロジェクト（members の表示名）を入れてからタスクを読む
+  // → タスクの assigneeName がメールでも表示名に変換できる
+  await projectsStore.fetchProject(projectId.value)
+  await tasksStore.fetchTasks(projectId.value)
+  // メンバー表でタスクのメール担当を人名に再適用
+  const { useDisplayNamesStore } = await import('@/stores/displayNames')
+  await useDisplayNamesStore().applyToEntityStores()
 })
 </script>
 

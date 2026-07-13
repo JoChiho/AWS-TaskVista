@@ -12,6 +12,7 @@ import type {
 import { TASK_STATUSES } from '@/types/task'
 import * as tasksApi from '@/api/tasks'
 import { useUiStore } from './ui'
+import { useDisplayNamesStore } from './displayNames'
 
 export const useTasksStore = defineStore('tasks', () => {
   // 現在のプロジェクトのタスク一覧
@@ -59,6 +60,15 @@ export const useTasksStore = defineStore('tasks', () => {
     currentProjectId.value = projectId
     try {
       tasks.value = await tasksApi.fetchTasks(projectId)
+      const displayNames = useDisplayNamesStore()
+      // メールの assigneeName でディレクトリを汚染しない
+      displayNames.ingestTasks(tasks.value)
+      const ids = tasks.value
+        .map((t) => t.assigneeId)
+        .filter(Boolean) as string[]
+      await displayNames.refreshUserIds(ids)
+      // 既に読み込み済みの members 表示名で、メール担当を人名に直す
+      await displayNames.applyToEntityStores()
     } catch (error: any) {
       uiStore.showError('タスクの読み込みに失敗しました')
       console.error('タスク一覧取得エラー:', error)
@@ -75,6 +85,13 @@ export const useTasksStore = defineStore('tasks', () => {
   async function fetchTask(taskId: string): Promise<void> {
     try {
       currentTask.value = await tasksApi.fetchTask(taskId)
+      if (currentTask.value) {
+        const displayNames = useDisplayNamesStore()
+        displayNames.ingestTasks([currentTask.value])
+        if (currentTask.value.assigneeId) {
+          await displayNames.refreshUserIds([currentTask.value.assigneeId])
+        }
+      }
     } catch (error: any) {
       uiStore.showError('タスクの取得に失敗しました')
       console.error('タスク詳細取得エラー:', error)
@@ -92,6 +109,7 @@ export const useTasksStore = defineStore('tasks', () => {
     try {
       const newTask = await tasksApi.createTask(projectId, payload)
       tasks.value.push(newTask)
+      useDisplayNamesStore().ingestTasks([newTask])
       uiStore.showSuccess('タスクを作成しました')
       return newTask
     } catch (error: any) {
@@ -189,6 +207,7 @@ export const useTasksStore = defineStore('tasks', () => {
     if (currentTask.value?.taskId === updatedTask.taskId) {
       currentTask.value = updatedTask
     }
+    useDisplayNamesStore().ingestTasks([updatedTask])
   }
 
   /**

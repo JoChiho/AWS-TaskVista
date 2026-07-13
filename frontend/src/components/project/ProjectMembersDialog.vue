@@ -71,11 +71,20 @@ const members = computed(() => {
 
 const memberCountLabel = computed(() => `${members.value.length} 人`)
 
-watch(modelValue, (open) => {
+watch(modelValue, async (open) => {
   if (open) {
     email.value = ''
     displayName.value = ''
     formError.value = ''
+    // 開くたびに最新メンバー＋クラウド表示名を取り直す（他ユーザーの名前変更を反映）
+    const projectId = liveProject.value?.projectId || props.project?.projectId
+    if (projectId) {
+      try {
+        await projectsStore.fetchProject(projectId)
+      } catch {
+        // 一覧上の情報で表示を継続
+      }
+    }
   }
 })
 

@@ -45,22 +45,59 @@ function normalizeEmail(email: string): string {
   return email.trim().toLowerCase()
 }
 
-/** メンバー表示名をクラウドプロフィールで上書き（全ユーザーで同じ名前が見える） */
+/**
+ * メンバー表示名を TaskVista-Users の最新値で上書き
+ * - 全メンバー（他ユーザー含む）が同じ表示名を見る
+ * - memberIds にあるが members に無い userId も補完する
+ */
 async function enrichProjectMembers(project: Project): Promise<Project> {
-  const ids = [
-    project.createdBy,
-    ...(project.members ?? []).map((m) => m.userId).filter(Boolean) as string[],
-    ...project.memberIds,
-  ]
-  const names = await usersService.getDisplayNameMap(ids)
-  if (names.size === 0) return project
+  const idSet = new Set<string>()
+  if (project.createdBy) idSet.add(project.createdBy)
+  for (const id of project.memberIds ?? []) {
+    if (id) idSet.add(id)
+  }
+  for (const m of project.members ?? []) {
+    if (m.userId) idSet.add(m.userId)
+  }
 
-  const members = (project.members ?? []).map((m) => {
-    if (m.userId && names.has(m.userId)) {
-      return { ...m, displayName: names.get(m.userId)! }
+  const names = await usersService.getDisplayNameMap([...idSet])
+
+  // userId 付きメンバーをマップ化（クラウド表示名を優先）
+  const byUserId = new Map<string, ProjectMember>()
+  const emailOnly: ProjectMember[] = []
+
+  for (const m of project.members ?? []) {
+    if (!m.userId) {
+      emailOnly.push(m)
+      continue
     }
-    return m
-  })
+    const cloud = names.get(m.userId)
+    byUserId.set(m.userId, {
+      ...m,
+      displayName: cloud || m.displayName || m.email || m.userId.slice(0, 8),
+    })
+  }
+
+  // memberIds / createdBy にいるが members に無い人を補完
+  for (const id of idSet) {
+    if (byUserId.has(id)) continue
+    const cloud = names.get(id)
+    byUserId.set(id, {
+      userId: id,
+      email: '',
+      displayName: cloud || id.slice(0, 8),
+    })
+  }
+
+  // 作成者を先頭に
+  const rest = [...byUserId.values()].filter((m) => m.userId !== project.createdBy)
+  const creator = byUserId.get(project.createdBy)
+  const members = [
+    ...(creator ? [creator] : []),
+    ...rest,
+    ...emailOnly,
+  ]
+
   return { ...project, members }
 }
 

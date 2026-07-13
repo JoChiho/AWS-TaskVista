@@ -185,6 +185,10 @@ export const useAuthStore = defineStore('auth', () => {
         const profile = await usersApi.fetchMyProfile()
         displayName.value = profile.displayName?.trim() || ''
         profileLoaded.value = true
+        if (currentUser.value?.sub && displayName.value) {
+          const { useDisplayNamesStore } = await import('./displayNames')
+          useDisplayNamesStore().setName(currentUser.value.sub, displayName.value)
+        }
       } catch (e) {
         console.error('プロフィール取得エラー:', e)
         displayName.value = ''
@@ -213,6 +217,8 @@ export const useAuthStore = defineStore('auth', () => {
     // 楽観的更新: 再取得を待たずに画面上の自分の名前を差し替える
     if (mySub) {
       try {
+        const { useDisplayNamesStore } = await import('./displayNames')
+        useDisplayNamesStore().setName(mySub, displayName.value)
         await patchLocalDisplayName(mySub, displayName.value)
       } catch (e) {
         console.warn('表示名のローカル反映に失敗:', e)
@@ -296,6 +302,9 @@ export const useAuthStore = defineStore('auth', () => {
     displayName.value = ''
     profileLoaded.value = false
     profileLoading = null
+    void import('./displayNames').then(({ useDisplayNamesStore }) => {
+      useDisplayNamesStore().clear()
+    })
 
     sessionStorage.removeItem('accessToken')
     sessionStorage.removeItem('idToken')
