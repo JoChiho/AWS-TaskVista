@@ -2,14 +2,14 @@
 inclusion: always
 ---
 
-# Vue 3 + Vuetify 3 开发规范
+# Vue 3 + Vuetify 3 開発規約
 
-- 使用 <script setup> + Composition API
-- 组件文件名：PascalCase.vue
-- 页面组件后缀 View（xxxView.vue）
-- Props 使用 defineProps() + 类型
-- 事件使用 defineEmits()
-- 样式：Vuetify 主题变量优先，少用自定义 CSS
-- 响应式：ref / reactive / computed 合理使用
-- Kanban：使用 vuedraggable + Vuetify v-card
-- 表格：优先 v-data-table，支持排序、筛选、分页
+- `<script setup>` + Composition API を使用する
+- コンポーネントファイル名：PascalCase.vue
+- ページコンポーネントは View サフィックス（xxxView.vue）
+- Props は `defineProps()` + 型を使用する
+- イベントは `defineEmits()` を使用する
+- スタイル：Vuetify テーマ変数を優先し、独自 CSS は最小限にする
+- リアクティブ：`ref` / `reactive` / `computed` を適切に使う
+- Kanban：vuedraggable + Vuetify `v-card` を使用する
+- テーブル：`v-data-table` を優先し、ソート・フィルター・ページングに対応する

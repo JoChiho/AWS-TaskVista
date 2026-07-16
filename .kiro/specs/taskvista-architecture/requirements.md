@@ -1,215 +1,215 @@
-# 需求文档
+# 要件ドキュメント
 
-## 简介
+## はじめに
 
-TaskVista 是一个面向小型开发团队（5-15 人）的任务与项目进度追踪 Web 应用，旨在替代 Google Sheets 管理开发及评审任务。系统提供 Kanban 看板与 Table 列表双视图，支持 Project 与 Task 的完整生命周期管理，采用 AWS Serverless 架构，前端使用 Vue 3 + Vuetify 3，并在架构层面预留迁移至 Google Cloud 的能力。
-
----
-
-## 词汇表
-
-- **System**：TaskVista 系统整体，包含前端与后端所有组件
-- **Frontend**：Vue 3 + Vuetify 3 单页应用，通过 VITE_API_BASE_URL 与后端解耦
-- **API_Gateway**：Amazon API Gateway HTTP API，负责路由 RESTful 请求
-- **Lambda**：AWS Lambda 函数（Node.js），实现业务逻辑
-- **DynamoDB**：Amazon DynamoDB，存储 Projects、Tasks、Comments 数据
-- **S3**：Amazon S3，存储静态前端资源与任务附件
-- **CloudFront**：Amazon CloudFront CDN，分发前端静态资源
-- **Cognito**：Amazon Cognito User Pools，负责用户认证与授权
-- **CloudWatch**：Amazon CloudWatch，收集结构化日志与监控指标
-- **Project**：项目实体，包含名称、描述、状态、创建者、成员列表等属性
-- **Task**：任务实体，归属于某个 Project，包含标题、描述、状态、场所、要望、Assignee、优先级、截止日期等属性
-- **Comment**：评论实体，归属于某个 Task，包含内容、作者、创建时间等属性
-- **Attachment**：附件实体，归属于某个 Task，存储于 S3 的 `tasks/{taskId}/` 路径下
-- **User**：经过 Cognito 认证的团队成员
-- **Assignee**：被分配负责某个 Task 的 User
-- **KanbanView**：Kanban 看板视图，按任务状态分列展示 Task 卡片，支持拖拽变更状态
-- **TableView**：表格列表视图，以行列方式展示 Task，支持排序、筛选、分页
-- **Dashboard**：总览页面，展示跨 Project 的任务统计与进度汇总
-- **CorrelationId**：每次 Lambda 调用生成的唯一标识符，用于关联日志链路
+TaskVista は、小規模開発チーム（5〜15 人）向けのタスク・プロジェクト進捗管理 Web アプリケーションである。Google Sheets による開発・レビュータスク管理の置き換えを目的とする。Kanban ボードと Table リストの二系統ビューを提供し、Project と Task のライフサイクル全体を管理する。アーキテクチャは AWS Serverless を採用し、フロントエンドは Vue 3 + Vuetify 3、将来の Google Cloud への移行も見据える。
 
 ---
 
-## 需求
+## 用語集
 
-### 需求 1：用户认证与授权
-
-**用户故事：** 作为团队成员，我希望通过安全登录访问 TaskVista，以确保只有授权用户才能查看和操作团队数据。
-
-#### 验收标准
-
-1. WHEN 用户访问 TaskVista 且未登录，THE Frontend SHALL 将用户重定向至 Cognito 登录页面。
-2. WHEN 用户提交有效的用户名和密码，THE Cognito SHALL 返回 JWT Access Token 与 ID Token。
-3. WHEN 用户提交无效的用户名或密码，THE Cognito SHALL 返回认证失败错误，THE Frontend SHALL 展示"用户名或密码错误"的提示信息。
-4. WHEN 用户的 JWT Token 过期，THE Frontend SHALL 使用 Refresh Token 自动刷新，若刷新失败则重定向至登录页面。
-5. WHEN 已认证用户请求 API，THE API_Gateway SHALL 验证 JWT Token 签名与有效期，拒绝无效请求并返回 HTTP 401 状态码。
-6. WHEN 已认证用户点击退出登录，THE Frontend SHALL 清除本地 Token 并重定向至登录页面。
-7. THE Cognito SHALL 支持至少 15 个并发用户会话。
-
----
-
-### 需求 2：Project 管理（CRUD）
-
-**用户故事：** 作为项目负责人，我希望创建、查看、编辑和删除项目，以便团队能够快速启动新项目，无需手动复制 Google Sheets。
-
-#### 验收标准
-
-1. WHEN 已认证用户提交包含有效名称（1-100 个字符）的创建项目请求，THE Lambda SHALL 在 DynamoDB Projects 表中创建项目记录，并返回 HTTP 201 状态码及新建项目的完整 JSON 数据（含 projectId、name、description、status、createdBy、createdAt、updatedAt）。
-2. WHEN 已认证用户请求项目列表，THE Lambda SHALL 从 DynamoDB 查询该用户有权限访问的所有项目，并在 2000ms 内返回项目列表。
-3. WHEN 已认证用户请求特定 projectId 的项目详情，THE Lambda SHALL 从 DynamoDB 查询并返回该项目的完整数据。
-4. IF 请求的 projectId 在 DynamoDB 中不存在，THEN THE Lambda SHALL 返回 HTTP 404 状态码及描述性错误消息。
-5. WHEN 已认证用户提交更新项目请求，THE Lambda SHALL 在 DynamoDB 中更新对应记录，更新 updatedAt 时间戳，并返回 HTTP 200 状态码及更新后的项目数据。
-6. WHEN 已认证用户提交删除项目请求，THE Lambda SHALL 在 DynamoDB 中将该项目标记为已删除（软删除），并返回 HTTP 200 状态码。
-7. IF 创建项目请求中名称字段为空或超过 100 个字符，THEN THE Lambda SHALL 返回 HTTP 400 状态码及字段级别的验证错误消息。
-8. THE DynamoDB Projects 表 SHALL 使用 projectId 作为分区键，并维护 createdBy 的 GSI 以支持按用户查询。
+- **System**：TaskVista システム全体。フロントエンドとバックエンドの全コンポーネントを含む
+- **Frontend**：Vue 3 + Vuetify 3 のシングルページアプリケーション。`VITE_API_BASE_URL` によりバックエンドと疎結合
+- **API_Gateway**：Amazon API Gateway HTTP API。RESTful リクエストのルーティングを担当
+- **Lambda**：AWS Lambda 関数（Node.js）。ビジネスロジックを実装
+- **DynamoDB**：Amazon DynamoDB。Projects、Tasks、Comments データを保存
+- **S3**：Amazon S3。フロントエンド静的リソースとタスク添付を保存
+- **CloudFront**：Amazon CloudFront CDN。フロントエンド静的リソースを配信
+- **Cognito**：Amazon Cognito User Pools。ユーザー認証・認可を担当
+- **CloudWatch**：Amazon CloudWatch。構造化ログと監視メトリクスを収集
+- **Project**：プロジェクトエンティティ。名称、説明、ステータス、作成者、メンバー一覧などの属性を持つ
+- **Task**：タスクエンティティ。ある Project に属し、タイトル、説明、ステータス、場所、要望、Assignee、優先度、期日などの属性を持つ
+- **Comment**：コメントエンティティ。ある Task に属し、内容、投稿者、作成日時などの属性を持つ
+- **Attachment**：添付エンティティ。ある Task に属し、S3 の `tasks/{taskId}/` 配下に保存される
+- **User**：Cognito で認証されたチームメンバー
+- **Assignee**：ある Task の担当に割り当てられた User
+- **KanbanView**：Kanban ボードビュー。タスクステータスごとに列表示し、ドラッグでステータス変更可能
+- **TableView**：テーブルリストビュー。行・列形式で Task を表示し、ソート・フィルター・ページングに対応
+- **Dashboard**：概要ページ。Project 横断のタスク統計と進捗サマリーを表示
+- **CorrelationId**：各 Lambda 呼び出しで生成される一意 ID。ログの関連付けに使用
 
 ---
 
-### 需求 3：Task 管理（CRUD）
+## 要件
 
-**用户故事：** 作为团队成员，我希望在项目内创建、查看、编辑和删除任务，以便追踪每个工作项的进度和责任人。
+### 要件 1：ユーザー認証と認可
 
-#### 验收标准
+**ユーザーストーリー：** チームメンバーとして、安全なログインで TaskVista にアクセスし、認可されたユーザーだけがチームデータを閲覧・操作できるようにしたい。
 
-1. WHEN 已认证用户提交包含有效标题（1-200 个字符）和 projectId 的创建任务请求，THE Lambda SHALL 在 DynamoDB Tasks 表中创建任务记录，并返回 HTTP 201 状态码及新建任务的完整 JSON 数据（含 taskId、projectId、title、description、status、assigneeId、priority、location、requirement、dueDate、createdBy、createdAt、updatedAt）。
-2. WHEN 已认证用户请求某 projectId 下的任务列表，THE Lambda SHALL 从 DynamoDB 查询该项目的所有任务，并在 2000ms 内返回。
-3. WHEN 已认证用户请求特定 taskId 的任务详情，THE Lambda SHALL 返回该任务的完整数据，包含关联的 Comment 数量。
-4. IF 请求的 taskId 在 DynamoDB 中不存在，THEN THE Lambda SHALL 返回 HTTP 404 状态码及描述性错误消息。
-5. WHEN 已认证用户提交更新任务请求，THE Lambda SHALL 在 DynamoDB 中更新对应记录，更新 updatedAt 时间戳，并返回 HTTP 200 状态码及更新后的任务数据。
-6. WHEN 已认证用户更新任务的 assigneeId 字段，THE Lambda SHALL 验证 assigneeId 对应的用户存在于 Cognito User Pool 中，若不存在则返回 HTTP 400 状态码。
-7. WHEN 已认证用户提交删除任务请求，THE Lambda SHALL 在 DynamoDB 中将该任务标记为已删除（软删除），并返回 HTTP 200 状态码。
-8. THE DynamoDB Tasks 表 SHALL 使用 taskId 作为分区键，projectId 作为 GSI 分区键，以支持按项目高效查询。
-9. THE Lambda SHALL 支持任务状态值为以下之一：「未着手」「進行中」「レビュー待ち」「完了」「保留」。
-10. IF 任务状态值不在允许列表内，THEN THE Lambda SHALL 返回 HTTP 400 状态码及枚举值列表的错误消息。
+#### 受入基準
 
----
-
-### 需求 4：Kanban 看板视图
-
-**用户故事：** 作为团队成员，我希望通过 Kanban 看板直观地查看任务状态分布，并通过拖拽快速变更任务状态。
-
-#### 验收标准
-
-1. WHEN 用户进入某 Project 的看板页面，THE Frontend SHALL 按任务状态（「未着手」「進行中」「レビュー待ち」「完了」「保留」）将任务分列展示，每列使用 Vuetify v-card 渲染任务卡片。
-2. WHEN 用户将任务卡片从一个状态列拖拽至另一个状态列，THE Frontend SHALL 使用 vuedraggable 处理拖拽交互，并立即调用 API 更新任务状态，在 API 响应前乐观更新 UI。
-3. IF 状态更新 API 调用失败，THEN THE Frontend SHALL 将任务卡片回滚至拖拽前的状态列，并展示错误提示信息。
-4. THE Frontend SHALL 在每个任务卡片上展示任务标题、Assignee 头像或姓名、优先级标识、截止日期（若存在）。
-5. WHILE Kanban 数据正在加载，THE Frontend SHALL 展示骨架屏（skeleton loader）占位符。
-6. THE Frontend SHALL 支持在 Kanban 视图中通过 Assignee 或优先级筛选任务卡片，筛选操作在客户端完成且无需重新请求 API。
+1. WHEN ユーザーが未ログインのまま TaskVista にアクセスしたとき、THE Frontend SHALL ユーザーを Cognito ログインページへリダイレクトする。
+2. WHEN ユーザーが有効なユーザー名・パスワードを送信したとき、THE Cognito SHALL JWT Access Token と ID Token を返す。
+3. WHEN ユーザーが無効なユーザー名・パスワードを送信したとき、THE Cognito SHALL 認証失敗エラーを返し、THE Frontend SHALL 「ユーザー名またはパスワードが正しくありません」と表示する。
+4. WHEN ユーザーの JWT Token が期限切れになったとき、THE Frontend SHALL Refresh Token で自動更新し、失敗時はログインページへリダイレクトする。
+5. WHEN 認証済みユーザーが API をリクエストしたとき、THE API_Gateway SHALL JWT の署名と有効期限を検証し、無効なリクエストを拒否して HTTP 401 を返す。
+6. WHEN 認証済みユーザーがログアウトしたとき、THE Frontend SHALL ローカルの Token を破棄し、ログインページへリダイレクトする。
+7. THE Cognito SHALL 少なくとも 15 の同時ユーザーセッションをサポートする。
 
 ---
 
-### 需求 5：Table 列表视图
+### 要件 2：Project 管理（CRUD）
 
-**用户故事：** 作为项目负责人，我希望通过表格视图查看项目内所有任务的详细字段，并支持排序、筛选和分页，以便进行数据分析和跟进。
+**ユーザーストーリー：** プロジェクト責任者として、プロジェクトの作成・閲覧・編集・削除を行い、Google Sheets を手コピーせずに新プロジェクトを素早く始めたい。
 
-#### 验收标准
+#### 受入基準
 
-1. WHEN 用户进入某 Project 的表格页面，THE Frontend SHALL 使用 Vuetify v-data-table 展示任务列表，默认显示列：场所（location）、要望（requirement）、状态（status）、Assignee、优先级、截止日期、创建时间。
-2. THE Frontend SHALL 支持用户点击列标题对任务列表按该列进行升序或降序排序，排序在客户端完成。
-3. THE Frontend SHALL 支持用户通过状态、Assignee、优先级组合筛选任务列表，筛选操作在客户端完成。
-4. THE Frontend SHALL 支持分页展示，每页默认显示 20 条任务，用户可选择每页显示 10、20、50 条。
-5. WHEN 用户在表格视图点击某行任务，THE Frontend SHALL 打开 Task 详情侧边栏或跳转至 Task 详情页面。
-6. THE Frontend SHALL 支持用户在表格视图中通过搜索框按任务标题进行模糊搜索，搜索在客户端完成，结果在用户输入后 300ms 内更新。
-
----
-
-### 需求 6：Task 详情与评论管理
-
-**用户故事：** 作为团队成员，我希望查看任务的完整详情并添加评论，以便记录讨论过程和决策。
-
-#### 验收标准
-
-1. WHEN 用户打开 Task 详情页，THE Frontend SHALL 展示任务的所有字段（标题、描述、状态、场所、要望、Assignee、优先级、截止日期、创建者、创建时间、最后更新时间）及评论列表。
-2. WHEN 已认证用户提交包含非空内容（1-2000 个字符）的评论，THE Lambda SHALL 在 DynamoDB Comments 表中创建评论记录，并返回 HTTP 201 状态码及新评论的完整 JSON 数据（含 commentId、taskId、content、authorId、createdAt）。
-3. WHEN 用户请求某 taskId 的评论列表，THE Lambda SHALL 从 DynamoDB 查询该任务的所有评论，按 createdAt 升序排列返回。
-4. IF 评论内容为空或超过 2000 个字符，THEN THE Lambda SHALL 返回 HTTP 400 状态码及字段级别的验证错误消息。
-5. THE DynamoDB Comments 表 SHALL 使用 commentId 作为分区键，taskId 作为 GSI 分区键，以支持按任务查询评论。
-6. WHEN 已认证用户为评论的 authorId，THE Frontend SHALL 展示该评论的删除按钮；WHEN 用户点击删除，THE Lambda SHALL 从 DynamoDB 中删除该评论记录（硬删除），并返回 HTTP 200 状态码。
+1. WHEN 認証済みユーザーが有効な名称（1〜100 文字）でプロジェクト作成をリクエストしたとき、THE Lambda SHALL DynamoDB Projects テーブルにレコードを作成し、HTTP 201 と新規プロジェクトの完全な JSON（projectId、name、description、status、createdBy、createdAt、updatedAt を含む）を返す。
+2. WHEN 認証済みユーザーがプロジェクト一覧をリクエストしたとき、THE Lambda SHALL DynamoDB から当該ユーザーがアクセス可能な全プロジェクトを照会し、2000ms 以内に返す。
+3. WHEN 認証済みユーザーが特定 projectId の詳細をリクエストしたとき、THE Lambda SHALL DynamoDB から照会し完全なデータを返す。
+4. IF リクエストされた projectId が DynamoDB に存在しない場合、THEN THE Lambda SHALL HTTP 404 と説明的なエラーメッセージを返す。
+5. WHEN 認証済みユーザーがプロジェクト更新をリクエストしたとき、THE Lambda SHALL DynamoDB の該当レコードを更新し、updatedAt を更新して HTTP 200 と更新後データを返す。
+6. WHEN 認証済みユーザーがプロジェクト削除をリクエストしたとき、THE Lambda SHALL DynamoDB 上で論理削除（ソフトデリート）し、HTTP 200 を返す。
+7. IF 作成リクエストの名称が空、または 100 文字を超える場合、THEN THE Lambda SHALL HTTP 400 とフィールド単位の検証エラーを返す。
+8. THE DynamoDB Projects テーブル SHALL projectId をパーティションキーとし、ユーザー別照会のため createdBy の GSI を維持する。
 
 ---
 
-### 需求 7：附件管理
+### 要件 3：Task 管理（CRUD）
 
-**用户故事：** 作为团队成员，我希望为任务上传和下载附件，以便共享相关文档和截图。
+**ユーザーストーリー：** チームメンバーとして、プロジェクト内でタスクの作成・閲覧・編集・削除を行い、各作業項目の進捗と担当を追跡したい。
 
-#### 验收标准
+#### 受入基準
 
-1. WHEN 已认证用户请求上传附件，THE Lambda SHALL 生成 S3 预签名 PUT URL（有效期 15 分钟），路径格式为 `tasks/{taskId}/{attachmentId}-{filename}`，并返回该 URL 与附件元数据。
-2. WHEN 前端收到预签名 PUT URL，THE Frontend SHALL 直接将文件上传至 S3，不经过 Lambda，以避免 Lambda 6MB payload 限制。
-3. THE Lambda SHALL 限制单个附件大小不超过 50MB，IF 文件大小超过 50MB，THEN THE Lambda SHALL 返回 HTTP 400 状态码及大小限制说明。
-4. WHEN 已认证用户请求下载附件，THE Lambda SHALL 生成 S3 预签名 GET URL（有效期 60 分钟）并返回，THE Frontend SHALL 使用该 URL 触发浏览器下载。
-5. THE S3 附件桶 SHALL 配置生命周期规则，将超过 365 天未访问的附件转移至 S3 Glacier Instant Retrieval 存储类别。
-6. WHEN 已认证用户删除附件，THE Lambda SHALL 从 DynamoDB 的 Task 附件元数据中移除记录，并调用 S3 DeleteObject 删除对应文件，返回 HTTP 200 状态码。
-
----
-
-### 需求 8：Dashboard 与数据统计
-
-**用户故事：** 作为项目负责人，我希望在 Dashboard 页面查看跨项目的任务统计与进度汇总，以便快速掌握团队整体工作状态。
-
-#### 验收标准
-
-1. WHEN 已认证用户访问 Dashboard，THE Frontend SHALL 展示该用户有权限访问的所有 Project 的摘要列表，包含项目名称、总任务数、各状态任务数量。
-2. THE Frontend SHALL 展示"我负责的任务"列表，显示当前用户作为 Assignee 且状态不为「完了」的任务，按截止日期升序排列。
-3. WHEN 已认证用户请求 Dashboard 统计数据，THE Lambda SHALL 从 DynamoDB 聚合数据，并在 3000ms 内返回统计结果。
-4. THE Frontend SHALL 在 Dashboard 展示任务状态分布图表（使用 Vuetify 内置组件或轻量图表库），直观显示各状态任务占比。
-5. WHILE Dashboard 数据正在加载，THE Frontend SHALL 展示加载指示器（progress indicator）。
+1. WHEN 認証済みユーザーが有効なタイトル（1〜200 文字）と projectId でタスク作成をリクエストしたとき、THE Lambda SHALL DynamoDB Tasks テーブルにレコードを作成し、HTTP 201 と新規タスクの完全な JSON（taskId、projectId、title、description、status、assigneeId、priority、location、requirement、dueDate、createdBy、createdAt、updatedAt を含む）を返す。
+2. WHEN 認証済みユーザーがある projectId 配下のタスク一覧をリクエストしたとき、THE Lambda SHALL DynamoDB から当該プロジェクトの全タスクを照会し、2000ms 以内に返す。
+3. WHEN 認証済みユーザーが特定 taskId の詳細をリクエストしたとき、THE Lambda SHALL タスクの完全データと関連 Comment 件数を返す。
+4. IF リクエストされた taskId が DynamoDB に存在しない場合、THEN THE Lambda SHALL HTTP 404 と説明的なエラーメッセージを返す。
+5. WHEN 認証済みユーザーがタスク更新をリクエストしたとき、THE Lambda SHALL DynamoDB の該当レコードを更新し、updatedAt を更新して HTTP 200 と更新後データを返す。
+6. WHEN 認証済みユーザーがタスクの assigneeId を更新したとき、THE Lambda SHALL 対応ユーザーが Cognito User Pool に存在するか検証し、存在しなければ HTTP 400 を返す。
+7. WHEN 認証済みユーザーがタスク削除をリクエストしたとき、THE Lambda SHALL DynamoDB 上で論理削除し、HTTP 200 を返す。
+8. THE DynamoDB Tasks テーブル SHALL taskId をパーティションキー、projectId を GSI パーティションキーとし、プロジェクト単位の効率的な照会を可能にする。
+9. THE Lambda SHALL タスクステータスとして「未着手」「進行中」「レビュー待ち」「完了」「保留」のいずれかをサポートする。
+10. IF タスクステータスが許可リスト外の場合、THEN THE Lambda SHALL HTTP 400 と許可値一覧を含むエラーメッセージを返す。
 
 ---
 
-### 需求 9：API 设计与可观测性
+### 要件 4：Kanban ボードビュー
 
-**用户故事：** 作为后端开发者，我希望所有 API 遵循 RESTful 规范并输出结构化日志，以便维护、排查问题，并支持未来迁移至 Google Cloud。
+**ユーザーストーリー：** チームメンバーとして、Kanban ボードでタスクの状態分布を直感的に把握し、ドラッグで素早くステータスを変更したい。
 
-#### 验收标准
+#### 受入基準
 
-1. THE API_Gateway SHALL 为所有 API 端点启用 CORS，允许来自 CloudFront 域名的跨域请求。
-2. THE Lambda SHALL 在每次调用时生成唯一的 CorrelationId，并将其包含在所有结构化 JSON 日志条目中。
-3. THE Lambda SHALL 将结构化日志输出至 CloudWatch，日志格式包含字段：correlationId、requestId、level、message、timestamp、duration（ms）。
-4. WHEN Lambda 执行时间超过 5000ms，THE Lambda SHALL 输出 level 为 WARN 的日志条目并包含 duration 字段。
-5. IF Lambda 发生未捕获的异常，THEN THE Lambda SHALL 返回 HTTP 500 状态码及通用错误消息（不暴露堆栈信息），并将完整错误详情记录至 CloudWatch。
-6. THE API_Gateway SHALL 遵循 RESTful 资源路径规范：`/projects`、`/projects/{projectId}`、`/projects/{projectId}/tasks`、`/tasks/{taskId}`、`/tasks/{taskId}/comments`、`/tasks/{taskId}/attachments`。
-7. THE System SHALL 使用标准 HTTP 方法（GET、POST、PUT、PATCH、DELETE）与状态码（200、201、400、401、403、404、500），以确保 API 在迁移至 Google Cloud Run 时无需修改前端调用逻辑。
-
----
-
-### 需求 10：前端部署与 CDN 分发
-
-**用户故事：** 作为运维负责人，我希望前端应用通过 CloudFront + S3 进行部署和分发，以便实现低成本、高可用的全球访问。
-
-#### 验收标准
-
-1. THE Frontend SHALL 构建为静态资源，部署至 S3 静态托管桶，并通过 CloudFront Distribution 分发。
-2. THE CloudFront SHALL 配置自定义错误响应，将 HTTP 403 和 404 错误重定向至 `index.html`，以支持 Vue Router 的 History 模式。
-3. THE Frontend SHALL 通过 `VITE_API_BASE_URL` 环境变量配置 API Gateway 端点，构建时注入，不硬编码 AWS 资源 ARN 或 URL。
-4. WHERE 用户访问 TaskVista，THE CloudFront SHALL 在 HTTPS 协议下提供服务，不允许 HTTP 明文访问。
-5. THE S3 前端托管桶 SHALL 设置桶策略，仅允许 CloudFront Origin Access Control（OAC）访问，拒绝所有直接公网访问。
+1. WHEN ユーザーがある Project のボードページに入ったとき、THE Frontend SHALL タスクをステータス（「未着手」「進行中」「レビュー待ち」「完了」「保留」）ごとに列表示し、各列で Vuetify v-card によりタスクカードを描画する。
+2. WHEN ユーザーがタスクカードをあるステータス列から別列へドラッグしたとき、THE Frontend SHALL vuedraggable で操作を処理し、API でステータスを更新し、レスポンス前に UI を楽観的更新する。
+3. IF ステータス更新 API が失敗した場合、THEN THE Frontend SHALL カードをドラッグ前の列へロールバックし、エラーメッセージを表示する。
+4. THE Frontend SHALL 各タスクカードにタイトル、Assignee のアバターまたは氏名、優先度、期日（存在する場合）を表示する。
+5. WHILE Kanban データを読み込み中、THE Frontend SHALL スケルトンローダー（skeleton loader）を表示する。
+6. THE Frontend SHALL Kanban ビューで Assignee または優先度によるカード絞り込みをサポートし、クライアント側で完結させ API 再リクエストを不要とする。
 
 ---
 
-### 需求 11：安全性与 IAM 最小权限
+### 要件 5：Table リストビュー
 
-**用户故事：** 作为安全负责人，我希望系统遵循 IAM 最小权限原则，以防止未授权访问和数据泄露。
+**ユーザーストーリー：** プロジェクト責任者として、テーブルビューですべてのタスク詳細フィールドを閲覧し、ソート・フィルター・ページングで分析・フォローしたい。
 
-#### 验收标准
+#### 受入基準
 
-1. THE Lambda SHALL 使用独立的 IAM 执行角色，每个 Lambda 函数的角色仅包含其业务逻辑所需的最小 DynamoDB 操作权限（指定表名和操作类型）。
-2. THE Lambda SHALL 在处理所有用户输入（包含 projectId、taskId、commentId 及请求体字段）时进行输入验证，拒绝包含 SQL 注入或 NoSQL 注入模式的输入，返回 HTTP 400 状态码。
-3. THE System SHALL 不在代码、环境变量明文或日志中记录 AWS 访问密钥、密码或 JWT 私钥等敏感凭证。
-4. THE Cognito SHALL 配置密码策略，要求密码长度不少于 8 个字符，且包含大小写字母与数字的组合。
-5. WHEN 已认证用户请求操作不属于自己有权访问的 Project 或 Task，THE Lambda SHALL 返回 HTTP 403 状态码，不暴露目标资源是否存在。
+1. WHEN ユーザーがある Project のテーブルページに入ったとき、THE Frontend SHALL Vuetify v-data-table でタスク一覧を表示し、既定列は場所（location）、要望（requirement）、ステータス（status）、Assignee、優先度、期日、作成日時とする。
+2. THE Frontend SHALL 列見出しクリックによる昇順・降順ソートをサポートし、ソートはクライアント側で行う。
+3. THE Frontend SHALL ステータス、Assignee、優先度の組み合わせによるフィルターをサポートし、クライアント側で行う。
+4. THE Frontend SHALL ページングをサポートし、既定は 1 ページ 20 件、ユーザーは 10 / 20 / 50 件を選択できる。
+5. WHEN ユーザーがテーブル行のタスクをクリックしたとき、THE Frontend SHALL Task 詳細サイドバーを開くか、Task 詳細ページへ遷移する。
+6. THE Frontend SHALL 検索ボックスによるタイトルあいまい検索をサポートし、クライアント側で入力後 300ms 以内に結果を更新する。
 
 ---
 
-### 需求 12：云迁移兼容性
+### 要件 6：Task 詳細とコメント管理
 
-**用户故事：** 作为架构师，我希望系统在架构层面预留迁移至 Google Cloud 的能力，以便在业务需要时能以最小成本完成迁移。
+**ユーザーストーリー：** チームメンバーとして、タスクの全詳細を確認しコメントを追加して、議論と決定を記録したい。
 
-#### 验收标准
+#### 受入基準
 
-1. THE Lambda 业务逻辑代码 SHALL 将所有 AWS SDK 调用封装在独立的 Repository 或 Adapter 层，不在业务逻辑函数中直接引用 AWS SDK。
-2. THE System SHALL 使用标准 RESTful API 设计，不使用 AWS 私有协议（如 AppSync GraphQL Subscription、IoT WebSocket）作为前后端通信方式。
-3. THE Frontend SHALL 通过 `VITE_API_BASE_URL` 单一入口与后端通信，切换后端云平台时仅需修改该环境变量。
-4. THE DynamoDB 数据模型 SHALL 使用 camelCase 属性命名，且核心实体字段（projectId、taskId、title、status、assigneeId、createdAt、updatedAt）与 Google Cloud Firestore 的文档模型兼容。
-5. THE System 的 API 文档 SHALL 以 OpenAPI 3.0 规范描述所有端点，为迁移至 Google Cloud Endpoints 提供接口契约。
+1. WHEN ユーザーが Task 詳細を開いたとき、THE Frontend SHALL すべてのフィールド（タイトル、説明、ステータス、場所、要望、Assignee、優先度、期日、作成者、作成日時、最終更新日時）とコメント一覧を表示する。
+2. WHEN 認証済みユーザーが非空（1〜2000 文字）のコメントを投稿したとき、THE Lambda SHALL DynamoDB Comments テーブルにレコードを作成し、HTTP 201 と新コメントの完全な JSON（commentId、taskId、content、authorId、createdAt を含む）を返す。
+3. WHEN ユーザーがある taskId のコメント一覧をリクエストしたとき、THE Lambda SHALL DynamoDB から全コメントを照会し、createdAt 昇順で返す。
+4. IF コメント内容が空、または 2000 文字を超える場合、THEN THE Lambda SHALL HTTP 400 とフィールド単位の検証エラーを返す。
+5. THE DynamoDB Comments テーブル SHALL commentId をパーティションキー、taskId を GSI パーティションキーとし、タスク単位のコメント照会を可能にする。
+6. WHEN 認証済みユーザーがコメントの authorId であるとき、THE Frontend SHALL 削除ボタンを表示する。WHEN ユーザーが削除をクリックしたとき、THE Lambda SHALL DynamoDB から当該コメントをハード削除し、HTTP 200 を返す。
+
+---
+
+### 要件 7：添付ファイル管理
+
+**ユーザーストーリー：** チームメンバーとして、タスクに添付をアップロード・ダウンロードし、関連ドキュメントやスクリーンショットを共有したい。
+
+#### 受入基準
+
+1. WHEN 認証済みユーザーが添付アップロードをリクエストしたとき、THE Lambda SHALL 有効期限 15 分の S3 プリサインド PUT URL を生成する。パス形式は `tasks/{taskId}/{attachmentId}-{filename}` とし、URL と添付メタデータを返す。
+2. WHEN フロントエンドがプリサインド PUT URL を受け取ったとき、THE Frontend SHALL Lambda を経由せず S3 へ直接アップロードし、Lambda の 6MB ペイロード制限を回避する。
+3. THE Lambda SHALL 単一添付の上限を 50MB とする。IF ファイルサイズが 50MB を超える場合、THEN THE Lambda SHALL HTTP 400 とサイズ制限の説明を返す。
+4. WHEN 認証済みユーザーが添付ダウンロードをリクエストしたとき、THE Lambda SHALL 有効期限 60 分の S3 プリサインド GET URL を返し、THE Frontend SHALL その URL でブラウザダウンロードを開始する。
+5. THE S3 添付バケット SHALL ライフサイクルルールを設定し、365 日以上未アクセスの添付を S3 Glacier Instant Retrieval へ移行する。
+6. WHEN 認証済みユーザーが添付を削除したとき、THE Lambda SHALL DynamoDB 上の Task 添付メタデータからレコードを除去し、S3 DeleteObject でファイルを削除して HTTP 200 を返す。
+
+---
+
+### 要件 8：Dashboard とデータ統計
+
+**ユーザーストーリー：** プロジェクト責任者として、Dashboard でプロジェクト横断のタスク統計と進捗サマリーを把握し、チーム全体の状況を素早く知りたい。
+
+#### 受入基準
+
+1. WHEN 認証済みユーザーが Dashboard にアクセスしたとき、THE Frontend SHALL アクセス可能な全 Project の要約一覧を表示する（プロジェクト名、総タスク数、ステータス別件数）。
+2. THE Frontend SHALL 「自分の担当タスク」一覧を表示し、現在ユーザーが Assignee でステータスが「完了」でないタスクを期日昇順で並べる。
+3. WHEN 認証済みユーザーが Dashboard 統計をリクエストしたとき、THE Lambda SHALL DynamoDB から集計し、3000ms 以内に結果を返す。
+4. THE Frontend SHALL Dashboard にタスクステータス分布のチャート（Vuetify 内蔵コンポーネントまたは軽量チャート）を表示し、各ステータスの割合を示す。
+5. WHILE Dashboard データを読み込み中、THE Frontend SHALL プログレスインジケーターを表示する。
+
+---
+
+### 要件 9：API 設計と可観測性
+
+**ユーザーストーリー：** バックエンド開発者として、すべての API が RESTful に従い構造化ログを出力し、保守・障害調査と将来の Google Cloud 移行を容易にしたい。
+
+#### 受入基準
+
+1. THE API_Gateway SHALL すべての API エンドポイントで CORS を有効にし、CloudFront ドメインからのクロスオリジン要求を許可する。
+2. THE Lambda SHALL 各呼び出しで一意の CorrelationId を生成し、すべての構造化 JSON ログに含める。
+3. THE Lambda SHALL 構造化ログを CloudWatch に出力する。フィールドは correlationId、requestId、level、message、timestamp、duration（ms）を含む。
+4. WHEN Lambda の実行時間が 5000ms を超えたとき、THE Lambda SHALL level が WARN のログを duration 付きで出力する。
+5. IF Lambda で未捕捉例外が発生した場合、THEN THE Lambda SHALL HTTP 500 と一般的なエラーメッセージ（スタックは露出させない）を返し、詳細を CloudWatch に記録する。
+6. THE API_Gateway SHALL RESTful リソースパス規約に従う：`/projects`、`/projects/{projectId}`、`/projects/{projectId}/tasks`、`/tasks/{taskId}`、`/tasks/{taskId}/comments`、`/tasks/{taskId}/attachments`。
+7. THE System SHALL 標準 HTTP メソッド（GET、POST、PUT、PATCH、DELETE）とステータスコード（200、201、400、401、403、404、500）を使用し、Google Cloud Run 移行時にフロントエンド呼び出しを変更不要とする。
+
+---
+
+### 要件 10：フロントエンドデプロイと CDN 配信
+
+**ユーザーストーリー：** 運用責任者として、フロントエンドを CloudFront + S3 でデプロイ・配信し、低コストかつ高可用なグローバルアクセスを実現したい。
+
+#### 受入基準
+
+1. THE Frontend SHALL 静的リソースとしてビルドし、S3 静的ホスティングバケットへ配置し、CloudFront Distribution で配信する。
+2. THE CloudFront SHALL カスタムエラーレスポンスを設定し、HTTP 403 / 404 を `index.html` へリダイレクトして Vue Router の History モードをサポートする。
+3. THE Frontend SHALL `VITE_API_BASE_URL` 環境変数で API Gateway エンドポイントを設定し、ビルド時に注入する。AWS リソース ARN や URL をハードコードしない。
+4. WHERE ユーザーが TaskVista にアクセスするとき、THE CloudFront SHALL HTTPS で提供し、HTTP 平文アクセスを許可しない。
+5. THE S3 フロントエンドホスティングバケット SHALL バケットポリシーにより CloudFront Origin Access Control（OAC）のみを許可し、直接のパブリックアクセスを拒否する。
+
+---
+
+### 要件 11：セキュリティと IAM 最小権限
+
+**ユーザーストーリー：** セキュリティ責任者として、IAM 最小権限に従い、不正アクセスとデータ漏洩を防ぎたい。
+
+#### 受入基準
+
+1. THE Lambda SHALL 独立した IAM 実行ロールを使用し、各関数のロールは業務に必要な最小の DynamoDB 操作権限（テーブル名と操作種別を指定）のみを持つ。
+2. THE Lambda SHALL すべてのユーザー入力（projectId、taskId、commentId、リクエストボディ各フィールド）を検証し、SQL / NoSQL インジェクション様の入力を拒否して HTTP 400 を返す。
+3. THE System SHALL コード、平文の環境変数、ログに AWS アクセスキー、パスワード、JWT 秘密鍵などの機密を記録しない。
+4. THE Cognito SHALL パスワードポリシーを設定し、長さ 8 文字以上、大文字・小文字・数字の組み合わせを要求する。
+5. WHEN 認証済みユーザーが権限のない Project または Task を操作したとき、THE Lambda SHALL HTTP 403 を返し、対象リソースの有無を露出しない。
+
+---
+
+### 要件 12：クラウド移行互換性
+
+**ユーザーストーリー：** アーキテクトとして、Google Cloud への移行を最小コストで行えるよう、アーキテクチャ上の余地を残したい。
+
+#### 受入基準
+
+1. THE Lambda の業務ロジックコード SHALL すべての AWS SDK 呼び出しを独立した Repository または Adapter 層にカプセル化し、業務関数内で AWS SDK を直接参照しない。
+2. THE System SHALL 標準 RESTful API を用い、AppSync GraphQL Subscription や IoT WebSocket など AWS 固有プロトコルをフロント・バック通信の主経路にしない。
+3. THE Frontend SHALL `VITE_API_BASE_URL` の単一入口でバックエンドと通信し、クラウド切替時はこの環境変数の変更のみで済むようにする。
+4. THE DynamoDB データモデル SHALL camelCase 属性名を用い、コアエンティティフィールド（projectId、taskId、title、status、assigneeId、createdAt、updatedAt）は Google Cloud Firestore のドキュメントモデルと互換である。
+5. THE System の API ドキュメント SHALL OpenAPI 3.0 で全エンドポイントを記述し、Google Cloud Endpoints への移行時の契約とする。

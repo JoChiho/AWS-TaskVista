@@ -2,7 +2,7 @@
 inclusion: always
 ---
 
-# TaskVista AWS 资源配置（Kiro 必须遵守）
+# TaskVista AWS リソース設定（Kiro は必ず遵守）
 
 ## Cognito
 - User Pool ID: `us-east-1_PvLPf6TL0` 
@@ -23,9 +23,9 @@ inclusion: always
 ## IAM
 - Lambda Execution Role ARN: `arn:aws:iam::312310269639:role/TaskVista-Lambda-Execution-Role`
 
-## 通用配置
+## 共通設定
 - Region: `us-east-1`
-- 所有 Lambda 使用 Node.js 18+
-- API Gateway 使用 HTTP API
-- 前端使用环境变量 `VITE_API_BASE_URL` 调用后端
-- 所有操作必须使用上述已有资源，不要创建新资源
+- すべての Lambda は Node.js 18 以上を使用する
+- API Gateway は HTTP API を使用する
+- フロントエンドは環境変数 `VITE_API_BASE_URL` でバックエンドを呼び出す
+- すべての操作は上記の既存リソースを使用し、新規リソースは作成しない

@@ -2,12 +2,12 @@
 inclusion: always
 ---
 
-# Coding Standards
+# コーディング規約
 
-- 始终使用 TypeScript（严格模式）
-- 函数/变量命名：camelCase，描述性强
-- 错误处理：使用 try-catch + 有意义的错误消息
-- 注释：复杂逻辑必须注释，TODO 使用统一格式
-- 代码格式：ESLint + Prettier 自动格式化
-- Git：Conventional Commits + 小型 PR
-- 测试：MVP 阶段重点覆盖核心 API 与组件
+- 常に TypeScript（strict モード）を使用する
+- 関数・変数名：camelCase、意味が伝わる名前にする
+- エラー処理：try-catch + 分かりやすいエラーメッセージを使用する
+- コメント：複雑なロジックには必ずコメントを付ける。TODO は統一フォーマットにする
+- コードフォーマット：ESLint + Prettier で自動整形する
+- Git：Conventional Commits + 小さな PR
+- テスト：MVP 段階ではコア API とコンポーネントを重点的にカバーする
