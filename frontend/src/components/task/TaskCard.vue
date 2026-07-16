@@ -141,7 +141,7 @@ function onBodyClick() {
           />
         </div>
 
-        <!-- メタ行: 優先度・コメント・期日 -->
+        <!-- メタ行: 優先度・コメント・締切日 -->
         <div class="d-flex align-center flex-wrap gap-1 mt-2">
           <v-chip
             :color="PRIORITY_COLORS[task.priority]"

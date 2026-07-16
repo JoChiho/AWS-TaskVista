@@ -144,7 +144,7 @@ watch(
       v-else-if="visibleComments.length === 0"
       class="text-body-2 text-medium-emphasis py-3"
     >
-      まだコメントはありません。最初のコメントを投稿しましょう。
+      コメントはまだありません。最初のコメントを投稿してください。
     </p>
 
     <!-- コメント一覧（作成日時昇順） -->

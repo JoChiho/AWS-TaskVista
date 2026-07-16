@@ -29,7 +29,7 @@ const projectNameById = computed(() => {
   return map
 })
 
-/** 期日が近いタスクかどうかを判定する（3 日以内） */
+/** 締切日が近いタスクかどうかを判定する（3 日以内） */
 function isDueSoon(dueDate?: string): boolean {
   if (!dueDate) return false
   const due = new Date(dueDate)
@@ -38,7 +38,7 @@ function isDueSoon(dueDate?: string): boolean {
   return diffDays >= 0 && diffDays <= 3
 }
 
-/** 期日が過ぎているかを判定する */
+/** 締切日が過ぎているかを判定する */
 function isOverdue(dueDate?: string): boolean {
   if (!dueDate) return false
   return new Date(dueDate) < new Date()
@@ -49,9 +49,9 @@ function isOverdue(dueDate?: string): boolean {
  * 長文だと右列が折り返して横スペースを活かせないため
  */
 function formatDueDate(dueDate?: string): string {
-  if (!dueDate) return '期日なし'
+  if (!dueDate) return '締切日なし'
   const d = new Date(dueDate)
-  if (Number.isNaN(d.getTime())) return '期日なし'
+  if (Number.isNaN(d.getTime())) return '締切日なし'
   const y = d.getFullYear()
   const m = String(d.getMonth() + 1).padStart(2, '0')
   const day = String(d.getDate()).padStart(2, '0')
@@ -183,12 +183,12 @@ onMounted(() => {
                 {{ summary.memberCount ?? '—' }} 人
                 <v-spacer />
                 <v-icon size="14" class="mr-1">mdi-update</v-icon>
-                更新: {{ formatUpdatedAt(summary.lastUpdatedAt) }}
+                最終更新: {{ formatUpdatedAt(summary.lastUpdatedAt) }}
               </div>
 
               <!-- タスク総数 -->
               <div class="d-flex align-center justify-space-between mb-3">
-                <span class="text-body-2 text-medium-emphasis">タスク合計</span>
+                <span class="text-body-2 text-medium-emphasis">タスク数</span>
                 <v-chip size="small" color="primary" variant="tonal">
                   {{ summary.totalTasks }} 件
                 </v-chip>
@@ -262,7 +262,7 @@ onMounted(() => {
           <div class="my-task-col-meta">プロジェクト</div>
           <div class="my-task-col-status">ステータス</div>
           <div class="my-task-col-priority">優先度</div>
-          <div class="my-task-col-due">期日</div>
+          <div class="my-task-col-due">締切日</div>
           <div class="my-task-col-action" />
         </div>
         <v-divider class="d-none d-md-flex" />
@@ -336,7 +336,7 @@ onMounted(() => {
                   size="16"
                   color="error"
                   class="mr-1"
-                  title="期日超過"
+                  title="締切超過"
                 >
                   mdi-alert-circle
                 </v-icon>
@@ -363,7 +363,7 @@ onMounted(() => {
       <v-card v-else class="text-center pa-6" rounded="lg" variant="tonal">
         <v-icon size="40" color="success" class="mb-2">mdi-check-all</v-icon>
         <p class="text-body-1 text-medium-emphasis">
-          担当中のタスクはありません。お疲れさまです！
+          現在、担当中のタスクはありません。
         </p>
       </v-card>
     </template>

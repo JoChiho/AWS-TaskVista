@@ -291,11 +291,11 @@ async function handleSubmit() {
             </div>
           </section>
 
-          <!-- ステータス / 優先度 / 期日 / 予定工数 -->
+          <!-- ステータス / 優先度 / 締切日 / 予定工数 -->
           <section class="form-section mb-5">
             <div class="section-label">
               <v-icon size="18" class="mr-1">mdi-tune-variant</v-icon>
-              ステータス・優先度・期日・工数
+              ステータス・優先度・締切日・工数
             </div>
             <div class="meta-fields">
               <v-select
@@ -316,7 +316,7 @@ async function handleSubmit() {
               />
               <v-text-field
                 v-model="dueDate"
-                label="期日（截止日）"
+                label="締切日"
                 type="date"
                 hide-details
                 variant="outlined"

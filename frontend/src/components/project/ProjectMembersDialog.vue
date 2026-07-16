@@ -165,7 +165,7 @@ function canRemove(member: ProjectMember): boolean {
 
 function removeButtonTitle(member: ProjectMember): string {
   if (isSelf(member) && !isCurrentUserOwner.value) {
-    return 'プロジェクトを退出する'
+    return 'プロジェクトから退出する'
   }
   return 'メンバーから外す'
 }
@@ -196,7 +196,7 @@ function memberRowKey(member: ProjectMember): string {
           </template>
           <template v-else>
             メンバーの追加・他メンバーの削除は<strong>プロジェクトオーナーのみ</strong>可能です。
-            あなたは「プロジェクトを退出する」ことだけできます。
+            一般メンバーは、ご自身の退出のみ可能です。
           </template>
         </p>
 

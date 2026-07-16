@@ -61,7 +61,7 @@ describe('dashboard/service', () => {
     expect(result[0].lastUpdatedAt).toBe('2026-07-10T12:00:00.000Z')
   })
 
-  it('未完了の担当タスクを期日昇順で返す（assigneeId 一致）', async () => {
+  it('未完了の担当タスクを締切日昇順で返す（assigneeId 一致）', async () => {
     // アクセス可能なプロジェクトが無いと担当タスクは返さない
     vi.mocked(projectService.listProjects).mockResolvedValue([makeProject()])
     vi.mocked(taskRepository.listTasksByAssignee).mockResolvedValue([

@@ -103,7 +103,7 @@ const headers = [
     headerProps: { class: 'col-chip' },
   },
   {
-    title: '期日',
+    title: '締切日',
     key: 'dueDate',
     sortable: true,
     minWidth: '100px',
@@ -313,7 +313,7 @@ watch(projectId, () => {
         </div>
       </template>
 
-      <!-- 期日（短い日付・1行固定） -->
+      <!-- 締切日（短い日付・1行固定） -->
       <template #[`item.dueDate`]="{ item }">
         <span
           class="text-body-2 cell-date"

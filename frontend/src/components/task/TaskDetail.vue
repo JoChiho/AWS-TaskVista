@@ -252,7 +252,7 @@ function initials(name: string): string {
               prepend-icon="mdi-calendar"
             >
               {{ formatDate(task.dueDate) }}
-              <span v-if="isOverdue(task.dueDate)" class="ml-1">（期限超過）</span>
+              <span v-if="isOverdue(task.dueDate)" class="ml-1">（締切超過）</span>
             </v-chip>
           </div>
         </div>
@@ -269,7 +269,7 @@ function initials(name: string): string {
             <p class="requirement-text ma-0">{{ task.requirement }}</p>
           </div>
           <div v-else class="empty-block">
-            要望はまだ記入されていません。編集から追加できます。
+            要望は未登録です。編集画面からご記入ください。
           </div>
         </section>
 
@@ -283,7 +283,7 @@ function initials(name: string): string {
             <p class="description-text ma-0">{{ task.description }}</p>
           </div>
           <div v-else class="empty-block">
-            説明はまだありません。背景や手順があれば編集で追記してください。
+            説明は未登録です。背景や手順は編集画面からご記入ください。
           </div>
         </section>
 
@@ -328,7 +328,7 @@ function initials(name: string): string {
               class="completion-btn"
               @click="commitCompletion(localCompletion)"
             >
-              反映
+              適用
             </v-btn>
           </div>
         </section>
@@ -354,10 +354,10 @@ function initials(name: string): string {
               {{ label }}
             </v-chip>
           </div>
-          <div v-else class="empty-block">未割り当て</div>
+          <div v-else class="empty-block">未割当</div>
         </section>
 
-        <!-- 属性グリッド: 1行目 予定工数 / 期日、2行目 作成 / 更新 -->
+        <!-- 属性グリッド: 1行目 予定工数 / 締切日、2行目 作成 / 更新 -->
         <section class="meta-grid mx-5 mb-5">
           <div class="meta-item">
             <span class="meta-key">予定工数（人日）</span>
@@ -369,7 +369,7 @@ function initials(name: string): string {
             </span>
           </div>
           <div class="meta-item">
-            <span class="meta-key">期日（截止日）</span>
+            <span class="meta-key">締切日</span>
             <span
               class="meta-val"
               :class="{ 'text-error font-weight-bold': isOverdue(task.dueDate) }"

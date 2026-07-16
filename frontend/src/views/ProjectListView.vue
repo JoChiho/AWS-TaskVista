@@ -137,7 +137,7 @@ onMounted(() => {
               {{ memberCount(project) }} 人
             </div>
             <p class="text-caption text-primary mt-3 mb-0">
-              クリックして詳細を表示
+              クリックで詳細を表示
             </p>
           </v-card-text>
 

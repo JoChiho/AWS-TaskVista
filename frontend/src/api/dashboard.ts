@@ -12,7 +12,7 @@ export async function fetchDashboardSummary(): Promise<ProjectSummary[]> {
 
 /**
  * 自分が担当するタスクの一覧を取得する
- * 完了済みのタスクを除外し、期日昇順で返す
+ * 完了済みのタスクを除外し、締切日昇順で返す
  */
 export async function fetchMyTasks(): Promise<Task[]> {
   const response = await apiClient.get<ApiResponse<Task[]>>('/dashboard/my-tasks')

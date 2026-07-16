@@ -79,7 +79,7 @@ function isAssignedToUser(
 }
 
 /**
- * 自分が担当する未完了タスクを期日昇順で取得する
+ * 自分が担当する未完了タスクを締切日昇順で取得する
  *
  * 判定ロジック:
  * 1. 主: assigneeId === ログインユーザー（AssigneeIndex・主担当）

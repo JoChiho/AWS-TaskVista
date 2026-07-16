@@ -56,7 +56,7 @@ async function handleSave() {
   errorMessage.value = ''
   try {
     await authStore.setDisplayNameParts(family, given)
-    uiStore.showSuccess('表示名を保存しました（全端末で共有されます）')
+    uiStore.showSuccess('表示名を保存しました（すべての端末で共有されます）')
     modelValue.value = false
   } catch (e: unknown) {
     const msg =
@@ -88,8 +88,8 @@ function handleCancel() {
       </v-card-title>
       <v-card-text class="px-5">
         <p class="text-body-2 text-medium-emphasis mb-4">
-          姓と名は<strong>クラウドに保存</strong>され、他のメンバーにも同じ表示名で見えます。
-          アバター（右上やカード）には<strong>姓のみ</strong>が表示されます。
+          姓と名はクラウドに保存され、他のメンバーにも同一の表示名として表示されます。
+          アバター（画面右上やカード）には姓のみが表示されます。
         </p>
         <v-alert
           v-if="errorMessage"
@@ -144,7 +144,7 @@ function handleCancel() {
           :disabled="!familyNameInput.trim() || !givenNameInput.trim()"
           @click="handleSave"
         >
-          保存して続ける
+          保存する
         </v-btn>
       </v-card-actions>
     </v-card>
