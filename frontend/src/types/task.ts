@@ -76,6 +76,8 @@ export interface Task {
   assignees?: TaskAssignee[]
   /** 完了度 0〜100（%） */
   completionPercent?: number
+  /** 予定工数（人日） */
+  estimatedEffortDays?: number
   dueDate?: string
   attachments: Attachment[]
   createdBy: string
@@ -96,6 +98,7 @@ export interface CreateTaskPayload {
   assigneeName?: string
   assignees?: TaskAssignee[]
   completionPercent?: number
+  estimatedEffortDays?: number | null
   dueDate?: string
 }
 
@@ -110,6 +113,7 @@ export interface UpdateTaskPayload {
   assigneeName?: string
   assignees?: TaskAssignee[]
   completionPercent?: number
+  estimatedEffortDays?: number | null
   dueDate?: string
 }
 

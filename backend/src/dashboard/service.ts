@@ -29,9 +29,25 @@ export async function getSummary(
         tasksByStatus[task.status] = (tasksByStatus[task.status] ?? 0) + 1
       }
 
+      // 更新日 = タスクの最新 updatedAt（無ければプロジェクト updatedAt）
+      let lastUpdatedAt = project.updatedAt
+      for (const t of tasks) {
+        if (t.updatedAt && t.updatedAt > lastUpdatedAt) {
+          lastUpdatedAt = t.updatedAt
+        }
+      }
+
+      const memberCount =
+        project.members?.length ||
+        project.memberIds?.length ||
+        1
+
       return {
         projectId: project.projectId,
         name: project.name,
+        status: project.status,
+        memberCount,
+        lastUpdatedAt,
         totalTasks: tasks.length,
         tasksByStatus,
       }

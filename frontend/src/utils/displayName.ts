@@ -5,6 +5,7 @@
 //   3. 自分の auth.displayName
 //   4. スナップショット fallback（メールは表示しない）
 //   5. userId 短縮
+// アバター表示は「姓」のみ（avatarLabelFromName）
 import { getActivePinia } from 'pinia'
 import { useAuthStore } from '@/stores/auth'
 import { useDisplayNamesStore } from '@/stores/displayNames'
@@ -12,6 +13,48 @@ import type { ProjectMember } from '@/types/project'
 
 function isEmailLike(value: string | undefined | null): boolean {
   return !!value && value.includes('@')
+}
+
+/** フルネーム（姓 名）を組み立てる */
+export function composeDisplayName(familyName: string, givenName: string): string {
+  return `${familyName.trim()} ${givenName.trim()}`.trim()
+}
+
+/**
+ * 表示名から姓・名を分割
+ * 「姓 名」なら空白で分割、スペース無しなら全体を姓
+ */
+export function splitDisplayName(displayName: string): {
+  familyName: string
+  givenName: string
+} {
+  const t = displayName.trim().replace(/\s+/g, ' ')
+  if (!t) return { familyName: '', givenName: '' }
+  const sp = t.indexOf(' ')
+  if (sp === -1) return { familyName: t, givenName: '' }
+  return {
+    familyName: t.slice(0, sp).trim(),
+    givenName: t.slice(sp + 1).trim(),
+  }
+}
+
+/**
+ * アバター用ラベル（姓のみ）
+ * familyName があれば優先、なければ displayName から姓を抽出
+ */
+export function avatarLabelFromName(
+  displayNameOrFamily?: string | null,
+  familyName?: string | null,
+): string {
+  const family = familyName?.trim() || splitDisplayName(displayNameOrFamily || '').familyName
+  if (family) return family
+  const fallback = (displayNameOrFamily || '').trim()
+  if (!fallback) return '?'
+  if (isEmailLike(fallback)) {
+    const local = fallback.split('@')[0] || ''
+    return local.slice(0, 2) || '?'
+  }
+  return fallback.slice(0, 2) || '?'
 }
 
 function isUsableDisplayName(value: string | undefined | null): boolean {
@@ -165,7 +208,7 @@ export function resolveAssigneeLabels(task: {
   return out
 }
 
-/** 担当者をカンマ区切りで表示（カード・テーブル用） */
+/** 担当者をカンマ区切りで表示（フルネーム） */
 export function formatAssigneeList(task: {
   assigneeId?: string
   assigneeName?: string
@@ -174,10 +217,47 @@ export function formatAssigneeList(task: {
   return resolveAssigneeLabels(task).join('、')
 }
 
+/**
+ * 担当者を姓のみでカンマ区切り表示（テーブル列など行が伸びない用途）
+ * ホバー用のフルネームは formatAssigneeList を併用する
+ */
+export function formatAssigneeSurnames(task: {
+  assigneeId?: string
+  assigneeName?: string
+  assignees?: Array<{ userId?: string; displayName?: string }>
+}): string {
+  const labels = resolveAssigneeLabels(task)
+  if (labels.length === 0) return ''
+  const surnames: string[] = []
+  const seen = new Set<string>()
+  for (const full of labels) {
+    const s = avatarLabelFromName(full)
+    if (!s || s === '?') continue
+    const key = s.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    surnames.push(s)
+  }
+  return surnames.join('、')
+}
+
 /** コメント投稿者用の表示名 */
 export function resolveAuthorDisplayName(comment: {
   authorId?: string
   authorName?: string
 }): string {
   return resolvePersonName(comment.authorId, comment.authorName)
+}
+
+/**
+ * アバター用（姓のみ）
+ * userId があれば familyByUserId を優先
+ */
+export function resolveAvatarLabel(
+  userId?: string | null,
+  fallbackDisplayName?: string | null,
+): string {
+  const names = useDisplayNamesStore()
+  const family = userId ? names.getFamilyName(userId) : undefined
+  return avatarLabelFromName(fallbackDisplayName, family)
 }

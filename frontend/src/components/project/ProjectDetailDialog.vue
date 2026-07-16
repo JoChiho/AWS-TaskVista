@@ -8,7 +8,7 @@ import { projectStatusLabel, projectStatusColor } from '@/types/project'
 import { useProjectsStore } from '@/stores/projects'
 import { useTasksStore } from '@/stores/tasks'
 import { useAuthStore } from '@/stores/auth'
-import { resolveMemberDisplayName } from '@/utils/displayName'
+import { resolveMemberDisplayName, avatarLabelFromName } from '@/utils/displayName'
 
 const props = defineProps<{
   project?: Project | null
@@ -248,7 +248,7 @@ function onDelete() {
               <template #prepend>
                 <v-avatar color="primary" size="36">
                   <span class="text-caption text-white">
-                    {{ resolveMemberDisplayName(member).slice(0, 2).toUpperCase() }}
+                    {{ avatarLabelFromName(resolveMemberDisplayName(member)) }}
                   </span>
                 </v-avatar>
               </template>

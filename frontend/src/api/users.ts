@@ -6,9 +6,16 @@ export interface UserProfile {
   userId: string
   email?: string
   displayName: string | null
+  familyName?: string | null
+  givenName?: string | null
   hasDisplayName?: boolean
   createdAt?: string
   updatedAt?: string
+}
+
+export interface UpdateProfilePayload {
+  familyName: string
+  givenName: string
 }
 
 /** 自分のプロフィールを取得する */
@@ -17,24 +24,34 @@ export async function fetchMyProfile(): Promise<UserProfile> {
   return response.data.data
 }
 
-/** 表示名をクラウドに保存する */
-export async function updateMyProfile(displayName: string): Promise<UserProfile> {
+/** 姓・名をクラウドに保存する */
+export async function updateMyProfile(
+  payload: UpdateProfilePayload,
+): Promise<UserProfile> {
   const response = await apiClient.put<ApiResponse<UserProfile>>('/me', {
-    displayName,
+    familyName: payload.familyName.trim(),
+    givenName: payload.givenName.trim(),
   })
   return response.data.data
 }
 
 /**
- * 複数 userId の表示名を一括取得する（他ユーザーのクラウド表示名）
- * @returns userId → displayName
+ * 複数 userId の表示名を一括取得する
+ * @returns names: フルネーム / familyNames: 姓のみ（アバター用）
  */
-export async function fetchDisplayNames(
-  userIds: string[],
-): Promise<Record<string, string>> {
-  if (userIds.length === 0) return {}
+export async function fetchDisplayNames(userIds: string[]): Promise<{
+  names: Record<string, string>
+  familyNames: Record<string, string>
+}> {
+  if (userIds.length === 0) return { names: {}, familyNames: {} }
   const response = await apiClient.post<
-    ApiResponse<{ names: Record<string, string> }>
+    ApiResponse<{
+      names: Record<string, string>
+      familyNames?: Record<string, string>
+    }>
   >('/users/display-names', { userIds })
-  return response.data.data?.names ?? {}
+  return {
+    names: response.data.data?.names ?? {},
+    familyNames: response.data.data?.familyNames ?? {},
+  }
 }

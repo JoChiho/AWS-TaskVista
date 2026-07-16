@@ -4,7 +4,7 @@
 import { ref, watch, computed } from 'vue'
 import { useCommentsStore } from '@/stores/comments'
 import { useAuthStore } from '@/stores/auth'
-import { resolveAuthorDisplayName } from '@/utils/displayName'
+import { resolveAuthorDisplayName, avatarLabelFromName } from '@/utils/displayName'
 import type { Comment } from '@/types/comment'
 
 const props = defineProps<{
@@ -158,7 +158,7 @@ watch(
           <!-- 投稿者アバター -->
           <v-avatar size="32" color="primary" class="mr-3 flex-shrink-0">
             <span style="font-size: 11px; color: white">
-              {{ authorLabel(comment).slice(0, 2).toUpperCase() }}
+              {{ avatarLabelFromName(authorLabel(comment)) }}
             </span>
           </v-avatar>
 
@@ -199,7 +199,7 @@ watch(
     <div class="d-flex align-start gap-2">
       <v-avatar size="32" color="primary" class="flex-shrink-0 mt-1">
         <span style="font-size: 11px; color: white">
-          {{ (authStore.displayLabel || '?').slice(0, 2).toUpperCase() }}
+          {{ authStore.avatarLabel || '?' }}
         </span>
       </v-avatar>
       <div class="flex-grow-1">

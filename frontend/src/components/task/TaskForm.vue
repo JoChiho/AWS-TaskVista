@@ -11,7 +11,7 @@ import {
 } from '@/types/task'
 import { useTasksStore } from '@/stores/tasks'
 import { useProjectsStore } from '@/stores/projects'
-import { resolveMemberDisplayName } from '@/utils/displayName'
+import { resolveMemberDisplayName, avatarLabelFromName } from '@/utils/displayName'
 
 const props = defineProps<{
   projectId: string
@@ -35,6 +35,8 @@ const requirement = ref('')
 /** 担当者 userId の配列（複数） */
 const selectedAssigneeIds = ref<string[]>([])
 const dueDate = ref('')
+/** 予定工数（人日）。空文字 = 未設定 */
+const estimatedEffortDays = ref<string>('')
 
 const titleRules = [
   (v: string) => !!v || 'タスク名は必須項目です',
@@ -117,6 +119,10 @@ watch(modelValue, async (isOpen) => {
     priority.value = props.task.priority
     requirement.value = props.task.requirement ?? ''
     dueDate.value = props.task.dueDate ?? ''
+    estimatedEffortDays.value =
+      props.task.estimatedEffortDays != null
+        ? String(props.task.estimatedEffortDays)
+        : ''
     initAssigneeSelection(props.task)
   } else {
     title.value = ''
@@ -126,14 +132,27 @@ watch(modelValue, async (isOpen) => {
     requirement.value = ''
     selectedAssigneeIds.value = []
     dueDate.value = ''
+    estimatedEffortDays.value = ''
   }
 })
+
+function parseEffortDays(): number | null | undefined {
+  const raw = estimatedEffortDays.value.trim()
+  if (!raw) {
+    // 編集時はクリア、新規時は未送信
+    return props.task ? null : undefined
+  }
+  const n = Number(raw)
+  if (Number.isNaN(n) || n < 0) return props.task ? null : undefined
+  return n
+}
 
 async function handleSubmit() {
   if (!title.value.trim()) return
 
   const assignees = buildAssigneesPayload()
   const primary = assignees[0]
+  const effort = parseEffortDays()
 
   // 完了度は詳細画面で調整。編集時は送らず既存値を保持。
   // 新規作成・ステータス変更時の 完了/未着手 は API 側で完了度を合わせる。
@@ -147,6 +166,7 @@ async function handleSubmit() {
     assigneeId: primary?.userId,
     assigneeName: primary?.displayName,
     dueDate: dueDate.value || undefined,
+    ...(effort !== undefined ? { estimatedEffortDays: effort } : {}),
   }
 
   let saved: Task
@@ -271,11 +291,11 @@ async function handleSubmit() {
             </div>
           </section>
 
-          <!-- ステータス / 優先度 / 期日 -->
+          <!-- ステータス / 優先度 / 期日 / 予定工数 -->
           <section class="form-section mb-5">
             <div class="section-label">
               <v-icon size="18" class="mr-1">mdi-tune-variant</v-icon>
-              ステータス・優先度・期日
+              ステータス・優先度・期日・工数
             </div>
             <div class="meta-fields">
               <v-select
@@ -296,11 +316,23 @@ async function handleSubmit() {
               />
               <v-text-field
                 v-model="dueDate"
-                label="期日（任意）"
+                label="期日（截止日）"
                 type="date"
                 hide-details
                 variant="outlined"
                 density="comfortable"
+              />
+              <v-text-field
+                v-model="estimatedEffortDays"
+                label="予定工数（人日）"
+                type="number"
+                min="0"
+                step="0.5"
+                placeholder="例: 2.5"
+                hide-details
+                variant="outlined"
+                density="comfortable"
+                suffix="人日"
               />
             </div>
           </section>
@@ -340,7 +372,7 @@ async function handleSubmit() {
                 >
                   <v-avatar start size="20" color="primary">
                     <span class="text-caption text-white" style="font-size: 9px">
-                      {{ String(item.title).slice(0, 2).toUpperCase() }}
+                      {{ avatarLabelFromName(String(item.title)) }}
                     </span>
                   </v-avatar>
                   {{ item.title }}
@@ -460,7 +492,7 @@ async function handleSubmit() {
 
 .meta-fields {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: 1fr 1fr;
   gap: 12px;
 }
 

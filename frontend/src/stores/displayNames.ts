@@ -24,8 +24,10 @@ function isUsableDisplayName(value: string | undefined | null): boolean {
 }
 
 export const useDisplayNamesStore = defineStore('displayNames', () => {
-  /** userId (Cognito sub) → クラウド表示名 */
+  /** userId (Cognito sub) → クラウド表示名（フル: 姓 名） */
   const byUserId = ref<Record<string, string>>({})
+  /** userId → 姓のみ（アバター用） */
+  const familyByUserId = ref<Record<string, string>>({})
   /** email (lower) → 表示名（タスクの assigneeName がメールのときの解決用） */
   const byEmail = ref<Record<string, string>>({})
   /** email (lower) → userId */
@@ -35,7 +37,11 @@ export const useDisplayNamesStore = defineStore('displayNames', () => {
    * userId → 表示名を登録
    * 既存が「人名」で新規がメールの場合は上書きしない（タスク snapshot 汚染防止）
    */
-  function setName(userId: string | undefined | null, name: string | undefined | null): void {
+  function setName(
+    userId: string | undefined | null,
+    name: string | undefined | null,
+    familyName?: string | null,
+  ): void {
     const id = userId?.trim()
     const n = name?.trim()
     if (!id || !n) return
@@ -47,8 +53,20 @@ export const useDisplayNamesStore = defineStore('displayNames', () => {
     if (!isUsableDisplayName(n) && existing) {
       return
     }
-    if (existing === n) return
-    byUserId.value = { ...byUserId.value, [id]: n }
+    if (existing !== n) {
+      byUserId.value = { ...byUserId.value, [id]: n }
+    }
+    const fam = familyName?.trim()
+    if (fam) {
+      if (familyByUserId.value[id] !== fam) {
+        familyByUserId.value = { ...familyByUserId.value, [id]: fam }
+      }
+    }
+  }
+
+  function getFamilyName(userId?: string | null): string | undefined {
+    if (!userId) return undefined
+    return familyByUserId.value[userId]
   }
 
   function setEmailName(
@@ -174,9 +192,10 @@ export const useDisplayNamesStore = defineStore('displayNames', () => {
     const unique = [...new Set(userIds.filter(Boolean))]
     if (unique.length === 0) return
     try {
-      const names = await usersApi.fetchDisplayNames(unique)
+      const { names, familyNames } = await usersApi.fetchDisplayNames(unique)
       let changed = false
       const next = { ...byUserId.value }
+      const nextFamily = { ...familyByUserId.value }
       for (const [id, name] of Object.entries(names)) {
         if (!id || !isUsableDisplayName(name)) continue
         const n = name.trim()
@@ -185,8 +204,16 @@ export const useDisplayNamesStore = defineStore('displayNames', () => {
           changed = true
         }
       }
+      for (const [id, fam] of Object.entries(familyNames)) {
+        if (!id || !fam?.trim()) continue
+        if (nextFamily[id] !== fam.trim()) {
+          nextFamily[id] = fam.trim()
+          changed = true
+        }
+      }
       if (changed) {
         byUserId.value = next
+        familyByUserId.value = nextFamily
         await applyToEntityStores()
       }
     } catch (e) {
@@ -377,17 +404,20 @@ export const useDisplayNamesStore = defineStore('displayNames', () => {
 
   function clear(): void {
     byUserId.value = {}
+    familyByUserId.value = {}
     byEmail.value = {}
     userIdByEmail.value = {}
   }
 
   return {
     byUserId,
+    familyByUserId,
     byEmail,
     userIdByEmail,
     setName,
     setEmailName,
     getName,
+    getFamilyName,
     getNameByEmail,
     getUserIdByEmail,
     resolveKey,

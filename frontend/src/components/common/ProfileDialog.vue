@@ -1,8 +1,9 @@
 <script setup lang="ts">
-// 表示名（ユーザー名）設定ダイアログ — クラウド（DynamoDB）に保存
+// 表示名設定ダイアログ — 姓・名を分けてクラウド（DynamoDB）に保存
 import { ref, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { useUiStore } from '@/stores/ui'
+import { splitDisplayName } from '@/utils/displayName'
 
 const props = withDefaults(
   defineProps<{
@@ -16,29 +17,45 @@ const modelValue = defineModel<boolean>()
 const authStore = useAuthStore()
 const uiStore = useUiStore()
 
-const nameInput = ref('')
+const familyNameInput = ref('')
+const givenNameInput = ref('')
 const isSaving = ref(false)
 const errorMessage = ref('')
 
-const nameRules = [
-  (v: string) => !!v.trim() || '表示名（お名前）を入力してください',
-  (v: string) => v.trim().length <= 100 || '100 文字以内で入力してください',
+const familyRules = [
+  (v: string) => !!v.trim() || '姓を入力してください',
+  (v: string) => v.trim().length <= 50 || '50 文字以内で入力してください',
+]
+const givenRules = [
+  (v: string) => !!v.trim() || '名を入力してください',
+  (v: string) => v.trim().length <= 50 || '50 文字以内で入力してください',
 ]
 
 watch(modelValue, (open) => {
   if (open) {
-    nameInput.value = authStore.displayName || ''
+    if (authStore.familyName || authStore.givenName) {
+      familyNameInput.value = authStore.familyName || ''
+      givenNameInput.value = authStore.givenName || ''
+    } else if (authStore.displayName) {
+      const parts = splitDisplayName(authStore.displayName)
+      familyNameInput.value = parts.familyName
+      givenNameInput.value = parts.givenName
+    } else {
+      familyNameInput.value = ''
+      givenNameInput.value = ''
+    }
     errorMessage.value = ''
   }
 })
 
 async function handleSave() {
-  const trimmed = nameInput.value.trim()
-  if (!trimmed) return
+  const family = familyNameInput.value.trim()
+  const given = givenNameInput.value.trim()
+  if (!family || !given) return
   isSaving.value = true
   errorMessage.value = ''
   try {
-    await authStore.setDisplayName(trimmed)
+    await authStore.setDisplayNameParts(family, given)
     uiStore.showSuccess('表示名を保存しました（全端末で共有されます）')
     modelValue.value = false
   } catch (e: unknown) {
@@ -61,7 +78,7 @@ function handleCancel() {
 <template>
   <v-dialog
     v-model="modelValue"
-    max-width="440"
+    max-width="480"
     :persistent="required"
     :scrim="true"
   >
@@ -71,8 +88,8 @@ function handleCancel() {
       </v-card-title>
       <v-card-text class="px-5">
         <p class="text-body-2 text-medium-emphasis mb-4">
-          お名前は<strong>クラウドに保存</strong>され、他のメンバーにも同じ表示名で見えます。
-          無痕モードや別ブラウザでログインしても、再設定は不要です。
+          姓と名は<strong>クラウドに保存</strong>され、他のメンバーにも同じ表示名で見えます。
+          アバター（右上やカード）には<strong>姓のみ</strong>が表示されます。
         </p>
         <v-alert
           v-if="errorMessage"
@@ -83,17 +100,36 @@ function handleCancel() {
         >
           {{ errorMessage }}
         </v-alert>
-        <v-text-field
-          v-model="nameInput"
-          label="表示名（氏名）*"
-          placeholder="例：徐 智甫 / 鮫島"
-          :rules="nameRules"
-          counter="100"
-          autofocus
-          :disabled="isSaving"
-          @keydown.enter.prevent="handleSave"
-        />
-        <div class="text-caption text-medium-emphasis">
+        <v-row dense>
+          <v-col cols="6">
+            <v-text-field
+              v-model="familyNameInput"
+              label="姓 *"
+              placeholder="例：徐"
+              :rules="familyRules"
+              counter="50"
+              autofocus
+              :disabled="isSaving"
+              @keydown.enter.prevent="handleSave"
+            />
+          </v-col>
+          <v-col cols="6">
+            <v-text-field
+              v-model="givenNameInput"
+              label="名 *"
+              placeholder="例：智甫"
+              :rules="givenRules"
+              counter="50"
+              :disabled="isSaving"
+              @keydown.enter.prevent="handleSave"
+            />
+          </v-col>
+        </v-row>
+        <div class="text-caption text-medium-emphasis mt-1">
+          表示例: {{ familyNameInput.trim() || '姓' }} {{ givenNameInput.trim() || '名' }}
+          ／ アバター: {{ familyNameInput.trim() || '姓' }}
+        </div>
+        <div class="text-caption text-medium-emphasis mt-2">
           ログイン中: {{ authStore.currentUser?.email || '—' }}
         </div>
       </v-card-text>
@@ -105,7 +141,7 @@ function handleCancel() {
         <v-btn
           color="primary"
           :loading="isSaving"
-          :disabled="!nameInput.trim()"
+          :disabled="!familyNameInput.trim() || !givenNameInput.trim()"
           @click="handleSave"
         >
           保存して続ける

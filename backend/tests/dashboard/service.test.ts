@@ -29,11 +29,25 @@ describe('dashboard/service', () => {
 
   it('プロジェクト横断のステータス統計を返す', async () => {
     vi.mocked(projectService.listProjects).mockResolvedValue([
-      makeProject({ projectId: 'p1', name: 'P1' }),
+      makeProject({
+        projectId: 'p1',
+        name: 'P1',
+        status: 'active',
+        memberIds: [USER_ID, 'u2'],
+        members: [
+          { userId: USER_ID, email: 'a@example.com', displayName: 'A' },
+          { userId: 'u2', email: 'b@example.com', displayName: 'B' },
+        ],
+        updatedAt: '2026-07-01T00:00:00.000Z',
+      }),
     ])
     vi.mocked(taskRepository.listTasksByProject).mockResolvedValue([
-      makeTask({ status: '未着手' }),
-      makeTask({ taskId: 't2', status: '進行中' }),
+      makeTask({ status: '未着手', updatedAt: '2026-07-05T10:00:00.000Z' }),
+      makeTask({
+        taskId: 't2',
+        status: '進行中',
+        updatedAt: '2026-07-10T12:00:00.000Z',
+      }),
       makeTask({ taskId: 't3', status: '完了', isDeleted: true }),
     ])
 
@@ -42,6 +56,9 @@ describe('dashboard/service', () => {
     expect(result[0].totalTasks).toBe(2)
     expect(result[0].tasksByStatus['未着手']).toBe(1)
     expect(result[0].tasksByStatus['進行中']).toBe(1)
+    expect(result[0].status).toBe('active')
+    expect(result[0].memberCount).toBe(2)
+    expect(result[0].lastUpdatedAt).toBe('2026-07-10T12:00:00.000Z')
   })
 
   it('未完了の担当タスクを期日昇順で返す（assigneeId 一致）', async () => {

@@ -6,7 +6,7 @@ import { ref, watch, computed } from 'vue'
 import type { Project, ProjectMember } from '@/types/project'
 import { useProjectsStore } from '@/stores/projects'
 import { useAuthStore } from '@/stores/auth'
-import { resolveMemberDisplayName } from '@/utils/displayName'
+import { resolveMemberDisplayName, avatarLabelFromName } from '@/utils/displayName'
 
 const props = defineProps<{
   project?: Project | null
@@ -216,7 +216,7 @@ function memberRowKey(member: ProjectMember): string {
             <template #prepend>
               <v-avatar color="primary" size="36">
                 <span class="text-caption text-white">
-                  {{ resolveMemberDisplayName(member).slice(0, 2).toUpperCase() }}
+                  {{ avatarLabelFromName(resolveMemberDisplayName(member)) }}
                 </span>
               </v-avatar>
             </template>

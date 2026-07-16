@@ -51,17 +51,22 @@ export async function handler(
     if (method === 'POST' && path === '/users/display-names') {
       const body = parseBody<{ userIds?: string[] }>(event)
       const userIds = Array.isArray(body?.userIds) ? body.userIds : []
-      const map = await usersService.getDisplayNameMap(userIds)
+      const { names: nameMap, familyNames: familyMap } =
+        await usersService.getDisplayNamePartsMap(userIds)
       const names: Record<string, string> = {}
-      for (const [id, name] of map) {
+      const familyNames: Record<string, string> = {}
+      for (const [id, name] of nameMap) {
         names[id] = name
+      }
+      for (const [id, fam] of familyMap) {
+        familyNames[id] = fam
       }
       logInfo(correlationId, '表示名を一括取得しました', {
         requestId: event.requestContext.requestId,
         userId: user.userId,
         action: 'LOOKUP_DISPLAY_NAMES',
       })
-      return successResponse(200, { names }, correlationId)
+      return successResponse(200, { names, familyNames }, correlationId)
     }
 
     if (method === 'GET' && path === '/dashboard/summary') {

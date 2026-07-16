@@ -16,7 +16,11 @@ import {
 import TaskDetail from '@/components/task/TaskDetail.vue'
 import TaskFilters from '@/components/task/TaskFilters.vue'
 import TaskForm from '@/components/task/TaskForm.vue'
-import { formatAssigneeList, resolveAssigneeLabels } from '@/utils/displayName'
+import {
+  formatAssigneeList,
+  formatAssigneeSurnames,
+  resolveAssigneeLabels,
+} from '@/utils/displayName'
 
 const route = useRoute()
 const tasksStore = useTasksStore()
@@ -344,14 +348,14 @@ watch(projectId, () => {
         </div>
       </template>
 
-      <!-- 担当者カラム（複数対応） -->
+      <!-- 担当者カラム（姓のみ・複数でも1行を保つ） -->
       <template #[`item.assigneeName`]="{ item }">
         <span
-          class="text-body-2"
-          style="display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden"
-          :title="formatAssigneeList(item)"
+          class="text-body-2 text-no-wrap text-truncate d-inline-block"
+          style="max-width: 100%"
+          :title="formatAssigneeList(item) || undefined"
         >
-          {{ formatAssigneeList(item) || '—' }}
+          {{ formatAssigneeSurnames(item) || '—' }}
         </span>
       </template>
     </v-data-table>

@@ -12,7 +12,7 @@ import {
   normalizeCompletion,
   completionColor,
 } from '@/types/task'
-import { resolveAssigneeLabels } from '@/utils/displayName'
+import { resolveAssigneeLabels, avatarLabelFromName } from '@/utils/displayName'
 import { useDisplayNamesStore } from '@/stores/displayNames'
 
 const props = defineProps<{
@@ -72,20 +72,15 @@ function progress(task: Task): number {
   return normalizeCompletion(task.completionPercent)
 }
 
-function initials(name: string): string {
-  const t = name.trim()
-  if (!t) return '?'
-  // 日本語名は先頭1〜2文字、英名は先頭2文字
-  if (/[\u3040-\u30ff\u3400-\u9fff]/.test(t)) {
-    return t.slice(0, Math.min(2, t.length))
-  }
-  return t.slice(0, 2).toUpperCase()
+/** アバターは姓のみ（フルネームから姓を抽出） */
+function avatarText(fullName: string): string {
+  return avatarLabelFromName(fullName) || '?'
 }
 
 /** 担当者ごとに安定した色（見た目の区別用） */
 const AVATAR_COLORS = ['primary', 'teal', 'indigo', 'deep-orange', 'purple'] as const
 function avatarColor(index: number): string {
-  return AVATAR_COLORS[index % AVATAR_COLORS.length]
+  return AVATAR_COLORS[index % AVATAR_COLORS.length] ?? 'primary'
 }
 
 function onBodyClick() {
@@ -200,7 +195,7 @@ function onBodyClick() {
               class="stack-avatar"
               :style="{ zIndex: visibleAssignees.length - idx }"
             >
-              <span class="avatar-initials">{{ initials(name) }}</span>
+              <span class="avatar-initials">{{ avatarText(name) }}</span>
             </v-avatar>
             <v-avatar
               v-if="overflowCount > 0"

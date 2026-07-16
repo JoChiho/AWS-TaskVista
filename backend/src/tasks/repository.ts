@@ -81,6 +81,8 @@ export type TaskUpdateFields = Partial<
     | 'attachments'
   >
 > & {
+  /** 予定工数（人日）。null で属性削除 */
+  estimatedEffortDays?: number | null
   /** true のとき assigneeId / assigneeName を REMOVE（GSI から外す） */
   clearAssignees?: boolean
 }
@@ -109,11 +111,17 @@ export async function updateTask(
     ['dueDate', 'dueDate'],
     ['attachments', 'attachments'],
     ['completionPercent', 'completionPercent'],
+    ['estimatedEffortDays', 'estimatedEffortDays'],
     ['assignees', 'assignees'],
   ]
 
   for (const [key, attr] of fieldMap) {
     if (updates[key] !== undefined) {
+      // null は属性削除（予定工数のクリアなど）
+      if (updates[key] === null) {
+        removeAttrs.push(attr)
+        continue
+      }
       const placeholder = `#${attr}`
       names[placeholder] = attr
       setExpressions.push(`${placeholder} = :${attr}`)

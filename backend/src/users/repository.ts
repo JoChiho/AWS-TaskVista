@@ -4,7 +4,12 @@ import { docClient, getUsersTable } from '../shared/dynamodb.js'
 export interface UserProfile {
   userId: string
   email?: string
+  /** フル表示名（姓 + 名）。後方互換・一覧表示用 */
   displayName: string
+  /** 姓 */
+  familyName?: string
+  /** 名 */
+  givenName?: string
   createdAt: string
   updatedAt: string
 }

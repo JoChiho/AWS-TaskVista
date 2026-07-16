@@ -44,11 +44,8 @@ function handleLogout() {
   authStore.logout()
 }
 
-/** ユーザーのイニシャルを取得する（アバター表示用） */
-const userInitials = computed(() => {
-  const name = authStore.displayLabel || '?'
-  return name.slice(0, 2).toUpperCase()
-})
+/** アバターは姓のみ */
+const userInitials = computed(() => authStore.avatarLabel || '?')
 </script>
 
 <template>

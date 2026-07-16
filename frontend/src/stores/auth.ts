@@ -54,8 +54,12 @@ export const useAuthStore = defineStore('auth', () => {
   const accessToken = ref<string | null>(null)
   const idToken = ref<string | null>(null)
   const currentUser = ref<AuthUser | null>(null)
-  /** クラウドから読み込んだ表示名 */
+  /** クラウドから読み込んだフル表示名（姓 名） */
   const displayName = ref<string>('')
+  /** 姓 */
+  const familyName = ref<string>('')
+  /** 名 */
+  const givenName = ref<string>('')
   /** GET /me 完了後 true（未設定判定に使う） */
   const profileLoaded = ref(false)
   const isLoading = ref(false)
@@ -68,11 +72,15 @@ export const useAuthStore = defineStore('auth', () => {
   const hasCustomDisplayName = computed(() => !!displayName.value.trim())
 
   /**
-   * 画面表示用の名前
+   * 画面表示用のフルネーム
    * 優先: クラウド表示名 > きれいな Cognito name > メール
    */
   const displayLabel = computed(() => {
     if (displayName.value.trim()) return displayName.value.trim()
+    if (familyName.value.trim() && givenName.value.trim()) {
+      return `${familyName.value.trim()} ${givenName.value.trim()}`
+    }
+    if (familyName.value.trim()) return familyName.value.trim()
     const user = currentUser.value
     if (!user) return 'ユーザー'
     if (user.name && !isUglyCognitoUsername(user.name)) return user.name
@@ -81,6 +89,15 @@ export const useAuthStore = defineStore('auth', () => {
       return local || user.email
     }
     return 'ユーザー'
+  })
+
+  /** アバター用（姓のみ） */
+  const avatarLabel = computed(() => {
+    if (familyName.value.trim()) return familyName.value.trim()
+    const full = displayLabel.value
+    const sp = full.indexOf(' ')
+    if (sp > 0) return full.slice(0, sp)
+    return full.slice(0, Math.min(2, full.length)) || '?'
   })
 
   function buildLoginUrl(): string {
@@ -184,14 +201,28 @@ export const useAuthStore = defineStore('auth', () => {
       try {
         const profile = await usersApi.fetchMyProfile()
         displayName.value = profile.displayName?.trim() || ''
+        familyName.value = profile.familyName?.trim() || ''
+        givenName.value = profile.givenName?.trim() || ''
+        // 旧データ: フルネームのみ → 分割
+        if (displayName.value && !familyName.value) {
+          const parts = displayName.value.trim().replace(/\s+/g, ' ').split(' ')
+          familyName.value = parts[0] || ''
+          givenName.value = parts.slice(1).join(' ') || ''
+        }
         profileLoaded.value = true
         if (currentUser.value?.sub && displayName.value) {
           const { useDisplayNamesStore } = await import('./displayNames')
-          useDisplayNamesStore().setName(currentUser.value.sub, displayName.value)
+          useDisplayNamesStore().setName(
+            currentUser.value.sub,
+            displayName.value,
+            familyName.value,
+          )
         }
       } catch (e) {
         console.error('プロフィール取得エラー:', e)
         displayName.value = ''
+        familyName.value = ''
+        givenName.value = ''
         profileLoaded.value = true
       } finally {
         profileLoading = null
@@ -202,30 +233,31 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   /**
-   * 表示名をクラウドに保存する
-   * 1) メモリ上の projects / tasks / comments を即座に差し替え（全 UI が displayName と連動）
+   * 姓・名をクラウドに保存する
+   * 1) メモリ上の projects / tasks / comments を即座に差し替え
    * 2) サーバーから再取得して他ユーザー視点の最新データにも揃える
    */
-  async function setDisplayName(name: string): Promise<void> {
-    const trimmed = name.trim()
-    if (!trimmed) return
-    const profile = await usersApi.updateMyProfile(trimmed)
-    displayName.value = profile.displayName?.trim() || trimmed
+  async function setDisplayNameParts(family: string, given: string): Promise<void> {
+    const fam = family.trim()
+    const giv = given.trim()
+    if (!fam || !giv) return
+    const profile = await usersApi.updateMyProfile({ familyName: fam, givenName: giv })
+    displayName.value = profile.displayName?.trim() || `${fam} ${giv}`
+    familyName.value = profile.familyName?.trim() || fam
+    givenName.value = profile.givenName?.trim() || giv
     profileLoaded.value = true
 
     const mySub = currentUser.value?.sub
-    // 楽観的更新: 再取得を待たずに画面上の自分の名前を差し替える
     if (mySub) {
       try {
         const { useDisplayNamesStore } = await import('./displayNames')
-        useDisplayNamesStore().setName(mySub, displayName.value)
+        useDisplayNamesStore().setName(mySub, displayName.value, familyName.value)
         await patchLocalDisplayName(mySub, displayName.value)
       } catch (e) {
         console.warn('表示名のローカル反映に失敗:', e)
       }
     }
 
-    // サーバー同期後の正規データでストアをリフレッシュ
     try {
       const { useProjectsStore } = await import('./projects')
       const { useTasksStore } = await import('./tasks')
@@ -245,6 +277,18 @@ export const useAuthStore = defineStore('auth', () => {
       }
     } catch (e) {
       console.warn('表示名保存後のデータ再取得に失敗（名前自体は保存済み）:', e)
+    }
+  }
+
+  /** @deprecated setDisplayNameParts を使用 */
+  async function setDisplayName(name: string): Promise<void> {
+    const t = name.trim().replace(/\s+/g, ' ')
+    const sp = t.indexOf(' ')
+    if (sp > 0) {
+      await setDisplayNameParts(t.slice(0, sp), t.slice(sp + 1))
+    } else if (t) {
+      // 単一語は姓として、名は半角中点で最低限満たす（旧 API 互換）
+      await setDisplayNameParts(t, '・')
     }
   }
 
@@ -314,6 +358,8 @@ export const useAuthStore = defineStore('auth', () => {
     idToken.value = null
     currentUser.value = null
     displayName.value = ''
+    familyName.value = ''
+    givenName.value = ''
     profileLoaded.value = false
     profileLoading = null
     void import('./displayNames').then(({ useDisplayNamesStore }) => {
@@ -366,7 +412,10 @@ export const useAuthStore = defineStore('auth', () => {
     idToken,
     currentUser,
     displayName,
+    familyName,
+    givenName,
     displayLabel,
+    avatarLabel,
     hasCustomDisplayName,
     profileLoaded,
     isLoading,
@@ -377,6 +426,7 @@ export const useAuthStore = defineStore('auth', () => {
     restoreSession,
     ensureSession,
     setDisplayName,
+    setDisplayNameParts,
     loadCloudProfile,
   }
 })

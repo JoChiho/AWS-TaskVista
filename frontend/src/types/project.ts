@@ -107,6 +107,15 @@ export interface AddProjectMemberPayload {
 export interface ProjectSummary {
   projectId: string
   name: string
+  /** プロジェクトステータス */
+  status: ProjectStatus
+  /** メンバー数（作成者含む） */
+  memberCount: number
+  /**
+   * 更新日: プロジェクト内タスクの最新 updatedAt
+   * タスクが無い場合はプロジェクト自体の updatedAt
+   */
+  lastUpdatedAt: string
   totalTasks: number
   tasksByStatus: Record<string, number>
 }

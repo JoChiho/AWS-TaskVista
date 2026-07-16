@@ -18,7 +18,7 @@ import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import axios from 'axios'
 import { getUploadUrl, getDownloadUrl, deleteAttachment } from '@/api/comments'
 import { useUiStore } from '@/stores/ui'
-import { resolveAssigneeLabels } from '@/utils/displayName'
+import { resolveAssigneeLabels, avatarLabelFromName } from '@/utils/displayName'
 
 const props = defineProps<{
   projectId: string
@@ -40,10 +40,6 @@ const task = computed(() => tasksStore.currentTask)
 
 const assigneeLabels = computed(() =>
   task.value ? resolveAssigneeLabels(task.value) : [],
-)
-
-const completion = computed(() =>
-  task.value ? normalizeCompletion(task.value.completionPercent) : 0,
 )
 
 // コメント取得は CommentThread 側の ensureComments に一本化
@@ -179,8 +175,9 @@ function close() {
   modelValue.value = false
 }
 
+/** アバターは姓のみ */
 function initials(name: string): string {
-  return name.slice(0, 2).toUpperCase()
+  return avatarLabelFromName(name)
 }
 </script>
 
@@ -297,12 +294,6 @@ function initials(name: string): string {
               <v-icon size="16" class="mr-1" color="primary">mdi-progress-check</v-icon>
               完了度
             </div>
-            <span
-              class="completion-pct font-weight-bold"
-              :class="`text-${completionColor(localCompletion)}`"
-            >
-              {{ localCompletion }}%
-            </span>
             <v-slider
               v-model="localCompletion"
               :min="0"
@@ -323,13 +314,14 @@ function initials(name: string): string {
               density="compact"
               variant="outlined"
               hide-details
+              hide-spin-buttons
               class="completion-input"
               suffix="%"
               :disabled="isSavingProgress"
               @change="commitCompletion(localCompletion)"
             />
             <v-btn
-              size="x-small"
+              size="small"
               variant="tonal"
               color="primary"
               :loading="isSavingProgress"
@@ -365,10 +357,19 @@ function initials(name: string): string {
           <div v-else class="empty-block">未割り当て</div>
         </section>
 
-        <!-- タイムスタンプ -->
+        <!-- 属性グリッド: 1行目 予定工数 / 期日、2行目 作成 / 更新 -->
         <section class="meta-grid mx-5 mb-5">
           <div class="meta-item">
-            <span class="meta-key">期日</span>
+            <span class="meta-key">予定工数（人日）</span>
+            <span class="meta-val">
+              <template v-if="task.estimatedEffortDays != null">
+                {{ task.estimatedEffortDays }} 人日
+              </template>
+              <template v-else>未設定</template>
+            </span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-key">期日（截止日）</span>
             <span
               class="meta-val"
               :class="{ 'text-error font-weight-bold': isOverdue(task.dueDate) }"
@@ -377,16 +378,12 @@ function initials(name: string): string {
             </span>
           </div>
           <div class="meta-item">
-            <span class="meta-key">作成</span>
+            <span class="meta-key">作成日</span>
             <span class="meta-val">{{ formatDateTime(task.createdAt) }}</span>
           </div>
           <div class="meta-item">
-            <span class="meta-key">更新</span>
+            <span class="meta-key">更新日</span>
             <span class="meta-val">{{ formatDateTime(task.updatedAt) }}</span>
-          </div>
-          <div class="meta-item">
-            <span class="meta-key">完了度</span>
-            <span class="meta-val">{{ completion }}%</span>
           </div>
         </section>
 
@@ -563,6 +560,7 @@ function initials(name: string): string {
   border-radius: 10px;
   background: rgba(var(--v-theme-primary), 0.05);
   border: 1px solid rgba(var(--v-theme-primary), 0.12);
+  overflow: visible;
 }
 
 .completion-row {
@@ -579,31 +577,45 @@ function initials(name: string): string {
   white-space: nowrap;
 }
 
-.completion-pct {
-  flex: 0 0 auto;
-  font-size: 0.95rem;
-  min-width: 2.75rem;
-  text-align: right;
-}
-
 .completion-slider {
   flex: 1 1 auto;
-  min-width: 80px;
+  min-width: 64px;
   max-width: 100%;
   margin-inline: 0;
 }
 
+/* 数字入力が % サフィックスで欠けないよう十分な幅を確保 */
 .completion-input {
-  flex: 0 0 72px;
-  max-width: 72px;
+  flex: 0 0 104px;
+  width: 104px;
+  max-width: 104px;
+  min-width: 104px;
+  flex-shrink: 0;
 }
 
 .completion-input :deep(.v-field) {
-  font-size: 0.85rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.completion-input :deep(.v-field__input) {
+  min-height: 36px;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  text-align: right;
+  /* 3桁 + 余白 */
+  min-width: 2.5rem;
+}
+
+.completion-input :deep(.v-text-field__suffix),
+.completion-input :deep(.v-field__append-inner) {
+  opacity: 0.75;
+  padding-inline-start: 2px;
 }
 
 .completion-btn {
   flex: 0 0 auto;
+  flex-shrink: 0;
 }
 
 @media (max-width: 480px) {
@@ -614,6 +626,11 @@ function initials(name: string): string {
     order: 5;
     flex: 1 1 100%;
     min-width: 100%;
+  }
+  .completion-input {
+    flex: 1 1 auto;
+    width: auto;
+    max-width: 140px;
   }
 }
 

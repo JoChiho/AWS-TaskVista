@@ -45,6 +45,13 @@ const createTaskSchema = z.object({
     .min(0, '完了度は 0 以上です')
     .max(100, '完了度は 100 以下です')
     .optional(),
+  /** 予定工数（人日） */
+  estimatedEffortDays: z
+    .number({ invalid_type_error: '予定工数は数値で指定してください' })
+    .min(0, '予定工数は 0 以上です')
+    .max(10000, '予定工数は 10000 人日以内です')
+    .optional()
+    .nullable(),
   dueDate: z.string().max(30).optional(),
 })
 
@@ -432,6 +439,11 @@ export async function createTask(
     assigneeName: normalized.assigneeName,
     assignees: normalized.assignees,
     completionPercent: completion,
+    estimatedEffortDays:
+      parsed.data.estimatedEffortDays === null ||
+      parsed.data.estimatedEffortDays === undefined
+        ? undefined
+        : parsed.data.estimatedEffortDays,
     dueDate: parsed.data.dueDate,
     attachments: [],
     createdBy: userId,

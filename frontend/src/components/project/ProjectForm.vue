@@ -6,7 +6,7 @@ import type { Project, ProjectMember, ProjectStatus } from '@/types/project'
 import { PROJECT_STATUS_OPTIONS } from '@/types/project'
 import { useProjectsStore } from '@/stores/projects'
 import { useAuthStore } from '@/stores/auth'
-import { resolveMemberDisplayName } from '@/utils/displayName'
+import { resolveMemberDisplayName, avatarLabelFromName } from '@/utils/displayName'
 
 const props = defineProps<{
   /** 編集時のみ渡す。未指定 / null なら新規作成 */
@@ -414,7 +414,7 @@ function canRemoveMember(member: ProjectMember): boolean {
             <template #prepend>
               <v-avatar color="primary" size="36">
                 <span class="text-caption text-white">
-                  {{ (authStore.displayLabel || '?').slice(0, 2).toUpperCase() }}
+                  {{ authStore.avatarLabel || '?' }}
                 </span>
               </v-avatar>
             </template>
@@ -443,7 +443,7 @@ function canRemoveMember(member: ProjectMember): boolean {
               <template #prepend>
                 <v-avatar color="success" size="36">
                   <span class="text-caption text-white">
-                    {{ resolveMemberDisplayName(member).slice(0, 2).toUpperCase() }}
+                    {{ avatarLabelFromName(resolveMemberDisplayName(member)) }}
                   </span>
                 </v-avatar>
               </template>

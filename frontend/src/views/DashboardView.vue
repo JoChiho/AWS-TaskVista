@@ -4,6 +4,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import type { ProjectSummary } from '@/types/project'
+import { projectStatusLabel, projectStatusColor } from '@/types/project'
 import type { Task } from '@/types/task'
 import { STATUS_COLORS, PRIORITY_LABELS, PRIORITY_COLORS } from '@/types/task'
 import { fetchDashboardSummary, fetchMyTasks } from '@/api/dashboard'
@@ -59,6 +60,18 @@ function formatDueDate(dueDate?: string): string {
 
 function projectLabel(projectId: string): string {
   return projectNameById.value.get(projectId) || 'プロジェクト'
+}
+
+/** 更新日（タスク最新更新日）の短い表示 */
+function formatUpdatedAt(dateStr?: string): string {
+  if (!dateStr) return '—'
+  const d = new Date(dateStr)
+  if (Number.isNaN(d.getTime())) return '—'
+  return d.toLocaleDateString('ja-JP', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  })
 }
 
 /** プロジェクトへ移動する（概要カードなど） */
@@ -146,13 +159,33 @@ onMounted(() => {
           <v-card
             hover
             rounded="lg"
-            class="cursor-pointer"
+            class="cursor-pointer dashboard-project-card"
+            height="100%"
             @click="goToProject(summary.projectId)"
           >
-            <v-card-title class="text-subtitle-1 font-weight-bold pt-4">
-              {{ summary.name }}
+            <v-card-title class="d-flex align-center pt-4">
+              <span class="text-subtitle-1 font-weight-bold flex-grow-1 text-truncate">
+                {{ summary.name }}
+              </span>
+              <v-chip
+                :color="projectStatusColor(summary.status)"
+                size="x-small"
+                variant="tonal"
+                class="ml-2 flex-shrink-0"
+              >
+                {{ projectStatusLabel(summary.status) }}
+              </v-chip>
             </v-card-title>
             <v-card-text>
+              <!-- メンバー数・更新日（一覧カードに揃える） -->
+              <div class="d-flex align-center text-caption text-medium-emphasis mb-3">
+                <v-icon size="14" class="mr-1">mdi-account-group</v-icon>
+                {{ summary.memberCount ?? '—' }} 人
+                <v-spacer />
+                <v-icon size="14" class="mr-1">mdi-update</v-icon>
+                更新: {{ formatUpdatedAt(summary.lastUpdatedAt) }}
+              </div>
+
               <!-- タスク総数 -->
               <div class="d-flex align-center justify-space-between mb-3">
                 <span class="text-body-2 text-medium-emphasis">タスク合計</span>
