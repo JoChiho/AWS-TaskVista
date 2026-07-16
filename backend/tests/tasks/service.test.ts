@@ -144,9 +144,56 @@ describe('tasks/service', () => {
     })
 
     expect(result.completionPercent).toBe(40)
+    expect(result.status).toBe('進行中')
     expect(result.assignees).toHaveLength(2)
     expect(result.assigneeId).toBe(USER_ID)
     expect(result.assigneeName).toBe('テストユーザー')
+  })
+
+  it('完了度 0 / 100 は未着手 / 完了に連動する', async () => {
+    const task = makeTask({ status: '進行中', completionPercent: 50 })
+    vi.mocked(repository.getTaskById).mockResolvedValue(task)
+    vi.mocked(repository.updateTask).mockImplementation(async (_id, updates) => ({
+      ...task,
+      ...updates,
+    }))
+
+    const toZero = await service.updateTask(TASK_ID, USER_ID, { completionPercent: 0 })
+    expect(toZero.status).toBe('未着手')
+    expect(toZero.completionPercent).toBe(0)
+
+    const toFull = await service.updateTask(TASK_ID, USER_ID, { completionPercent: 100 })
+    expect(toFull.status).toBe('完了')
+    expect(toFull.completionPercent).toBe(100)
+  })
+
+  it('レビュー待ち・保留は完了度を変えてもステータスを維持する', async () => {
+    const task = makeTask({ status: 'レビュー待ち', completionPercent: 30 })
+    vi.mocked(repository.getTaskById).mockResolvedValue(task)
+    vi.mocked(repository.updateTask).mockImplementation(async (_id, updates) => ({
+      ...task,
+      ...updates,
+    }))
+
+    const result = await service.updateTask(TASK_ID, USER_ID, { completionPercent: 100 })
+    expect(result.status).toBe('レビュー待ち')
+    expect(result.completionPercent).toBe(100)
+  })
+
+  it('任意完了度でレビュー待ちへ明示更新できる', async () => {
+    const task = makeTask({ status: '進行中', completionPercent: 40 })
+    vi.mocked(repository.getTaskById).mockResolvedValue(task)
+    vi.mocked(repository.updateTask).mockImplementation(async (_id, updates) => ({
+      ...task,
+      ...updates,
+    }))
+
+    const result = await service.updateTask(TASK_ID, USER_ID, {
+      status: 'レビュー待ち',
+      completionPercent: 40,
+    })
+    expect(result.status).toBe('レビュー待ち')
+    expect(result.completionPercent).toBe(40)
   })
 
   it('権限のないプロジェクトのタスクは ForbiddenError', async () => {

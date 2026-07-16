@@ -54,6 +54,37 @@ const updateStatusSchema = z.object({
   status: statusSchema,
 })
 
+/** 完了度変更時に自動連動しないステータス */
+const COMPLETION_PROTECTED_STATUSES: readonly TaskStatus[] = ['レビュー待ち', '保留']
+
+function clampCompletion(value?: number | null): number {
+  if (value === undefined || value === null || Number.isNaN(Number(value))) return 0
+  return Math.min(100, Math.max(0, Math.round(Number(value))))
+}
+
+/** 0→未着手 / 1〜99→進行中 / 100→完了 */
+function statusFromCompletion(percent: number): TaskStatus {
+  const p = clampCompletion(percent)
+  if (p <= 0) return '未着手'
+  if (p >= 100) return '完了'
+  return '進行中'
+}
+
+/**
+ * 完了度変更後のステータス
+ * - レビュー待ち / 保留 は維持（任意完了度のまま可）
+ * - それ以外は完了度に連動
+ */
+function resolveStatusAfterCompletionChange(
+  completionPercent: number,
+  currentStatus: TaskStatus,
+): TaskStatus {
+  if (COMPLETION_PROTECTED_STATUSES.includes(currentStatus)) {
+    return currentStatus
+  }
+  return statusFromCompletion(completionPercent)
+}
+
 async function assertProjectAccess(
   projectId: string,
   userId: string,
@@ -362,19 +393,39 @@ export async function createTask(
   })
 
   const now = new Date().toISOString()
-  const completion =
+  let completion =
     parsed.data.completionPercent !== undefined
-      ? parsed.data.completionPercent
+      ? clampCompletion(parsed.data.completionPercent)
       : parsed.data.status === '完了'
         ? 100
-        : 0
+        : parsed.data.status === '未着手'
+          ? 0
+          : 0
+
+  let status: TaskStatus = parsed.data.status ?? '未着手'
+
+  // 完了度が明示され、ステータスが未指定 or 連動対象のとき完了度を優先
+  if (parsed.data.completionPercent !== undefined) {
+    if (
+      parsed.data.status === undefined ||
+      !COMPLETION_PROTECTED_STATUSES.includes(parsed.data.status as TaskStatus)
+    ) {
+      status = statusFromCompletion(completion)
+    } else {
+      status = parsed.data.status as TaskStatus
+    }
+  } else if (status === '完了') {
+    completion = 100
+  } else if (status === '未着手') {
+    completion = 0
+  }
 
   const task: Task = {
     taskId: uuidv4(),
     projectId,
     title: parsed.data.title,
     description: parsed.data.description,
-    status: parsed.data.status ?? '未着手',
+    status,
     priority: parsed.data.priority ?? 'medium',
     requirement: parsed.data.requirement,
     assigneeId: normalized.assigneeId,
@@ -456,13 +507,49 @@ export async function updateTask(
     }
   }
 
-  // ステータスを完了にしたとき、完了度未指定なら 100 にする
+  // 明示ステータスのみ（フォームは完了度を送らない）:
+  // 完了 → 100 / 未着手 → 0。レビュー待ち・保留は完了度を触らない
+  if (parsed.data.status !== undefined && parsed.data.completionPercent === undefined) {
+    if (parsed.data.status === '完了' && (existing.completionPercent ?? 0) < 100) {
+      updates.completionPercent = 100
+    } else if (parsed.data.status === '未着手' && (existing.completionPercent ?? 0) !== 0) {
+      updates.completionPercent = 0
+    }
+  }
+
+  // 完了度のみ更新（または完了度あり・ステータス未指定）: 連動
+  // レビュー待ち / 保留 は維持。0→未着手 / 1〜99→進行中 / 100→完了
   if (
-    parsed.data.status === '完了' &&
-    parsed.data.completionPercent === undefined &&
-    (existing.completionPercent ?? 0) < 100
+    parsed.data.completionPercent !== undefined &&
+    parsed.data.status === undefined
   ) {
-    updates.completionPercent = 100
+    const nextStatus = resolveStatusAfterCompletionChange(
+      parsed.data.completionPercent,
+      existing.status,
+    )
+    if (nextStatus !== existing.status) {
+      updates.status = nextStatus
+    }
+  }
+
+  // 両方指定時: ステータスを優先（レビュー待ち/保留を任意完了度で保持するため）
+  // 連動対象ステータス同士の矛盾は完了度側に寄せる（フォーム連動の保険）
+  if (
+    parsed.data.completionPercent !== undefined &&
+    parsed.data.status !== undefined &&
+    !COMPLETION_PROTECTED_STATUSES.includes(parsed.data.status as TaskStatus)
+  ) {
+    const mapped = statusFromCompletion(parsed.data.completionPercent)
+    // 明示が保護外で、完了度と明らかに矛盾する場合は完了度を優先
+    if (
+      (parsed.data.status === '完了' && clampCompletion(parsed.data.completionPercent) < 100) ||
+      (parsed.data.status === '未着手' && clampCompletion(parsed.data.completionPercent) > 0) ||
+      (parsed.data.status === '進行中' &&
+        (clampCompletion(parsed.data.completionPercent) === 0 ||
+          clampCompletion(parsed.data.completionPercent) === 100))
+    ) {
+      updates.status = mapped
+    }
   }
 
   const updated = await repository.updateTask(taskId, updates)
@@ -488,9 +575,14 @@ export async function updateTaskStatus(
   }
 
   const status = parsed.data.status as TaskStatus
-  const extra =
-    status === '完了' ? { status, completionPercent: 100 as const } : { status }
-  return repository.updateTask(taskId, extra)
+  // かんばん: 完了→100% / 未着手→0%。レビュー待ち・保留は完了度を触らない
+  if (status === '完了') {
+    return repository.updateTask(taskId, { status, completionPercent: 100 })
+  }
+  if (status === '未着手') {
+    return repository.updateTask(taskId, { status, completionPercent: 0 })
+  }
+  return repository.updateTask(taskId, { status })
 }
 
 /** タスクを論理削除する */

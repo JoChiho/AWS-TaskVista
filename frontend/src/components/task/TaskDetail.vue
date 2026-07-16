@@ -10,6 +10,7 @@ import {
   PRIORITY_COLORS,
   normalizeCompletion,
   completionColor,
+  resolveStatusAfterCompletionChange,
 } from '@/types/task'
 import CommentThread from '@/components/comment/CommentThread.vue'
 import TaskForm from './TaskForm.vue'
@@ -102,12 +103,15 @@ async function commitCompletion(value: number) {
   localCompletion.value = next
   if (next === normalizeCompletion(task.value.completionPercent)) return
 
+  // 0→未着手 / 1〜99→進行中 / 100→完了
+  // レビュー待ち・保留は完了度を変えてもステータス維持
+  const nextStatus = resolveStatusAfterCompletionChange(next, task.value.status)
+
   isSavingProgress.value = true
   try {
     await tasksStore.updateTask(task.value.taskId, {
       completionPercent: next,
-      // 100% にしたら完了へ寄せる（既に完了ならそのまま）
-      ...(next >= 100 && task.value.status !== '完了' ? { status: '完了' as const } : {}),
+      ...(nextStatus !== task.value.status ? { status: nextStatus } : {}),
     })
   } catch {
     localCompletion.value = normalizeCompletion(task.value.completionPercent)
@@ -258,71 +262,8 @@ function initials(name: string): string {
       </div>
 
       <div class="task-detail-body flex-grow-1">
-        <!-- 完了度 -->
-        <section class="detail-section completion-section mx-5 mt-4 mb-3">
-          <div class="d-flex align-center justify-space-between mb-2">
-            <div class="d-flex align-center">
-              <v-icon size="18" class="mr-1" color="primary">mdi-progress-check</v-icon>
-              <span class="text-subtitle-2 font-weight-bold">完了度</span>
-            </div>
-            <div class="d-flex align-center ga-3">
-              <v-progress-circular
-                :model-value="localCompletion"
-                :size="52"
-                :width="5"
-                :color="completionColor(localCompletion)"
-              >
-                <span class="text-body-2 font-weight-bold">{{ localCompletion }}</span>
-              </v-progress-circular>
-              <span class="text-h5 font-weight-bold" :class="`text-${completionColor(localCompletion)}`">
-                {{ localCompletion }}%
-              </span>
-            </div>
-          </div>
-          <v-slider
-            v-model="localCompletion"
-            :min="0"
-            :max="100"
-            :step="5"
-            :color="completionColor(localCompletion)"
-            :disabled="isSavingProgress"
-            thumb-label
-            hide-details
-            class="mb-1"
-            @end="commitCompletion(localCompletion)"
-          />
-          <div class="d-flex align-center ga-2">
-            <v-text-field
-              v-model.number="localCompletion"
-              type="number"
-              min="0"
-              max="100"
-              density="compact"
-              variant="outlined"
-              hide-details
-              style="max-width: 100px"
-              suffix="%"
-              :disabled="isSavingProgress"
-              @change="commitCompletion(localCompletion)"
-            />
-            <v-btn
-              size="small"
-              variant="tonal"
-              color="primary"
-              :loading="isSavingProgress"
-              @click="commitCompletion(localCompletion)"
-            >
-              反映する
-            </v-btn>
-            <v-spacer />
-            <span class="text-caption text-medium-emphasis">
-              0〜100% で進捗を記録
-            </span>
-          </div>
-        </section>
-
         <!-- 要望（ハイライト） -->
-        <section class="detail-section mx-5 mb-4">
+        <section class="detail-section mx-5 mt-4 mb-4">
           <div class="section-label">
             <v-icon size="18" class="mr-1">mdi-bullseye-arrow</v-icon>
             要望
@@ -349,7 +290,58 @@ function initials(name: string): string {
           </div>
         </section>
 
-        <!-- 担当者・メタ -->
+        <!-- 完了度（説明の下・担当者の上・コンパクト） -->
+        <section class="detail-section completion-section mx-5 mb-4">
+          <div class="completion-row">
+            <div class="section-label completion-label mb-0">
+              <v-icon size="16" class="mr-1" color="primary">mdi-progress-check</v-icon>
+              完了度
+            </div>
+            <span
+              class="completion-pct font-weight-bold"
+              :class="`text-${completionColor(localCompletion)}`"
+            >
+              {{ localCompletion }}%
+            </span>
+            <v-slider
+              v-model="localCompletion"
+              :min="0"
+              :max="100"
+              :step="5"
+              :color="completionColor(localCompletion)"
+              :disabled="isSavingProgress"
+              density="compact"
+              hide-details
+              class="completion-slider"
+              @end="commitCompletion(localCompletion)"
+            />
+            <v-text-field
+              v-model.number="localCompletion"
+              type="number"
+              min="0"
+              max="100"
+              density="compact"
+              variant="outlined"
+              hide-details
+              class="completion-input"
+              suffix="%"
+              :disabled="isSavingProgress"
+              @change="commitCompletion(localCompletion)"
+            />
+            <v-btn
+              size="x-small"
+              variant="tonal"
+              color="primary"
+              :loading="isSavingProgress"
+              class="completion-btn"
+              @click="commitCompletion(localCompletion)"
+            >
+              反映
+            </v-btn>
+          </div>
+        </section>
+
+        <!-- 担当者 -->
         <section class="detail-section mx-5 mb-4">
           <div class="section-label">
             <v-icon size="18" class="mr-1">mdi-account-multiple-outline</v-icon>
@@ -567,10 +559,62 @@ function initials(name: string): string {
 }
 
 .completion-section {
-  padding: 18px 20px;
-  border-radius: 14px;
-  background: rgba(var(--v-theme-primary), 0.06);
-  border: 1px solid rgba(var(--v-theme-primary), 0.14);
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgba(var(--v-theme-primary), 0.05);
+  border: 1px solid rgba(var(--v-theme-primary), 0.12);
+}
+
+.completion-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+
+.completion-label {
+  flex: 0 0 auto;
+  margin-bottom: 0 !important;
+  white-space: nowrap;
+}
+
+.completion-pct {
+  flex: 0 0 auto;
+  font-size: 0.95rem;
+  min-width: 2.75rem;
+  text-align: right;
+}
+
+.completion-slider {
+  flex: 1 1 auto;
+  min-width: 80px;
+  max-width: 100%;
+  margin-inline: 0;
+}
+
+.completion-input {
+  flex: 0 0 72px;
+  max-width: 72px;
+}
+
+.completion-input :deep(.v-field) {
+  font-size: 0.85rem;
+}
+
+.completion-btn {
+  flex: 0 0 auto;
+}
+
+@media (max-width: 480px) {
+  .completion-row {
+    flex-wrap: wrap;
+  }
+  .completion-slider {
+    order: 5;
+    flex: 1 1 100%;
+    min-width: 100%;
+  }
 }
 
 .requirement-card {

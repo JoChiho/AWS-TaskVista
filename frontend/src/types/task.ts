@@ -135,3 +135,35 @@ export function completionColor(percent: number): string {
   if (percent > 0) return 'warning'
   return 'grey'
 }
+
+/**
+ * 完了度変更時に自動連動しないステータス
+ * （任意の完了度のまま維持できる）
+ */
+export const COMPLETION_PROTECTED_STATUSES: readonly TaskStatus[] = [
+  'レビュー待ち',
+  '保留',
+]
+
+/** 完了度から連動ステータスを算出（0→未着手 / 1〜99→進行中 / 100→完了） */
+export function statusFromCompletion(percent: number): TaskStatus {
+  const p = normalizeCompletion(percent)
+  if (p <= 0) return '未着手'
+  if (p >= 100) return '完了'
+  return '進行中'
+}
+
+/**
+ * 完了度変更後のステータス
+ * - レビュー待ち / 保留 は維持
+ * - それ以外は完了度に連動
+ */
+export function resolveStatusAfterCompletionChange(
+  completionPercent: number,
+  currentStatus: TaskStatus,
+): TaskStatus {
+  if (COMPLETION_PROTECTED_STATUSES.includes(currentStatus)) {
+    return currentStatus
+  }
+  return statusFromCompletion(completionPercent)
+}

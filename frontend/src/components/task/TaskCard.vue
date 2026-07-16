@@ -2,6 +2,8 @@
 // かんばんタスクカード
 // - 左のドラッグハンドルでのみ移動（Sortable がカード本体の click を奪わない）
 // - カード本体クリックで詳細を開く
+// - 複数担当はアバター重なりで表示（名前の切り詰めを避ける）
+import { computed } from 'vue'
 import { storeToRefs } from 'pinia'
 import type { Task } from '@/types/task'
 import {
@@ -10,7 +12,7 @@ import {
   normalizeCompletion,
   completionColor,
 } from '@/types/task'
-import { formatAssigneeList, resolveAssigneeLabels } from '@/utils/displayName'
+import { resolveAssigneeLabels } from '@/utils/displayName'
 import { useDisplayNamesStore } from '@/stores/displayNames'
 
 const props = defineProps<{
@@ -23,6 +25,27 @@ const emit = defineEmits<{
 
 const displayNamesStore = useDisplayNamesStore()
 const { byUserId, byEmail } = storeToRefs(displayNamesStore)
+
+/** 表示するアバター最大数（超過分は +N） */
+const MAX_VISIBLE_AVATARS = 3
+
+const assigneeLabels = computed(() => {
+  void byUserId.value
+  void byEmail.value
+  return resolveAssigneeLabels(props.task)
+})
+
+const visibleAssignees = computed(() =>
+  assigneeLabels.value.slice(0, MAX_VISIBLE_AVATARS),
+)
+
+const overflowCount = computed(() =>
+  Math.max(0, assigneeLabels.value.length - MAX_VISIBLE_AVATARS),
+)
+
+const assigneeTitle = computed(() => assigneeLabels.value.join('、'))
+
+const primaryAssigneeName = computed(() => assigneeLabels.value[0] ?? '')
 
 function formatDueDate(dueDate: string): string {
   const d = new Date(dueDate)
@@ -45,20 +68,24 @@ function isDueSoon(dueDate?: string): boolean {
   return diff >= 0 && diff <= 3
 }
 
-function assigneeLabel(task: Task): string {
-  void byUserId.value
-  void byEmail.value
-  return formatAssigneeList(task)
-}
-
-function assigneeCount(task: Task): number {
-  void byUserId.value
-  void byEmail.value
-  return resolveAssigneeLabels(task).length
-}
-
 function progress(task: Task): number {
   return normalizeCompletion(task.completionPercent)
+}
+
+function initials(name: string): string {
+  const t = name.trim()
+  if (!t) return '?'
+  // 日本語名は先頭1〜2文字、英名は先頭2文字
+  if (/[\u3040-\u30ff\u3400-\u9fff]/.test(t)) {
+    return t.slice(0, Math.min(2, t.length))
+  }
+  return t.slice(0, 2).toUpperCase()
+}
+
+/** 担当者ごとに安定した色（見た目の区別用） */
+const AVATAR_COLORS = ['primary', 'teal', 'indigo', 'deep-orange', 'purple'] as const
+function avatarColor(index: number): string {
+  return AVATAR_COLORS[index % AVATAR_COLORS.length]
 }
 
 function onBodyClick() {
@@ -119,6 +146,7 @@ function onBodyClick() {
           />
         </div>
 
+        <!-- メタ行: 優先度・コメント・期日 -->
         <div class="d-flex align-center flex-wrap gap-1 mt-2">
           <v-chip
             :color="PRIORITY_COLORS[task.priority]"
@@ -155,21 +183,48 @@ function onBodyClick() {
             <v-icon size="10" class="mr-1">mdi-calendar</v-icon>
             {{ formatDueDate(task.dueDate) }}
           </span>
+        </div>
 
+        <!-- 担当者行: 複数はアバター重なり、1人はアバター+名前 -->
+        <div
+          v-if="assigneeLabels.length > 0"
+          class="assignee-row mt-2"
+          :title="assigneeTitle"
+        >
+          <div class="avatar-stack" aria-hidden="true">
+            <v-avatar
+              v-for="(name, idx) in visibleAssignees"
+              :key="`${name}-${idx}`"
+              size="22"
+              :color="avatarColor(idx)"
+              class="stack-avatar"
+              :style="{ zIndex: visibleAssignees.length - idx }"
+            >
+              <span class="avatar-initials">{{ initials(name) }}</span>
+            </v-avatar>
+            <v-avatar
+              v-if="overflowCount > 0"
+              size="22"
+              color="grey-darken-1"
+              class="stack-avatar stack-more"
+              :style="{ zIndex: 0 }"
+            >
+              <span class="avatar-initials">+{{ overflowCount }}</span>
+            </v-avatar>
+          </div>
+
+          <!-- 1人: 名前を併記 / 複数: 人数のみ（ホバーで全員名） -->
           <span
-            v-if="assigneeLabel(task)"
-            class="text-caption text-medium-emphasis ml-1 text-truncate"
-            style="max-width: 88px"
-            :title="assigneeLabel(task)"
+            v-if="assigneeLabels.length === 1"
+            class="assignee-name text-caption text-medium-emphasis"
           >
-            <v-icon v-if="assigneeCount(task) > 1" size="10" class="mr-0">
-              mdi-account-multiple
-            </v-icon>
-            {{
-              assigneeCount(task) > 1
-                ? `${resolveAssigneeLabels(task)[0]} 他${assigneeCount(task) - 1}`
-                : assigneeLabel(task)
-            }}
+            {{ primaryAssigneeName }}
+          </span>
+          <span
+            v-else
+            class="assignee-count text-caption text-medium-emphasis"
+          >
+            {{ assigneeLabels.length }} 名
           </span>
         </div>
       </v-card-text>
@@ -233,5 +288,49 @@ function onBodyClick() {
   overflow: hidden;
   line-height: 1.4;
   word-break: break-word;
+}
+
+.assignee-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.avatar-stack {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.stack-avatar {
+  margin-left: -6px;
+  border: 1.5px solid rgb(var(--v-theme-surface));
+  box-sizing: content-box;
+}
+
+.stack-avatar:first-child {
+  margin-left: 0;
+}
+
+.avatar-initials {
+  font-size: 9px;
+  font-weight: 700;
+  color: white;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+.assignee-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.assignee-count {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  opacity: 0.85;
 }
 </style>

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // タスク作成・編集フォーム
-// TaskDetail と同じビジュアル言語（セクション・色帯・完了度カード）
+// 完了度は TaskDetail で調整するため、ここでは出さない
 import { ref, watch, computed } from 'vue'
 import type { Task, TaskStatus, TaskPriority, TaskAssignee } from '@/types/task'
 import {
@@ -8,8 +8,6 @@ import {
   PRIORITY_LABELS,
   STATUS_COLORS,
   PRIORITY_COLORS,
-  normalizeCompletion,
-  completionColor,
 } from '@/types/task'
 import { useTasksStore } from '@/stores/tasks'
 import { useProjectsStore } from '@/stores/projects'
@@ -37,7 +35,6 @@ const requirement = ref('')
 /** 担当者 userId の配列（複数） */
 const selectedAssigneeIds = ref<string[]>([])
 const dueDate = ref('')
-const completionPercent = ref(0)
 
 const titleRules = [
   (v: string) => !!v || 'タスク名は必須項目です',
@@ -120,7 +117,6 @@ watch(modelValue, async (isOpen) => {
     priority.value = props.task.priority
     requirement.value = props.task.requirement ?? ''
     dueDate.value = props.task.dueDate ?? ''
-    completionPercent.value = normalizeCompletion(props.task.completionPercent)
     initAssigneeSelection(props.task)
   } else {
     title.value = ''
@@ -130,14 +126,6 @@ watch(modelValue, async (isOpen) => {
     requirement.value = ''
     selectedAssigneeIds.value = []
     dueDate.value = ''
-    completionPercent.value = props.defaultStatus === '完了' ? 100 : 0
-  }
-})
-
-// ステータスを完了にしたら完了度を 100 に寄せる
-watch(status, (s, prev) => {
-  if (s === '完了' && prev !== '完了' && completionPercent.value < 100) {
-    completionPercent.value = 100
   }
 })
 
@@ -147,6 +135,8 @@ async function handleSubmit() {
   const assignees = buildAssigneesPayload()
   const primary = assignees[0]
 
+  // 完了度は詳細画面で調整。編集時は送らず既存値を保持。
+  // 新規作成・ステータス変更時の 完了/未着手 は API 側で完了度を合わせる。
   const payload = {
     title: title.value.trim(),
     description: description.value.trim() || undefined,
@@ -156,7 +146,6 @@ async function handleSubmit() {
     assignees,
     assigneeId: primary?.userId,
     assigneeName: primary?.displayName,
-    completionPercent: normalizeCompletion(completionPercent.value),
     dueDate: dueDate.value || undefined,
   }
 
@@ -236,14 +225,6 @@ async function handleSubmit() {
             >
               優先度: {{ PRIORITY_LABELS[priority] }}
             </v-chip>
-            <v-chip
-              size="small"
-              label
-              :color="completionColor(completionPercent)"
-              variant="tonal"
-            >
-              完了度 {{ completionPercent }}%
-            </v-chip>
           </div>
         </div>
       </div>
@@ -288,49 +269,6 @@ async function handleSubmit() {
                 class="inner-field"
               />
             </div>
-          </section>
-
-          <!-- 完了度 -->
-          <section class="form-section completion-section mb-5">
-            <div class="d-flex align-center justify-space-between mb-2">
-              <div class="section-label mb-0">
-                <v-icon size="18" class="mr-1" color="primary">mdi-progress-check</v-icon>
-                完了度
-              </div>
-              <span
-                class="text-h6 font-weight-bold"
-                :class="`text-${completionColor(completionPercent)}`"
-              >
-                {{ completionPercent }}%
-              </span>
-            </div>
-            <v-slider
-              v-model="completionPercent"
-              :min="0"
-              :max="100"
-              :step="5"
-              :color="completionColor(completionPercent)"
-              thumb-label
-              hide-details
-              class="mb-2"
-            />
-            <v-text-field
-              v-model.number="completionPercent"
-              type="number"
-              min="0"
-              max="100"
-              step="1"
-              suffix="%"
-              density="compact"
-              variant="outlined"
-              hide-details
-              style="max-width: 120px"
-              @update:model-value="
-                (v: number | string) => {
-                  completionPercent = normalizeCompletion(Number(v))
-                }
-              "
-            />
           </section>
 
           <!-- ステータス / 優先度 / 期日 -->
@@ -518,13 +456,6 @@ async function handleSubmit() {
 .inner-field :deep(textarea) {
   font-size: 1rem;
   line-height: 1.65;
-}
-
-.completion-section {
-  padding: 18px 20px;
-  border-radius: 14px;
-  background: rgba(var(--v-theme-primary), 0.06);
-  border: 1px solid rgba(var(--v-theme-primary), 0.14);
 }
 
 .meta-fields {
