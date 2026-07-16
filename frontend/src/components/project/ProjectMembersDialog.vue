@@ -1,5 +1,7 @@
 <script setup lang="ts">
 // プロジェクトメンバー管理ダイアログ
+// オーナー: メンバー追加・他メンバー削除
+// 一般メンバー: 自分の退出のみ
 import { ref, watch, computed } from 'vue'
 import type { Project, ProjectMember } from '@/types/project'
 import { useProjectsStore } from '@/stores/projects'
@@ -34,6 +36,14 @@ const liveProject = computed(() => {
     return projectsStore.currentProject
   }
   return props.project
+})
+
+/** 現在のユーザーがプロジェクトオーナーか */
+const isCurrentUserOwner = computed(() => {
+  const project = liveProject.value
+  const sub = authStore.currentUser?.sub
+  if (!project || !sub) return false
+  return project.createdBy === sub
 })
 
 /** 表示用メンバー（作成者を先頭・自分の表示名はクラウドと連動） */
@@ -89,7 +99,7 @@ watch(modelValue, async (open) => {
 })
 
 async function handleAdd() {
-  if (!liveProject.value || !email.value.trim()) return
+  if (!liveProject.value || !email.value.trim() || !isCurrentUserOwner.value) return
   formError.value = ''
   isSubmitting.value = true
   try {
@@ -132,8 +142,32 @@ function isOwner(member: ProjectMember): boolean {
   return !!liveProject.value && member.userId === liveProject.value.createdBy
 }
 
+/** このメンバー行がログイン中ユーザーか */
+function isSelf(member: ProjectMember): boolean {
+  const sub = authStore.currentUser?.sub
+  const myEmail = authStore.currentUser?.email?.toLowerCase()
+  if (sub && member.userId === sub) return true
+  if (myEmail && member.email?.toLowerCase() === myEmail) return true
+  return false
+}
+
+/**
+ * 削除／退出ボタンを出すか
+ * - オーナー行: 不可
+ * - オーナー操作: 他メンバーを削除可
+ * - 一般メンバー: 自分の退出のみ可
+ */
 function canRemove(member: ProjectMember): boolean {
-  return !isOwner(member)
+  if (isOwner(member)) return false
+  if (isCurrentUserOwner.value) return true
+  return isSelf(member)
+}
+
+function removeButtonTitle(member: ProjectMember): string {
+  if (isSelf(member) && !isCurrentUserOwner.value) {
+    return 'プロジェクトを退出する'
+  }
+  return 'メンバーから外す'
 }
 
 function memberRowKey(member: ProjectMember): string {
@@ -155,9 +189,15 @@ function memberRowKey(member: ProjectMember): string {
 
       <v-card-text class="px-5 py-4">
         <p class="text-body-2 text-medium-emphasis mb-4">
-          Cognito に登録済みのユーザーをメールアドレスで追加します。
-          <strong>相手の確認は不要</strong>で、追加直後からプロジェクトを共有できます。
-          作成者自身は追加・削除できません。
+          <template v-if="isCurrentUserOwner">
+            Cognito に登録済みのユーザーをメールアドレスで追加できます。
+            メンバーの追加・削除は<strong>オーナーのみ</strong>行えます。
+            オーナー自身は削除できません。
+          </template>
+          <template v-else>
+            メンバーの追加・他メンバーの削除は<strong>プロジェクトオーナーのみ</strong>可能です。
+            あなたは「プロジェクトを退出する」ことだけできます。
+          </template>
         </p>
 
         <v-alert v-if="formError" type="error" variant="tonal" density="compact" class="mb-3">
@@ -207,12 +247,16 @@ function memberRowKey(member: ProjectMember): string {
             <template #append>
               <v-btn
                 v-if="canRemove(member)"
-                icon="mdi-account-remove"
+                :icon="
+                  isSelf(member) && !isCurrentUserOwner
+                    ? 'mdi-exit-to-app'
+                    : 'mdi-account-remove'
+                "
                 variant="text"
                 size="small"
                 color="error"
                 :disabled="isSubmitting || projectsStore.isLoading"
-                title="メンバーから外す"
+                :title="removeButtonTitle(member)"
                 @click="handleRemove(member)"
               />
             </template>
@@ -226,24 +270,28 @@ function memberRowKey(member: ProjectMember): string {
           density="compact"
           class="mb-4"
         >
-          メンバー情報がありません。下のフォームから追加してください。
+          メンバー情報がありません。
+          <template v-if="isCurrentUserOwner">下のフォームから追加してください。</template>
         </v-alert>
 
-        <v-divider class="mb-4" />
+        <!-- オーナーのみ追加フォームを表示 -->
+        <template v-if="isCurrentUserOwner">
+          <v-divider class="mb-4" />
 
-        <div class="text-subtitle-2 font-weight-bold mb-3">メンバーを追加する</div>
-        <v-text-field
-          v-model="email"
-          label="メールアドレス *"
-          placeholder="例：h-sameshima@findix.co.jp"
-          :rules="emailRules"
-          density="comfortable"
-          class="mb-2"
-          hide-details="auto"
-        />
-        <div class="text-caption text-medium-emphasis mb-2">
-          あなたの表示名: {{ authStore.displayLabel }}
-        </div>
+          <div class="text-subtitle-2 font-weight-bold mb-3">メンバーを追加する</div>
+          <v-text-field
+            v-model="email"
+            label="メールアドレス *"
+            placeholder="例：h-sameshima@findix.co.jp"
+            :rules="emailRules"
+            density="comfortable"
+            class="mb-2"
+            hide-details="auto"
+          />
+          <div class="text-caption text-medium-emphasis mb-2">
+            あなたの表示名: {{ authStore.displayLabel }}
+          </div>
+        </template>
       </v-card-text>
 
       <v-divider />
@@ -252,6 +300,7 @@ function memberRowKey(member: ProjectMember): string {
         <v-spacer />
         <v-btn variant="text" @click="modelValue = false">閉じる</v-btn>
         <v-btn
+          v-if="isCurrentUserOwner"
           color="primary"
           :loading="isSubmitting || projectsStore.isLoading"
           :disabled="!email.trim()"

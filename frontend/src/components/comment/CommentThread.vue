@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // コメントスレッドコンポーネント
 // タスク詳細内でコメント一覧の表示と投稿を担当する
-import { ref, watch } from 'vue'
+import { ref, watch, computed } from 'vue'
 import { useCommentsStore } from '@/stores/comments'
 import { useAuthStore } from '@/stores/auth'
 import { resolveAuthorDisplayName } from '@/utils/displayName'
@@ -16,6 +16,14 @@ const authStore = useAuthStore()
 
 // 新しいコメントの入力値
 const newCommentContent = ref('')
+
+/**
+ * このコンポーネント自身の fetch 待ち。
+ * store の isLoading が競合で固着しても、await 完了で必ずスピナーを消せる。
+ */
+const isLocalFetching = ref(false)
+/** watch の古い非同期結果が local フラグを上書きしないための世代 */
+let fetchSeq = 0
 
 /** コメントを投稿する */
 async function submitComment() {
@@ -47,16 +55,63 @@ function authorLabel(comment: Comment): string {
   return resolveAuthorDisplayName(comment)
 }
 
-// マウント時・taskId 変更時に取得する
-// （ドロワー側でも open 時に fetch するが、ここでも immediate で二重安全にする）
+/** この taskId 向けのコメント一覧（取り違え防止） */
+const visibleComments = computed(() => {
+  if (commentsStore.activeTaskId && commentsStore.activeTaskId !== props.taskId) {
+    return [] as Comment[]
+  }
+  return commentsStore.comments
+})
+
+/**
+ * 初回のみフルスピナー。
+ * - ensureComments の await 完了で isLocalFetching が false → 必ず消える
+ * - 空一覧でも hasData / lastFetched があれば「まだコメントはありません」を出す
+ */
+const showInitialLoading = computed(() => {
+  if (!isLocalFetching.value && !commentsStore.isLoading) return false
+
+  // すでにこのタスクのデータが確定している（空含む）ならスピナー不要
+  if (
+    commentsStore.activeTaskId === props.taskId &&
+    commentsStore.hasDataForActiveTask
+  ) {
+    return false
+  }
+
+  // コメントが既に見えていればスピナー不要
+  if (visibleComments.value.length > 0) return false
+
+  return isLocalFetching.value || commentsStore.isLoading
+})
+
+/** 見出し横の小さな更新中インジケータ（初回スピナーと排他） */
+const showRefreshingHint = computed(
+  () =>
+    !showInitialLoading.value &&
+    (commentsStore.isRefreshing || isLocalFetching.value) &&
+    commentsStore.activeTaskId === props.taskId,
+)
+
+// マウント時・taskId 変更時: SWR（キャッシュ優先）
 watch(
   () => props.taskId,
-  (taskId, prev) => {
+  async (taskId) => {
     newCommentContent.value = ''
-    if (!taskId) return
-    // 同じ ID で親が再マウントしたときも取得する（immediate で初回も実行）
-    if (taskId !== prev || prev === undefined) {
-      commentsStore.fetchComments(taskId)
+    if (!taskId) {
+      isLocalFetching.value = false
+      return
+    }
+
+    const seq = ++fetchSeq
+    isLocalFetching.value = true
+    try {
+      await commentsStore.ensureComments(taskId)
+    } finally {
+      // 古い taskId の結果で新しい表示を壊さない
+      if (seq === fetchSeq) {
+        isLocalFetching.value = false
+      }
     }
   },
   { immediate: true },
@@ -65,19 +120,28 @@ watch(
 
 <template>
   <div>
-    <h3 class="text-subtitle-2 font-weight-bold mb-3">
+    <h3 class="text-subtitle-2 font-weight-bold mb-3 d-flex align-center">
       <v-icon size="16" class="mr-1">mdi-comment-multiple-outline</v-icon>
-      コメント（{{ commentsStore.comments.length }} 件）
+      コメント（{{ visibleComments.length }} 件）
+      <v-progress-circular
+        v-if="showRefreshingHint"
+        indeterminate
+        size="14"
+        width="2"
+        color="primary"
+        class="ml-2"
+        title="最新のコメントを確認中"
+      />
     </h3>
 
-    <!-- ローディング中の表示 -->
-    <div v-if="commentsStore.isLoading" class="py-4 text-center">
+    <!-- 初回のみローディング（再オープン時はキャッシュを即表示） -->
+    <div v-if="showInitialLoading" class="py-4 text-center">
       <v-progress-circular indeterminate size="24" color="primary" />
     </div>
 
-    <!-- コメントがない場合の空状態 -->
+    <!-- コメントがない場合の空状態（取得完了後） -->
     <p
-      v-else-if="commentsStore.comments.length === 0"
+      v-else-if="visibleComments.length === 0"
       class="text-body-2 text-medium-emphasis py-3"
     >
       まだコメントはありません。最初のコメントを投稿しましょう。
@@ -86,7 +150,7 @@ watch(
     <!-- コメント一覧（作成日時昇順） -->
     <div v-else class="mb-4">
       <div
-        v-for="comment in commentsStore.comments"
+        v-for="comment in visibleComments"
         :key="comment.commentId"
         class="mb-3"
       >

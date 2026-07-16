@@ -4,7 +4,7 @@ import {
   UpdateCommand,
 } from '@aws-sdk/lib-dynamodb'
 import { docClient, getTasksTable } from '../shared/dynamodb.js'
-import type { AttachmentMeta, Task, TaskStatus } from '../shared/types.js'
+import type { AttachmentMeta, Task, TaskAssignee, TaskStatus } from '../shared/types.js'
 
 const TABLE = () => getTasksTable()
 
@@ -39,7 +39,7 @@ export async function listTasksByProject(projectId: string): Promise<Task[]> {
   return (result.Items as Task[] | undefined) ?? []
 }
 
-/** 担当者の GSI でタスク一覧を取得する */
+/** 担当者の GSI でタスク一覧を取得する（主担当 assigneeId） */
 export async function listTasksByAssignee(assigneeId: string): Promise<Task[]> {
   const result = await docClient.send(
     new QueryCommand({
@@ -65,59 +65,101 @@ export async function createTask(task: Task): Promise<Task> {
   return task
 }
 
+export type TaskUpdateFields = Partial<
+  Pick<
+    Task,
+    | 'title'
+    | 'description'
+    | 'status'
+    | 'priority'
+    | 'requirement'
+    | 'assigneeId'
+    | 'assigneeName'
+    | 'assignees'
+    | 'completionPercent'
+    | 'dueDate'
+    | 'attachments'
+  >
+> & {
+  /** true のとき assigneeId / assigneeName を REMOVE（GSI から外す） */
+  clearAssignees?: boolean
+}
+
 /** タスクを更新する */
 export async function updateTask(
   taskId: string,
-  updates: Partial<
-    Pick<
-      Task,
-      | 'title'
-      | 'description'
-      | 'status'
-      | 'priority'
-      | 'requirement'
-      | 'assigneeId'
-      | 'assigneeName'
-      | 'dueDate'
-      | 'attachments'
-    >
-  >,
+  updates: TaskUpdateFields,
 ): Promise<Task> {
   const existing = await getTaskById(taskId)
   if (!existing) {
     throw new Error(`Task not found: ${taskId}`)
   }
 
-  const expressions: string[] = ['updatedAt = :updatedAt']
+  const setExpressions: string[] = ['updatedAt = :updatedAt']
+  const removeAttrs: string[] = []
   const values: Record<string, unknown> = { ':updatedAt': new Date().toISOString() }
   const names: Record<string, string> = {}
 
-  const fieldMap: Array<[keyof typeof updates, string]> = [
+  const fieldMap: Array<[keyof TaskUpdateFields, string]> = [
     ['title', 'title'],
     ['description', 'description'],
     ['status', 'status'],
     ['priority', 'priority'],
     ['requirement', 'requirement'],
-    ['assigneeId', 'assigneeId'],
-    ['assigneeName', 'assigneeName'],
     ['dueDate', 'dueDate'],
     ['attachments', 'attachments'],
+    ['completionPercent', 'completionPercent'],
+    ['assignees', 'assignees'],
   ]
 
   for (const [key, attr] of fieldMap) {
     if (updates[key] !== undefined) {
       const placeholder = `#${attr}`
       names[placeholder] = attr
-      expressions.push(`${placeholder} = :${attr}`)
+      setExpressions.push(`${placeholder} = :${attr}`)
       values[`:${attr}`] = updates[key]
     }
+  }
+
+  if (updates.clearAssignees) {
+    removeAttrs.push('assigneeId', 'assigneeName')
+    // assignees 空配列は SET 側で書く
+    if (updates.assignees === undefined) {
+      names['#assignees'] = 'assignees'
+      setExpressions.push('#assignees = :assignees')
+      values[':assignees'] = [] as TaskAssignee[]
+    }
+  } else {
+    if (updates.assigneeId !== undefined) {
+      names['#assigneeId'] = 'assigneeId'
+      setExpressions.push('#assigneeId = :assigneeId')
+      values[':assigneeId'] = updates.assigneeId
+    }
+    if (updates.assigneeName !== undefined) {
+      names['#assigneeName'] = 'assigneeName'
+      setExpressions.push('#assigneeName = :assigneeName')
+      values[':assigneeName'] = updates.assigneeName
+    }
+    // 主担当が userId 無し（名前のみ）のとき GSI 用 id を外す
+    if (
+      updates.assignees !== undefined &&
+      updates.assignees.length > 0 &&
+      !updates.assigneeId
+    ) {
+      removeAttrs.push('assigneeId')
+    }
+  }
+
+  let updateExpression = `SET ${setExpressions.join(', ')}`
+  if (removeAttrs.length > 0) {
+    updateExpression += ` REMOVE ${removeAttrs.join(', ')}`
   }
 
   const result = await docClient.send(
     new UpdateCommand({
       TableName: TABLE(),
       Key: taskKey(existing.projectId, taskId),
-      UpdateExpression: `SET ${expressions.join(', ')}`,
+      UpdateExpression: updateExpression,
       ExpressionAttributeNames: Object.keys(names).length ? names : undefined,
       ExpressionAttributeValues: values,
       ReturnValues: 'ALL_NEW',
@@ -130,6 +172,59 @@ export async function updateTask(
 /** タスクのステータスのみを更新する */
 export async function updateTaskStatus(taskId: string, status: TaskStatus): Promise<Task> {
   return updateTask(taskId, { status })
+}
+
+/**
+ * 担当者を外す（assigneeId / assigneeName / assignees をクリア）
+ * メンバー退出・削除時に呼び、AssigneeIndex からも外れる
+ */
+export async function clearAssignee(taskId: string): Promise<Task> {
+  return updateTask(taskId, {
+    clearAssignees: true,
+    assignees: [],
+  })
+}
+
+/**
+ * 複数担当のうち指定 userId のみ外す（残った人を主担当に繰り上げ）
+ */
+export async function removeAssigneeUser(
+  taskId: string,
+  userId: string,
+): Promise<Task> {
+  const existing = await getTaskById(taskId)
+  if (!existing) {
+    throw new Error(`Task not found: ${taskId}`)
+  }
+
+  const list =
+    existing.assignees && existing.assignees.length > 0
+      ? existing.assignees
+      : existing.assigneeId || existing.assigneeName
+        ? [
+            {
+              userId: existing.assigneeId,
+              displayName: existing.assigneeName || 'ユーザー',
+            },
+          ]
+        : []
+
+  const next = list.filter((a) => a.userId !== userId)
+  if (next.length === list.length) {
+    return existing
+  }
+
+  if (next.length === 0) {
+    return clearAssignee(taskId)
+  }
+
+  const primary = next[0]
+  return updateTask(taskId, {
+    assignees: next,
+    assigneeId: primary.userId,
+    assigneeName: primary.displayName,
+    clearAssignees: !primary.userId,
+  })
 }
 
 /** タスクを論理削除する */

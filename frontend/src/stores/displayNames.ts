@@ -3,7 +3,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import type { Project, ProjectMember } from '@/types/project'
-import type { Task } from '@/types/task'
+import type { Task, TaskAssignee } from '@/types/task'
 import type { Comment } from '@/types/comment'
 import * as usersApi from '@/api/users'
 
@@ -151,7 +151,11 @@ export const useDisplayNamesStore = defineStore('displayNames', () => {
       if (t.assigneeId && isUsableDisplayName(t.assigneeName)) {
         setName(t.assigneeId, t.assigneeName)
       }
-      // メールだけなら email→userId の逆引き用に残さない（メンバー側で解決）
+      for (const a of t.assignees ?? []) {
+        if (a.userId && isUsableDisplayName(a.displayName)) {
+          setName(a.userId, a.displayName)
+        }
+      }
     }
   }
 
@@ -220,9 +224,17 @@ export const useDisplayNamesStore = defineStore('displayNames', () => {
       }
       for (const t of tasksStore.tasks) {
         if (t.assigneeId) ids.add(t.assigneeId)
+        for (const a of t.assignees ?? []) {
+          if (a.userId) ids.add(a.userId)
+        }
       }
-      if (tasksStore.currentTask?.assigneeId) {
-        ids.add(tasksStore.currentTask.assigneeId)
+      if (tasksStore.currentTask) {
+        if (tasksStore.currentTask.assigneeId) {
+          ids.add(tasksStore.currentTask.assigneeId)
+        }
+        for (const a of tasksStore.currentTask.assignees ?? []) {
+          if (a.userId) ids.add(a.userId)
+        }
       }
       for (const c of commentsStore.comments) {
         if (c.authorId) ids.add(c.authorId)
@@ -273,7 +285,45 @@ export const useDisplayNamesStore = defineStore('displayNames', () => {
       }
 
       const resolveTaskAssignee = (t: Task): Task => {
-        // 1) userId から
+        let next: Task = { ...t }
+
+        // 複数担当の表示名を解決
+        if (t.assignees && t.assignees.length > 0) {
+          const assignees = t.assignees.map((a): TaskAssignee => {
+            if (a.userId) {
+              const mapped = idMap[a.userId]
+              if (mapped && isUsableDisplayName(mapped)) {
+                return { userId: a.userId, displayName: mapped }
+              }
+            }
+            const raw = a.displayName?.trim()
+            if (raw && isEmailLike(raw)) {
+              const em = raw.toLowerCase()
+              const display = emailMap[em]
+              const uid = a.userId || emailToId[em]
+              if (display && isUsableDisplayName(display)) {
+                return {
+                  userId: uid || a.userId,
+                  displayName: display,
+                }
+              }
+            }
+            return {
+              userId: a.userId,
+              displayName: (a.displayName && a.displayName.trim()) || 'ユーザー',
+            }
+          })
+          const primary = assignees[0]
+          next = {
+            ...next,
+            assignees,
+            assigneeId: primary?.userId ?? next.assigneeId,
+            assigneeName: primary?.displayName ?? next.assigneeName,
+          }
+          return next
+        }
+
+        // 1) userId から（単一・旧データ）
         if (t.assigneeId) {
           const mapped = idMap[t.assigneeId]
           if (mapped && isUsableDisplayName(mapped)) {

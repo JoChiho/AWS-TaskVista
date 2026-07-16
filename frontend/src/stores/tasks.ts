@@ -1,5 +1,5 @@
 // タスク管理ストア
-// かんばんの楽観的更新・ロールバックロジックを含む
+// かんばんの楽観的更新・ロールバック + プロジェクト単位キャッシュ（SWR）
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type {
@@ -14,29 +14,57 @@ import * as tasksApi from '@/api/tasks'
 import { useUiStore } from './ui'
 import { useDisplayNamesStore } from './displayNames'
 
+/** キャッシュが「新鮮」とみなす時間（この間は再取得しない） */
+const FRESH_MS = 30_000
+
+interface ProjectTasksCache {
+  tasks: Task[]
+  fetchedAt: number
+  fingerprint: string
+}
+
+/** 一覧の差分判定用フィンガープリント */
+export function tasksFingerprint(list: Task[]): string {
+  return list
+    .map(
+      (t) =>
+        [
+          t.taskId,
+          t.updatedAt,
+          t.status,
+          t.title,
+          t.requirement ?? '',
+          t.assigneeId ?? '',
+          t.assigneeName ?? '',
+          t.priority,
+          t.dueDate ?? '',
+          t.isDeleted ? '1' : '0',
+        ].join(':'),
+    )
+    .sort()
+    .join('|')
+}
+
 export const useTasksStore = defineStore('tasks', () => {
-  // 現在のプロジェクトのタスク一覧
   const tasks = ref<Task[]>([])
-  // 現在選択中のタスク
   const currentTask = ref<Task | null>(null)
-  // ローディング状態
+  /** 初回ロード（キャッシュ無し）時のみ true → スケルトン表示用 */
   const isLoading = ref(false)
-  // 現在表示中のプロジェクト ID
+  /** バックグラウンド再取得中（UI は既存データを出したまま） */
+  const isRefreshing = ref(false)
   const currentProjectId = ref<string | null>(null)
+  const lastFetchedAt = ref(0)
+
+  /** プロジェクトごとのメモリキャッシュ */
+  const cacheByProject = new Map<string, ProjectTasksCache>()
 
   const uiStore = useUiStore()
 
-  /**
-   * タスクをステータス別にグループ化した計算プロパティ
-   * かんばんビューで使用する
-   */
   const tasksByStatus = computed<TasksByStatus>(() => {
     const grouped: TasksByStatus = {} as TasksByStatus
-    // 全ステータスの空配列を初期化する
     for (const status of TASK_STATUSES) {
       grouped[status] = []
     }
-    // 削除済みを除外してグループ化する
     for (const task of tasks.value) {
       if (!task.isDeleted && grouped[task.status]) {
         grouped[task.status].push(task)
@@ -45,31 +73,122 @@ export const useTasksStore = defineStore('tasks', () => {
     return grouped
   })
 
-  /**
-   * アクティブなタスク（削除済みを除く）の計算プロパティ
-   * テーブルビューで使用する
-   */
   const activeTasks = computed<Task[]>(() => tasks.value.filter((t) => !t.isDeleted))
 
+  /** 表示用キャッシュがあるか（スケルトンを出さない判定） */
+  const hasDataForCurrentProject = computed(() => {
+    if (!currentProjectId.value) return false
+    if (lastFetchedAt.value > 0) return true
+    return cacheByProject.has(currentProjectId.value)
+  })
+
+  function saveCache(projectId: string): void {
+    cacheByProject.set(projectId, {
+      tasks: tasks.value.map((t) => ({ ...t })),
+      fetchedAt: lastFetchedAt.value,
+      fingerprint: tasksFingerprint(tasks.value),
+    })
+  }
+
+  function restoreCache(projectId: string): boolean {
+    const cached = cacheByProject.get(projectId)
+    if (!cached) return false
+    tasks.value = cached.tasks.map((t) => ({ ...t }))
+    currentProjectId.value = projectId
+    lastFetchedAt.value = cached.fetchedAt
+    return true
+  }
+
+  async function applyDisplayNames(list: Task[]): Promise<void> {
+    const displayNames = useDisplayNamesStore()
+    displayNames.ingestTasks(list)
+    const ids = list.map((t) => t.assigneeId).filter(Boolean) as string[]
+    if (ids.length > 0) {
+      await displayNames.refreshUserIds(ids)
+    }
+    await displayNames.applyToEntityStores()
+  }
+
   /**
-   * プロジェクト内のタスク一覧を取得する
-   * @param projectId プロジェクト ID
+   * API から取得し、変化があるときだけ tasks を差し替える
    */
-  async function fetchTasks(projectId: string): Promise<void> {
+  async function loadFromApi(projectId: string): Promise<void> {
+    const data = await tasksApi.fetchTasks(projectId)
+    const nextFp = tasksFingerprint(data)
+    const prevFp =
+      currentProjectId.value === projectId
+        ? tasksFingerprint(tasks.value)
+        : cacheByProject.get(projectId)?.fingerprint
+
+    currentProjectId.value = projectId
+    lastFetchedAt.value = Date.now()
+
+    if (prevFp !== nextFp) {
+      tasks.value = data
+      await applyDisplayNames(tasks.value)
+    }
+
+    saveCache(projectId)
+  }
+
+  /**
+   * プロジェクトのタスクを用意する（SWR）
+   * - キャッシュあり → 即表示、必要なら裏で再取得
+   * - キャッシュなし → スケルトン付きで取得
+   * - force: true → 必ず再取得（手動更新など）
+   */
+  async function ensureTasks(
+    projectId: string,
+    options?: { force?: boolean },
+  ): Promise<void> {
+    const force = options?.force ?? false
+
+    // 別プロジェクトへ切り替え: 現在分を保存し、先にキャッシュを出す
+    if (currentProjectId.value && currentProjectId.value !== projectId) {
+      saveCache(currentProjectId.value)
+      const restored = restoreCache(projectId)
+      if (!restored) {
+        tasks.value = []
+        currentProjectId.value = projectId
+        lastFetchedAt.value = 0
+      }
+    } else if (!currentProjectId.value) {
+      restoreCache(projectId)
+      currentProjectId.value = projectId
+    }
+
+    const hasCache =
+      currentProjectId.value === projectId &&
+      (lastFetchedAt.value > 0 || cacheByProject.has(projectId))
+
+    const isFresh =
+      !force &&
+      currentProjectId.value === projectId &&
+      lastFetchedAt.value > 0 &&
+      Date.now() - lastFetchedAt.value < FRESH_MS
+
+    if (hasCache) {
+      if (isFresh) return
+      // 裏で再取得（スケルトンなし）
+      if (isRefreshing.value) return
+      isRefreshing.value = true
+      try {
+        await loadFromApi(projectId)
+      } catch (error: unknown) {
+        console.error('タスクのバックグラウンド更新に失敗:', error)
+        // キャッシュ表示は維持。エラーは静かに（初回ロード失敗時のみトースト）
+      } finally {
+        isRefreshing.value = false
+      }
+      return
+    }
+
+    // 初回: スケルトン表示
     isLoading.value = true
     currentProjectId.value = projectId
     try {
-      tasks.value = await tasksApi.fetchTasks(projectId)
-      const displayNames = useDisplayNamesStore()
-      // メールの assigneeName でディレクトリを汚染しない
-      displayNames.ingestTasks(tasks.value)
-      const ids = tasks.value
-        .map((t) => t.assigneeId)
-        .filter(Boolean) as string[]
-      await displayNames.refreshUserIds(ids)
-      // 既に読み込み済みの members 表示名で、メール担当を人名に直す
-      await displayNames.applyToEntityStores()
-    } catch (error: any) {
+      await loadFromApi(projectId)
+    } catch (error: unknown) {
       uiStore.showError('タスクの読み込みに失敗しました')
       console.error('タスク一覧取得エラー:', error)
       throw error
@@ -78,10 +197,11 @@ export const useTasksStore = defineStore('tasks', () => {
     }
   }
 
-  /**
-   * タスク詳細を取得する
-   * @param taskId タスク ID
-   */
+  /** @deprecated ensureTasks を推奨。互換のため残す */
+  async function fetchTasks(projectId: string): Promise<void> {
+    await ensureTasks(projectId, { force: true })
+  }
+
   async function fetchTask(taskId: string): Promise<void> {
     try {
       currentTask.value = await tasksApi.fetchTask(taskId)
@@ -91,114 +211,90 @@ export const useTasksStore = defineStore('tasks', () => {
         if (currentTask.value.assigneeId) {
           await displayNames.refreshUserIds([currentTask.value.assigneeId])
         }
+        _replaceTaskInList(currentTask.value)
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       uiStore.showError('タスクの取得に失敗しました')
       console.error('タスク詳細取得エラー:', error)
       throw error
     }
   }
 
-  /**
-   * 新しいタスクを作成する
-   * @param projectId プロジェクト ID
-   * @param payload タスク作成データ
-   */
   async function createTask(projectId: string, payload: CreateTaskPayload): Promise<Task> {
-    isLoading.value = true
     try {
       const newTask = await tasksApi.createTask(projectId, payload)
-      tasks.value.push(newTask)
+      if (currentProjectId.value === projectId) {
+        tasks.value.push(newTask)
+        lastFetchedAt.value = Date.now()
+        saveCache(projectId)
+      }
       useDisplayNamesStore().ingestTasks([newTask])
       uiStore.showSuccess('タスクを作成しました')
       return newTask
-    } catch (error: any) {
+    } catch (error: unknown) {
       uiStore.showError('タスクの作成に失敗しました')
       console.error('タスク作成エラー:', error)
       throw error
-    } finally {
-      isLoading.value = false
     }
   }
 
-  /**
-   * タスク情報を更新する
-   * @param taskId タスク ID
-   * @param payload 更新データ
-   */
   async function updateTask(taskId: string, payload: UpdateTaskPayload): Promise<Task> {
-    isLoading.value = true
     try {
       const updatedTask = await tasksApi.updateTask(taskId, payload)
       _replaceTaskInList(updatedTask)
+      if (currentProjectId.value) {
+        lastFetchedAt.value = Date.now()
+        saveCache(currentProjectId.value)
+      }
       uiStore.showSuccess('タスクを更新しました')
       return updatedTask
-    } catch (error: any) {
+    } catch (error: unknown) {
       uiStore.showError('タスクの更新に失敗しました')
       console.error('タスク更新エラー:', error)
       throw error
-    } finally {
-      isLoading.value = false
     }
   }
 
-  /**
-   * タスクのステータスを更新する（かんばんドラッグ専用）
-   * 楽観的更新を実装し、API 失敗時は元のステータスにロールバックする
-   * @param taskId タスク ID
-   * @param newStatus 新しいステータス
-   */
   async function updateTaskStatus(taskId: string, newStatus: TaskStatus): Promise<void> {
-    // 元のタスクを記憶しておく（ロールバック用）
     const originalTask = tasks.value.find((t) => t.taskId === taskId)
     if (!originalTask) return
 
     const previousStatus = originalTask.status
-
-    // 楽観的更新：API レスポンスを待たずに UI を即座に更新する
     _updateTaskStatusInList(taskId, newStatus)
 
     try {
       const updatedTask = await tasksApi.updateTaskStatus(taskId, { status: newStatus })
-      // サーバーの最新データで同期する（updatedAt を反映）
       _replaceTaskInList(updatedTask)
-    } catch (error: any) {
-      // API 失敗時：元のステータスにロールバックする
+      if (currentProjectId.value) {
+        lastFetchedAt.value = Date.now()
+        saveCache(currentProjectId.value)
+      }
+    } catch (error: unknown) {
       _updateTaskStatusInList(taskId, previousStatus)
       uiStore.showError('ステータスの更新に失敗しました。元に戻します')
       console.error('タスクステータス更新エラー:', error)
     }
   }
 
-  /**
-   * タスクを論理削除する
-   * @param taskId タスク ID
-   */
   async function deleteTask(taskId: string): Promise<void> {
-    isLoading.value = true
     try {
       await tasksApi.deleteTask(taskId)
-      // 一覧から削除する
       tasks.value = tasks.value.filter((t) => t.taskId !== taskId)
-
-      // 現在選択中のタスクをクリアする
       if (currentTask.value?.taskId === taskId) {
         currentTask.value = null
       }
-
+      if (currentProjectId.value) {
+        lastFetchedAt.value = Date.now()
+        saveCache(currentProjectId.value)
+      }
       uiStore.showSuccess('タスクを削除しました')
-    } catch (error: any) {
+    } catch (error: unknown) {
       uiStore.showError('タスクの削除に失敗しました')
       console.error('タスク削除エラー:', error)
       throw error
-    } finally {
-      isLoading.value = false
     }
   }
 
-  /**
-   * タスク一覧内の特定タスクを置き換える内部ヘルパー
-   */
   function _replaceTaskInList(updatedTask: Task): void {
     const index = tasks.value.findIndex((t) => t.taskId === updatedTask.taskId)
     if (index !== -1) {
@@ -210,13 +306,24 @@ export const useTasksStore = defineStore('tasks', () => {
     useDisplayNamesStore().ingestTasks([updatedTask])
   }
 
-  /**
-   * タスク一覧内の特定タスクのステータスを更新する内部ヘルパー
-   */
   function _updateTaskStatusInList(taskId: string, status: TaskStatus): void {
     const task = tasks.value.find((t) => t.taskId === taskId)
     if (task) {
       task.status = status
+      task.updatedAt = new Date().toISOString()
+    }
+  }
+
+  /** キャッシュを無効化（他画面から強制更新したいとき） */
+  function invalidate(projectId?: string): void {
+    if (projectId) {
+      cacheByProject.delete(projectId)
+      if (currentProjectId.value === projectId) {
+        lastFetchedAt.value = 0
+      }
+    } else {
+      cacheByProject.clear()
+      lastFetchedAt.value = 0
     }
   }
 
@@ -224,14 +331,19 @@ export const useTasksStore = defineStore('tasks', () => {
     tasks,
     currentTask,
     isLoading,
+    isRefreshing,
     currentProjectId,
+    lastFetchedAt,
     tasksByStatus,
     activeTasks,
+    hasDataForCurrentProject,
+    ensureTasks,
     fetchTasks,
     fetchTask,
     createTask,
     updateTask,
     updateTaskStatus,
     deleteTask,
+    invalidate,
   }
 })

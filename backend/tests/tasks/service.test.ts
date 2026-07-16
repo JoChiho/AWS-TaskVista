@@ -113,10 +113,40 @@ describe('tasks/service', () => {
     const task = makeTask()
     const updated = { ...task, status: '進行中' as const }
     vi.mocked(repository.getTaskById).mockResolvedValue(task)
-    vi.mocked(repository.updateTaskStatus).mockResolvedValue(updated)
+    vi.mocked(repository.updateTask).mockResolvedValue(updated)
 
     const result = await service.updateTaskStatus(TASK_ID, USER_ID, { status: '進行中' })
     expect(result.status).toBe('進行中')
+    expect(repository.updateTask).toHaveBeenCalledWith(
+      TASK_ID,
+      expect.objectContaining({ status: '進行中' }),
+    )
+  })
+
+  it('複数担当と完了度を保存できる', async () => {
+    const project = makeProject({
+      memberIds: [USER_ID, OTHER_USER],
+      members: [
+        { userId: USER_ID, email: 'user@example.com', displayName: 'テストユーザー' },
+        { userId: OTHER_USER, email: 'other@example.com', displayName: 'メンバー' },
+      ],
+    })
+    vi.mocked(projectRepository.getProjectById).mockResolvedValue(project)
+    vi.mocked(repository.createTask).mockImplementation(async (t) => t)
+
+    const result = await service.createTask(PROJECT_ID, USER_ID, {
+      title: '共同タスク',
+      completionPercent: 40,
+      assignees: [
+        { userId: USER_ID, displayName: 'テストユーザー' },
+        { userId: OTHER_USER, displayName: 'メンバー' },
+      ],
+    })
+
+    expect(result.completionPercent).toBe(40)
+    expect(result.assignees).toHaveLength(2)
+    expect(result.assigneeId).toBe(USER_ID)
+    expect(result.assigneeName).toBe('テストユーザー')
   })
 
   it('権限のないプロジェクトのタスクは ForbiddenError', async () => {

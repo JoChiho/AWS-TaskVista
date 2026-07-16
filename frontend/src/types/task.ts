@@ -54,6 +54,12 @@ export interface Attachment {
   uploadedAt: string
 }
 
+/** タスク担当者（複数対応） */
+export interface TaskAssignee {
+  userId?: string
+  displayName: string
+}
+
 /** タスクエンティティ */
 export interface Task {
   taskId: string
@@ -63,8 +69,13 @@ export interface Task {
   status: TaskStatus
   priority: TaskPriority
   requirement?: string
+  /** 主担当（後方互換・assignees[0] と同期） */
   assigneeId?: string
   assigneeName?: string
+  /** 担当者一覧（1 人以上可） */
+  assignees?: TaskAssignee[]
+  /** 完了度 0〜100（%） */
+  completionPercent?: number
   dueDate?: string
   attachments: Attachment[]
   createdBy: string
@@ -82,8 +93,9 @@ export interface CreateTaskPayload {
   priority?: TaskPriority
   requirement?: string
   assigneeId?: string
-  /** 担当者名（人名テキスト） */
   assigneeName?: string
+  assignees?: TaskAssignee[]
+  completionPercent?: number
   dueDate?: string
 }
 
@@ -95,8 +107,9 @@ export interface UpdateTaskPayload {
   priority?: TaskPriority
   requirement?: string
   assigneeId?: string
-  /** 担当者名（人名テキスト） */
   assigneeName?: string
+  assignees?: TaskAssignee[]
+  completionPercent?: number
   dueDate?: string
 }
 
@@ -107,3 +120,18 @@ export interface UpdateTaskStatusPayload {
 
 /** かんばんビュー用のステータス別タスクグループ */
 export type TasksByStatus = Record<TaskStatus, Task[]>
+
+/** 完了度を 0〜100 に正規化 */
+export function normalizeCompletion(value?: number | null): number {
+  if (value === undefined || value === null || Number.isNaN(Number(value))) return 0
+  return Math.min(100, Math.max(0, Math.round(Number(value))))
+}
+
+/** 完了度の進捗バー色 */
+export function completionColor(percent: number): string {
+  if (percent >= 100) return 'success'
+  if (percent >= 70) return 'primary'
+  if (percent >= 40) return 'info'
+  if (percent > 0) return 'warning'
+  return 'grey'
+}

@@ -280,14 +280,28 @@ export const useAuthStore = defineStore('auth', () => {
       }
     }
 
-    tasksStore.tasks = tasksStore.tasks.map((t) =>
-      t.assigneeId === userId ? { ...t, assigneeName: name } : t,
-    )
-    if (tasksStore.currentTask?.assigneeId === userId) {
-      tasksStore.currentTask = {
-        ...tasksStore.currentTask,
-        assigneeName: name,
+    const patchTaskAssignees = <T extends {
+      assigneeId?: string
+      assigneeName?: string
+      assignees?: Array<{ userId?: string; displayName: string }>
+    }>(t: T): T => {
+      let next = t
+      if (t.assigneeId === userId) {
+        next = { ...next, assigneeName: name }
       }
+      if (t.assignees?.some((a) => a.userId === userId)) {
+        next = {
+          ...next,
+          assignees: t.assignees.map((a) =>
+            a.userId === userId ? { ...a, displayName: name } : a,
+          ),
+        }
+      }
+      return next
+    }
+    tasksStore.tasks = tasksStore.tasks.map(patchTaskAssignees)
+    if (tasksStore.currentTask) {
+      tasksStore.currentTask = patchTaskAssignees(tasksStore.currentTask)
     }
 
     commentsStore.comments = commentsStore.comments.map((c) =>

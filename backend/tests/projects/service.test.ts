@@ -24,10 +24,21 @@ vi.mock('../../src/users/service.js', () => ({
   getDisplayName: vi.fn().mockResolvedValue(null),
 }))
 
+vi.mock('../../src/tasks/repository.js', () => ({
+  listTasksByProject: vi.fn().mockResolvedValue([]),
+  clearAssignee: vi.fn().mockResolvedValue({}),
+}))
+
 const actor = {
   userId: USER_ID,
   email: 'user@example.com',
   name: 'テストユーザー',
+}
+
+const memberActor = {
+  userId: OTHER_USER,
+  email: 'other@example.com',
+  name: '他ユーザー',
 }
 
 describe('projects/service', () => {
@@ -125,6 +136,69 @@ describe('projects/service', () => {
     ).rejects.toThrow(ValidationError)
   })
 
+  it('オーナー以外がメンバーを追加すると ForbiddenError', async () => {
+    const project = makeProject({
+      createdBy: USER_ID,
+      memberIds: [USER_ID, OTHER_USER],
+      members: [
+        { userId: USER_ID, email: 'user@example.com', displayName: 'オーナー' },
+        { userId: OTHER_USER, email: 'other@example.com', displayName: 'メンバー' },
+      ],
+      memberEmails: ['user@example.com', 'other@example.com'],
+    })
+    vi.mocked(repository.getProjectById).mockResolvedValue(project)
+
+    await expect(
+      service.addProjectMember(project.projectId, memberActor, {
+        email: 'someone@example.com',
+      }),
+    ).rejects.toThrow(ForbiddenError)
+  })
+
+  it('一般メンバーは他メンバーを削除できない', async () => {
+    const third = 'user-003'
+    const project = makeProject({
+      createdBy: USER_ID,
+      memberIds: [USER_ID, OTHER_USER, third],
+      members: [
+        { userId: USER_ID, email: 'user@example.com', displayName: 'オーナー' },
+        { userId: OTHER_USER, email: 'other@example.com', displayName: 'メンバーA' },
+        { userId: third, email: 'third@example.com', displayName: 'メンバーB' },
+      ],
+      memberEmails: ['user@example.com', 'other@example.com', 'third@example.com'],
+    })
+    vi.mocked(repository.getProjectById).mockResolvedValue(project)
+
+    await expect(
+      service.removeProjectMember(project.projectId, memberActor, third),
+    ).rejects.toThrow(ForbiddenError)
+  })
+
+  it('一般メンバーは自分自身を退出できる', async () => {
+    const project = makeProject({
+      createdBy: USER_ID,
+      memberIds: [USER_ID, OTHER_USER],
+      members: [
+        { userId: USER_ID, email: 'user@example.com', displayName: 'オーナー' },
+        { userId: OTHER_USER, email: 'other@example.com', displayName: 'メンバー' },
+      ],
+      memberEmails: ['user@example.com', 'other@example.com'],
+    })
+    vi.mocked(repository.getProjectById).mockResolvedValue(project)
+    vi.mocked(repository.updateProject).mockImplementation(async (_id, updates) => ({
+      ...project,
+      ...updates,
+    }))
+
+    const result = await service.removeProjectMember(
+      project.projectId,
+      memberActor,
+      'other@example.com',
+    )
+    expect(result.memberIds).not.toContain(OTHER_USER)
+    expect(result.memberEmails).not.toContain('other@example.com')
+  })
+
   it('プロジェクトを更新する', async () => {
     const project = makeProject()
     const updated = { ...project, name: '更新後' }
@@ -133,6 +207,33 @@ describe('projects/service', () => {
 
     const result = await service.updateProject('proj-001', actor, { name: '更新後' })
     expect(result.name).toBe('更新後')
+  })
+
+  it.each(['planning', 'active', 'on_hold', 'completed', 'archived'] as const)(
+    'ステータス %s で更新できる（フロントの PROJECT_STATUS と一致）',
+    async (status) => {
+      const project = makeProject()
+      vi.mocked(repository.getProjectById).mockResolvedValue(project)
+      vi.mocked(repository.updateProject).mockImplementation(async (_id, updates) => ({
+        ...project,
+        ...updates,
+        status: updates.status ?? project.status,
+      }))
+
+      const result = await service.updateProject('proj-001', actor, { status })
+      expect(result.status).toBe(status)
+      expect(repository.updateProject).toHaveBeenCalledWith(
+        'proj-001',
+        expect.objectContaining({ status }),
+      )
+    },
+  )
+
+  it('未対応のステータスは ValidationError', async () => {
+    vi.mocked(repository.getProjectById).mockResolvedValue(makeProject())
+    await expect(
+      service.updateProject('proj-001', actor, { status: '進行中' as 'active' }),
+    ).rejects.toThrow(ValidationError)
   })
 
   it('更新項目が空の場合は ValidationError', async () => {

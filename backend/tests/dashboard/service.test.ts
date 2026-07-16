@@ -45,6 +45,8 @@ describe('dashboard/service', () => {
   })
 
   it('未完了の担当タスクを期日昇順で返す（assigneeId 一致）', async () => {
+    // アクセス可能なプロジェクトが無いと担当タスクは返さない
+    vi.mocked(projectService.listProjects).mockResolvedValue([makeProject()])
     vi.mocked(taskRepository.listTasksByAssignee).mockResolvedValue([
       makeTask({ taskId: 't1', dueDate: '2026-07-20', status: '進行中', assigneeId: USER_ID }),
       makeTask({ taskId: 't2', dueDate: '2026-07-10', status: '未着手', assigneeId: USER_ID }),
@@ -60,6 +62,33 @@ describe('dashboard/service', () => {
     const result = await service.getMyTasks(USER_ID)
     expect(result.map((t) => t.taskId)).toEqual(['t2', 't1', 't4'])
     expect(result.every((t) => t.status !== '完了')).toBe(true)
+  })
+
+  it('アクセスできないプロジェクトの担当タスクは返さない', async () => {
+    // 自分が入れるプロジェクトは p1 のみ
+    vi.mocked(projectService.listProjects).mockResolvedValue([
+      makeProject({ projectId: 'p1', name: '参加中' }),
+    ])
+    vi.mocked(taskRepository.listTasksByAssignee).mockResolvedValue([
+      makeTask({
+        taskId: 'keep',
+        projectId: 'p1',
+        status: '進行中',
+        assigneeId: USER_ID,
+        dueDate: '2026-07-10',
+      }),
+      makeTask({
+        taskId: 'kicked',
+        projectId: 'p-kicked',
+        status: '未着手',
+        assigneeId: USER_ID,
+        dueDate: '2026-07-05',
+      }),
+    ])
+    vi.mocked(taskRepository.listTasksByProject).mockResolvedValue([])
+
+    const result = await service.getMyTasks(USER_ID)
+    expect(result.map((t) => t.taskId)).toEqual(['keep'])
   })
 
   it('assigneeId が無く assigneeName のみの古いデータも表示名で拾う', async () => {

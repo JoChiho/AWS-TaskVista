@@ -4,7 +4,7 @@
 import { computed } from 'vue'
 import type { Task } from '@/types/task'
 import { TASK_STATUSES, PRIORITY_LABELS } from '@/types/task'
-import { resolveAssigneeDisplayName } from '@/utils/displayName'
+import { resolveAssigneeLabels } from '@/utils/displayName'
 
 const props = defineProps<{
   tasks: Task[]
@@ -20,12 +20,13 @@ const assignee = defineModel<string | null>('assignee')
 const priority = defineModel<string | null>('priority')
 const status = defineModel<string | null>('status')
 
-/** フィルターに使用できる担当者名の一覧を動的に生成する（表示名解決後） */
+/** フィルターに使用できる担当者名の一覧を動的に生成する（複数担当対応） */
 const assigneeOptions = computed(() => {
   const names = new Set<string>()
   for (const task of props.tasks) {
-    const label = resolveAssigneeDisplayName(task)
-    if (label) names.add(label)
+    for (const label of resolveAssigneeLabels(task)) {
+      if (label) names.add(label)
+    }
   }
   return Array.from(names)
     .sort((a, b) => a.localeCompare(b, 'ja'))

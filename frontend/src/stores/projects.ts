@@ -1,6 +1,6 @@
-// プロジェクト管理ストア
+// プロジェクト管理ストア（詳細は SWR キャッシュ）
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import type {
   Project,
   CreateProjectPayload,
@@ -12,15 +12,36 @@ import { useUiStore } from './ui'
 import { useAuthStore } from './auth'
 import { useDisplayNamesStore } from './displayNames'
 
+const FRESH_MS = 30_000
+
+function projectFingerprint(p: Project): string {
+  const members = (p.members ?? [])
+    .map((m) => `${m.userId ?? ''}:${m.email}:${m.displayName}`)
+    .sort()
+    .join(',')
+  return [
+    p.projectId,
+    p.updatedAt,
+    p.name,
+    p.status,
+    (p.memberIds ?? []).slice().sort().join(','),
+    members,
+  ].join('|')
+}
+
 export const useProjectsStore = defineStore('projects', () => {
-  // プロジェクト一覧
   const projects = ref<Project[]>([])
-  // 現在選択中のプロジェクト
   const currentProject = ref<Project | null>(null)
-  // ローディング状態
   const isLoading = ref(false)
+  const isRefreshing = ref(false)
+  const detailFetchedAt = ref(0)
+  const detailCache = new Map<string, { project: Project; fetchedAt: number }>()
 
   const uiStore = useUiStore()
+
+  const hasCurrentProject = computed(
+    () => !!currentProject.value?.projectId && detailFetchedAt.value > 0,
+  )
 
   /**
    * プロジェクト一覧を取得する
@@ -31,14 +52,13 @@ export const useProjectsStore = defineStore('projects', () => {
       projects.value = await projectsApi.fetchProjects()
       const displayNames = useDisplayNamesStore()
       displayNames.ingestProjects(projects.value)
-      // メンバーのクラウド最新表示名を一括で揃える（他ユーザー含む）
       const ids = projects.value.flatMap((p) => [
         ...(p.memberIds ?? []),
         ...(p.members ?? []).map((m) => m.userId).filter(Boolean) as string[],
         p.createdBy,
       ])
       await displayNames.refreshUserIds(ids)
-    } catch (error: any) {
+    } catch (error: unknown) {
       uiStore.showError('プロジェクトの読み込みに失敗しました')
       console.error('プロジェクト一覧取得エラー:', error)
       throw error
@@ -47,41 +67,102 @@ export const useProjectsStore = defineStore('projects', () => {
     }
   }
 
+  async function applyProject(project: Project): Promise<void> {
+    currentProject.value = project
+    detailFetchedAt.value = Date.now()
+    detailCache.set(project.projectId, {
+      project: { ...project, members: project.members ? [...project.members] : [] },
+      fetchedAt: detailFetchedAt.value,
+    })
+    const displayNames = useDisplayNamesStore()
+    displayNames.ingestProject(project)
+    const ids = [
+      ...(project.memberIds ?? []),
+      ...(project.members ?? []).map((m) => m.userId).filter(Boolean) as string[],
+      project.createdBy,
+    ]
+    await displayNames.refreshUserIds(ids)
+    const idx = projects.value.findIndex((p) => p.projectId === project.projectId)
+    if (idx !== -1) {
+      projects.value[idx] = project
+    }
+  }
+
+  async function loadProjectFromApi(projectId: string): Promise<void> {
+    const project = await projectsApi.fetchProject(projectId)
+    const prev = currentProject.value?.projectId === projectId ? currentProject.value : null
+    if (!prev || projectFingerprint(prev) !== projectFingerprint(project)) {
+      await applyProject(project)
+    } else {
+      detailFetchedAt.value = Date.now()
+      detailCache.set(projectId, { project: prev, fetchedAt: detailFetchedAt.value })
+    }
+  }
+
   /**
-   * プロジェクト詳細を取得する
-   * @param projectId プロジェクト ID
+   * プロジェクト詳細を用意する（SWR）
+   * キャッシュがあれば即表示し、古ければ裏で再取得
    */
-  async function fetchProject(projectId: string): Promise<void> {
-    isLoading.value = true
-    try {
-      currentProject.value = await projectsApi.fetchProject(projectId)
-      const displayNames = useDisplayNamesStore()
-      displayNames.ingestProject(currentProject.value)
-      if (currentProject.value) {
-        const p = currentProject.value
-        const ids = [
-          ...(p.memberIds ?? []),
-          ...(p.members ?? []).map((m) => m.userId).filter(Boolean) as string[],
-          p.createdBy,
-        ]
-        await displayNames.refreshUserIds(ids)
-      }
-      // 一覧側も同期
-      if (currentProject.value) {
-        const idx = projects.value.findIndex(
-          (p) => p.projectId === currentProject.value!.projectId,
-        )
-        if (idx !== -1) {
-          projects.value[idx] = currentProject.value
+  async function ensureProject(
+    projectId: string,
+    options?: { force?: boolean },
+  ): Promise<void> {
+    const force = options?.force ?? false
+    const cached = detailCache.get(projectId)
+
+    if (currentProject.value?.projectId !== projectId) {
+      if (cached) {
+        currentProject.value = cached.project
+        detailFetchedAt.value = cached.fetchedAt
+        useDisplayNamesStore().ingestProject(cached.project)
+      } else {
+        // 一覧にあれば暫定表示
+        const fromList = projects.value.find((p) => p.projectId === projectId)
+        if (fromList) {
+          currentProject.value = fromList
+          detailFetchedAt.value = 0
         }
       }
-    } catch (error: any) {
+    }
+
+    const hasCache =
+      currentProject.value?.projectId === projectId &&
+      (detailFetchedAt.value > 0 || !!cached)
+    const isFresh =
+      !force &&
+      currentProject.value?.projectId === projectId &&
+      detailFetchedAt.value > 0 &&
+      Date.now() - detailFetchedAt.value < FRESH_MS
+
+    if (hasCache) {
+      if (isFresh) return
+      if (isRefreshing.value) return
+      isRefreshing.value = true
+      try {
+        await loadProjectFromApi(projectId)
+      } catch (error: unknown) {
+        console.error('プロジェクトのバックグラウンド更新に失敗:', error)
+      } finally {
+        isRefreshing.value = false
+      }
+      return
+    }
+
+    isLoading.value = true
+    try {
+      await loadProjectFromApi(projectId)
+    } catch (error: unknown) {
       uiStore.showError('プロジェクトの取得に失敗しました')
       console.error('プロジェクト詳細取得エラー:', error)
       throw error
     } finally {
       isLoading.value = false
     }
+  }
+
+  /** @deprecated ensureProject を推奨 */
+  async function fetchProject(projectId: string): Promise<void> {
+    await ensureProject(projectId, { force: true })
   }
 
   /**
@@ -217,8 +298,11 @@ export const useProjectsStore = defineStore('projects', () => {
     projects,
     currentProject,
     isLoading,
+    isRefreshing,
+    hasCurrentProject,
     fetchProjects,
     fetchProject,
+    ensureProject,
     createProject,
     updateProject,
     addMember,

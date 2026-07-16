@@ -140,14 +140,27 @@ async function syncDisplayNameAcrossRecords(
     }),
   )
 
-  // 2) 担当タスクの assigneeName
+  // 2) 担当タスクの assigneeName / assignees（主担当 GSI 分）
   const assigned = await taskRepository.listTasksByAssignee(userId)
   await Promise.all(
     assigned
-      .filter((t) => !t.isDeleted && t.assigneeName !== displayName)
-      .map((t) =>
-        taskRepository.updateTask(t.taskId, { assigneeName: displayName }),
-      ),
+      .filter((t) => !t.isDeleted)
+      .map((t) => {
+        const assignees = (t.assignees && t.assignees.length > 0
+          ? t.assignees
+          : t.assigneeId || t.assigneeName
+            ? [{ userId: t.assigneeId, displayName: t.assigneeName || displayName }]
+            : []
+        ).map((a) =>
+          a.userId === userId ? { ...a, displayName } : a,
+        )
+        const primary = assignees[0]
+        return taskRepository.updateTask(t.taskId, {
+          assigneeName:
+            t.assigneeId === userId ? displayName : primary?.displayName || t.assigneeName,
+          assignees,
+        })
+      }),
   )
 }
 

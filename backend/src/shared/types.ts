@@ -8,12 +8,20 @@ export interface ProjectMember {
   displayName: string
 }
 
+/** プロジェクトのステータス */
+export type ProjectStatus =
+  | 'planning'
+  | 'active'
+  | 'on_hold'
+  | 'completed'
+  | 'archived'
+
 /** プロジェクトエンティティ */
 export interface Project {
   projectId: string
   name: string
   description?: string
-  status: 'active' | 'archived'
+  status: ProjectStatus
   createdBy: string
   /** アクセス制御用の Cognito sub 一覧 */
   memberIds: string[]
@@ -43,6 +51,14 @@ export interface AttachmentMeta {
   uploadedAt: string
 }
 
+/** タスク担当者（複数対応） */
+export interface TaskAssignee {
+  /** Cognito sub（メンバー選択時） */
+  userId?: string
+  /** 表示名 */
+  displayName: string
+}
+
 /** タスクエンティティ */
 export interface Task {
   taskId: string
@@ -52,8 +68,16 @@ export interface Task {
   status: TaskStatus
   priority: TaskPriority
   requirement?: string
+  /**
+   * 主担当（後方互換・AssigneeIndex 用）
+   * 常に assignees[0] と同期する
+   */
   assigneeId?: string
   assigneeName?: string
+  /** 担当者一覧（1 人以上可） */
+  assignees?: TaskAssignee[]
+  /** 完了度 0〜100（%） */
+  completionPercent?: number
   dueDate?: string
   attachments: AttachmentMeta[]
   createdBy: string

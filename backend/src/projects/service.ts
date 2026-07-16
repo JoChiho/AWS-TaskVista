@@ -8,7 +8,16 @@ import {
   type ProjectMember,
 } from '../shared/types.js'
 import * as usersService from '../users/service.js'
+import * as taskRepository from '../tasks/repository.js'
 import * as repository from './repository.js'
+
+const projectStatusSchema = z.enum([
+  'planning',
+  'active',
+  'on_hold',
+  'completed',
+  'archived',
+])
 
 const createProjectSchema = z.object({
   name: z
@@ -16,6 +25,7 @@ const createProjectSchema = z.object({
     .min(1, 'プロジェクト名は必須項目です')
     .max(100, 'プロジェクト名は100文字以内で入力してください'),
   description: z.string().max(1000).optional(),
+  status: projectStatusSchema.optional(),
   /** 作成者の表示名（フロントのプロフィール名） */
   creatorDisplayName: z.string().min(1).max(100).optional(),
 })
@@ -23,7 +33,7 @@ const createProjectSchema = z.object({
 const updateProjectSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   description: z.string().max(1000).optional(),
-  status: z.enum(['active', 'archived']).optional(),
+  status: projectStatusSchema.optional(),
   memberIds: z.array(z.string().min(1)).optional(),
 })
 
@@ -248,7 +258,7 @@ export async function createProject(
     projectId: uuidv4(),
     name: parsed.data.name,
     description: parsed.data.description,
-    status: 'active',
+    status: parsed.data.status ?? 'active',
     createdBy: actor.userId,
     memberIds: [actor.userId],
     memberEmails: [email],
@@ -327,13 +337,18 @@ function dedupeMembers(members: ProjectMember[]): ProjectMember[] {
   return Array.from(byUser.values())
 }
 
-/** プロジェクトメンバーを追加する（確認不要・即時アクセス可能） */
+/** プロジェクトメンバーを追加する（オーナーのみ・確認不要・即時アクセス可能） */
 export async function addProjectMember(
   projectId: string,
   actor: ActorInfo,
   body: unknown,
 ): Promise<Project> {
   const project = await getAccessibleProject(projectId, actor)
+
+  // メンバー追加はプロジェクトオーナーのみ
+  if (actor.userId !== project.createdBy) {
+    throw new ForbiddenError('メンバーの追加はプロジェクトオーナーのみ可能です')
+  }
 
   const parsed = addMemberSchema.safeParse(body)
   if (!parsed.success) {
@@ -437,7 +452,12 @@ export async function addProjectMember(
   return enrichProjectMembers(updated)
 }
 
-/** プロジェクトメンバーを削除する */
+/**
+ * プロジェクトメンバーを削除する
+ * - オーナー: 他メンバーを削除可能
+ * - 一般メンバー: 自分自身の退出のみ可能
+ * - オーナー自身は削除・退出不可
+ */
 export async function removeProjectMember(
   projectId: string,
   actor: ActorInfo,
@@ -451,6 +471,7 @@ export async function removeProjectMember(
     // 既にデコード済みの場合はそのまま
   }
   const keyLower = key.toLowerCase()
+  const actorEmail = actor.email ? normalizeEmail(actor.email) : undefined
 
   // 作成者（sub または 作成者メール）は削除不可
   const creatorEmails = new Set(
@@ -463,6 +484,25 @@ export async function removeProjectMember(
   }
 
   const before = project.members ?? []
+  // 削除対象が誰かを先に特定（権限判定用）
+  const targetMembers = before.filter((m) => {
+    if (m.userId && (m.userId === key || m.userId === keyLower)) return true
+    if (m.email && normalizeEmail(m.email) === keyLower) return true
+    return false
+  })
+  const targetIsSelf =
+    targetMembers.some((m) => m.userId === actor.userId) ||
+    (!!actorEmail && keyLower === actorEmail) ||
+    key === actor.userId ||
+    keyLower === actor.userId.toLowerCase()
+
+  const isOwner = actor.userId === project.createdBy
+  if (!isOwner && !targetIsSelf) {
+    throw new ForbiddenError(
+      '他のメンバーの削除はプロジェクトオーナーのみ可能です。自分自身の退出のみ行えます。',
+    )
+  }
+
   const members = before.filter((m) => {
     if (m.userId && (m.userId === key || m.userId === keyLower)) return false
     if (m.email && normalizeEmail(m.email) === keyLower) return false
@@ -479,9 +519,12 @@ export async function removeProjectMember(
 
   const removedUserIds = new Set(removed.map((m) => m.userId).filter(Boolean) as string[])
   if (key && !key.includes('@')) removedUserIds.add(key)
+  // 自分退出時は actor.userId も必ず含める
+  if (targetIsSelf) removedUserIds.add(actor.userId)
 
   const removedEmails = new Set(removed.map((m) => normalizeEmail(m.email)))
   if (key.includes('@')) removedEmails.add(keyLower)
+  if (targetIsSelf && actorEmail) removedEmails.add(actorEmail)
 
   // 作成者は必ず残す
   const memberIds = [
@@ -524,7 +567,40 @@ export async function removeProjectMember(
     memberIds: [...new Set(memberIds)],
     memberEmails: [...new Set(memberEmails)],
   })
+
+  // 退出・削除されたユーザーの未完了タスクから担当を外す
+  try {
+    await clearAssigneesForRemovedUsers(projectId, removedUserIds)
+  } catch (e) {
+    console.error('メンバー削除後の担当クリアに失敗（メンバー削除自体は完了）:', e)
+  }
+
   return enrichProjectMembers(updated)
+}
+
+/**
+ * プロジェクト内の未完了タスクから、退出メンバーを担当から外す
+ * - 単独担当なら未割り当て
+ * - 複数担当なら当該メンバーのみ除去
+ */
+async function clearAssigneesForRemovedUsers(
+  projectId: string,
+  removedUserIds: Set<string>,
+): Promise<void> {
+  if (removedUserIds.size === 0) return
+  const tasks = await taskRepository.listTasksByProject(projectId)
+  const jobs: Promise<unknown>[] = []
+  for (const t of tasks) {
+    if (t.isDeleted || t.status === '完了') continue
+    for (const uid of removedUserIds) {
+      const isPrimary = t.assigneeId === uid
+      const inList = t.assignees?.some((a) => a.userId === uid)
+      if (isPrimary || inList) {
+        jobs.push(taskRepository.removeAssigneeUser(t.taskId, uid))
+      }
+    }
+  }
+  await Promise.all(jobs)
 }
 
 /** プロジェクトを論理削除する */

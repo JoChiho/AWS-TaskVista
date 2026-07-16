@@ -2,7 +2,13 @@ import { v4 as uuidv4 } from 'uuid'
 import { z } from 'zod'
 import { ForbiddenError, NotFoundError, ValidationError } from '../shared/errors.js'
 import * as projectRepository from '../projects/repository.js'
-import { canAccessProject, TASK_STATUSES, type Task, type TaskStatus } from '../shared/types.js'
+import {
+  canAccessProject,
+  TASK_STATUSES,
+  type Task,
+  type TaskAssignee,
+  type TaskStatus,
+} from '../shared/types.js'
 import * as usersService from '../users/service.js'
 import * as commentRepository from '../comments/repository.js'
 import * as repository from './repository.js'
@@ -12,19 +18,33 @@ const prioritySchema = z.enum(['low', 'medium', 'high', 'urgent'])
 const assigneeIdSchema = z.string().min(1).max(128).optional()
 const assigneeNameSchema = z.string().min(1).max(100).optional()
 
+const taskAssigneeSchema = z.object({
+  userId: z.string().min(1).max(128).optional(),
+  displayName: z.string().min(1).max(100),
+})
+
 const createTaskSchema = z.object({
   title: z
-    .string({ required_error: 'タイトルは必須項目です' })
-    .min(1, 'タイトルは必須項目です')
-    .max(200, 'タイトルは200文字以内で入力してください'),
+    .string({ required_error: 'タスク名は必須項目です' })
+    .min(1, 'タスク名は必須項目です')
+    .max(200, 'タスク名は200文字以内で入力してください'),
   description: z.string().max(5000).optional(),
   status: statusSchema.optional(),
   priority: prioritySchema.optional(),
   requirement: z.string().max(2000).optional(),
-  /** 担当者 ID（任意・メンバー選択時など） */
+  /** 担当者 ID（後方互換・単一） */
   assigneeId: assigneeIdSchema,
-  /** 担当者名（人名テキスト。主にこちらを利用） */
+  /** 担当者名（後方互換・単一） */
   assigneeName: assigneeNameSchema,
+  /** 担当者一覧（複数） */
+  assignees: z.array(taskAssigneeSchema).max(20).optional(),
+  /** 完了度 0〜100 */
+  completionPercent: z
+    .number({ invalid_type_error: '完了度は数値で指定してください' })
+    .int('完了度は整数で指定してください')
+    .min(0, '完了度は 0 以上です')
+    .max(100, '完了度は 100 以下です')
+    .optional(),
   dueDate: z.string().max(30).optional(),
 })
 
@@ -62,32 +82,29 @@ async function getAccessibleTask(
 }
 
 /**
- * 担当者を解決する
+ * 担当者を 1 人解決する
  * - フロントのドロップダウンは userId + displayName を送る
  * - 表示名はクラウド（TaskVista-Users）を最優先
- * - 名前のみの場合はプロジェクトメンバーから userId を推測する
  */
-async function resolveAssignee(
+async function resolveOneAssignee(
   project: Awaited<ReturnType<typeof projectRepository.getProjectById>>,
   assigneeName?: string,
   assigneeId?: string,
-): Promise<{ assigneeId?: string; assigneeName?: string }> {
+): Promise<TaskAssignee | null> {
   const members = project?.members ?? []
 
-  // 明示的に userId が来た場合（ドロップダウン選択）
   if (assigneeId) {
     const cloudName = await usersService.getDisplayName(assigneeId)
     const hit = members.find((m) => m.userId === assigneeId)
     return {
-      assigneeId,
-      assigneeName:
-        cloudName || hit?.displayName || assigneeName?.trim() || undefined,
+      userId: assigneeId,
+      displayName:
+        cloudName || hit?.displayName || assigneeName?.trim() || 'ユーザー',
     }
   }
 
-  // 名前のみ（後方互換）
   if (!assigneeName?.trim()) {
-    return { assigneeId: undefined, assigneeName: undefined }
+    return null
   }
   const name = assigneeName.trim().toLowerCase()
   const hit = members.find(
@@ -99,14 +116,80 @@ async function resolveAssignee(
   if (hit?.userId) {
     const cloudName = await usersService.getDisplayName(hit.userId)
     return {
-      assigneeId: hit.userId,
-      assigneeName: cloudName || hit.displayName || assigneeName.trim(),
+      userId: hit.userId,
+      displayName: cloudName || hit.displayName || assigneeName.trim(),
     }
   }
   return {
-    assigneeId: undefined,
-    assigneeName: assigneeName.trim(),
+    displayName: assigneeName.trim(),
   }
+}
+
+/**
+ * 複数担当を正規化し、主担当（assigneeId/Name）と同期する
+ */
+async function normalizeAssignees(
+  project: Awaited<ReturnType<typeof projectRepository.getProjectById>>,
+  input: {
+    assignees?: TaskAssignee[]
+    assigneeId?: string | null
+    assigneeName?: string | null
+  },
+): Promise<{
+  assignees: TaskAssignee[]
+  assigneeId?: string
+  assigneeName?: string
+}> {
+  const rawList: Array<{ userId?: string; displayName?: string }> = []
+
+  if (input.assignees !== undefined) {
+    for (const a of input.assignees) {
+      rawList.push({ userId: a.userId, displayName: a.displayName })
+    }
+  } else if (input.assigneeId || input.assigneeName) {
+    rawList.push({
+      userId: input.assigneeId || undefined,
+      displayName: input.assigneeName || undefined,
+    })
+  }
+
+  const resolved: TaskAssignee[] = []
+  const seen = new Set<string>()
+
+  for (const raw of rawList) {
+    const one = await resolveOneAssignee(project, raw.displayName, raw.userId)
+    if (!one) continue
+    const key = (one.userId || one.displayName).toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    resolved.push(one)
+  }
+
+  const primary = resolved[0]
+  return {
+    assignees: resolved,
+    assigneeId: primary?.userId,
+    assigneeName: primary?.displayName,
+  }
+}
+
+/** 既存タスクから担当者配列を復元（旧データ互換） */
+function assigneesFromTask(task: Task): TaskAssignee[] {
+  if (task.assignees && task.assignees.length > 0) {
+    return task.assignees.map((a) => ({
+      userId: a.userId,
+      displayName: a.displayName,
+    }))
+  }
+  if (task.assigneeId || task.assigneeName) {
+    return [
+      {
+        userId: task.assigneeId,
+        displayName: task.assigneeName || 'ユーザー',
+      },
+    ]
+  }
+  return []
 }
 
 function toValidationFields(error: z.ZodError): Record<string, string> {
@@ -118,9 +201,8 @@ function toValidationFields(error: z.ZodError): Record<string, string> {
 }
 
 /**
- * 担当者表示名を解決する
+ * 担当者表示名を解決する（複数対応）
  * 優先: Users クラウド名 > プロジェクト members.displayName
- * 古いデータで assigneeName にメールが入っている場合も members.email から人名に変換する
  */
 async function enrichTaskAssignees(
   tasks: Task[],
@@ -132,8 +214,15 @@ async function enrichTaskAssignees(
   const members = project?.members ?? []
 
   const memberIds = [
-    ...members.map((m) => m.userId).filter(Boolean) as string[],
-    ...tasks.map((t) => t.assigneeId).filter(Boolean) as string[],
+    ...(members.map((m) => m.userId).filter(Boolean) as string[]),
+    ...tasks.flatMap((t) => {
+      const ids: string[] = []
+      if (t.assigneeId) ids.push(t.assigneeId)
+      for (const a of t.assignees ?? []) {
+        if (a.userId) ids.push(a.userId)
+      }
+      return ids
+    }),
   ]
   const cloudNames = await usersService.getDisplayNameMap(memberIds)
 
@@ -154,29 +243,27 @@ async function enrichTaskAssignees(
       })
     }
   }
-  // クラウドのみ（members に無い assigneeId）
   for (const [id, name] of cloudNames) {
     if (!byUserId.has(id)) byUserId.set(id, name)
   }
 
-  return tasks.map((t) => {
-    // 1) assigneeId → 表示名
-    if (t.assigneeId && byUserId.has(t.assigneeId)) {
-      return { ...t, assigneeName: byUserId.get(t.assigneeId)! }
+  function resolveOne(
+    userId?: string,
+    displayName?: string,
+  ): TaskAssignee | null {
+    if (userId && byUserId.has(userId)) {
+      return { userId, displayName: byUserId.get(userId)! }
     }
-    // 2) assigneeName がメール → メンバー表
-    const raw = t.assigneeName?.trim()
+    const raw = displayName?.trim()
     if (raw && raw.includes('@')) {
       const hit = byEmail.get(raw.toLowerCase())
       if (hit) {
         return {
-          ...t,
-          assigneeId: t.assigneeId || hit.userId,
-          assigneeName: hit.name,
+          userId: userId || hit.userId,
+          displayName: hit.name,
         }
       }
     }
-    // 3) assigneeName がメンバー displayName と一致 → userId 補完
     if (raw && !raw.includes('@')) {
       const hit = members.find(
         (m) => m.displayName?.toLowerCase() === raw.toLowerCase(),
@@ -185,13 +272,48 @@ async function enrichTaskAssignees(
         const name =
           (hit.userId && byUserId.get(hit.userId)) || hit.displayName || raw
         return {
-          ...t,
-          assigneeId: t.assigneeId || hit.userId,
-          assigneeName: name,
+          userId: userId || hit.userId,
+          displayName: name,
         }
       }
+      return { userId, displayName: raw }
     }
-    return t
+    if (userId) {
+      return { userId, displayName: byUserId.get(userId) || 'ユーザー' }
+    }
+    return null
+  }
+
+  return tasks.map((t) => {
+    const source = assigneesFromTask(t)
+    const resolved: TaskAssignee[] = []
+    const seen = new Set<string>()
+    for (const a of source) {
+      const one = resolveOne(a.userId, a.displayName)
+      if (!one) continue
+      const key = (one.userId || one.displayName).toLowerCase()
+      if (seen.has(key)) continue
+      seen.add(key)
+      resolved.push(one)
+    }
+
+    // 旧データで assignees が空だが single がある場合は resolve 済みを採用
+    if (resolved.length === 0 && (t.assigneeId || t.assigneeName)) {
+      const one = resolveOne(t.assigneeId, t.assigneeName)
+      if (one) resolved.push(one)
+    }
+
+    const primary = resolved[0]
+    return {
+      ...t,
+      assignees: resolved,
+      assigneeId: primary?.userId,
+      assigneeName: primary?.displayName,
+      completionPercent:
+        typeof t.completionPercent === 'number'
+          ? Math.min(100, Math.max(0, Math.round(t.completionPercent)))
+          : t.completionPercent ?? 0,
+    }
   })
 }
 
@@ -233,13 +355,20 @@ export async function createTask(
   }
 
   const project = await projectRepository.getProjectById(projectId)
-  const assignee = await resolveAssignee(
-    project,
-    parsed.data.assigneeName,
-    parsed.data.assigneeId,
-  )
+  const normalized = await normalizeAssignees(project, {
+    assignees: parsed.data.assignees,
+    assigneeId: parsed.data.assigneeId,
+    assigneeName: parsed.data.assigneeName,
+  })
 
   const now = new Date().toISOString()
+  const completion =
+    parsed.data.completionPercent !== undefined
+      ? parsed.data.completionPercent
+      : parsed.data.status === '完了'
+        ? 100
+        : 0
+
   const task: Task = {
     taskId: uuidv4(),
     projectId,
@@ -248,8 +377,10 @@ export async function createTask(
     status: parsed.data.status ?? '未着手',
     priority: parsed.data.priority ?? 'medium',
     requirement: parsed.data.requirement,
-    assigneeId: assignee.assigneeId,
-    assigneeName: assignee.assigneeName,
+    assigneeId: normalized.assigneeId,
+    assigneeName: normalized.assigneeName,
+    assignees: normalized.assignees,
+    completionPercent: completion,
     dueDate: parsed.data.dueDate,
     attachments: [],
     createdBy: userId,
@@ -282,26 +413,56 @@ export async function updateTask(
   }
 
   const project = await projectRepository.getProjectById(existing.projectId)
-  const updates = { ...parsed.data }
-  if (updates.assigneeName !== undefined || updates.assigneeId !== undefined) {
-    // 空文字は「担当者クリア」
-    const rawId =
-      updates.assigneeId === '' || updates.assigneeId === null
-        ? undefined
-        : updates.assigneeId ?? existing.assigneeId
-    const rawName =
-      updates.assigneeName === '' || updates.assigneeName === null
-        ? undefined
-        : updates.assigneeName ?? existing.assigneeName
-    const assignee = await resolveAssignee(project, rawName, rawId)
-    // 両方クリアされた場合はフィールドを空にする
-    if (!updates.assigneeId && !updates.assigneeName && !rawId && !rawName) {
+  const updates: Parameters<typeof repository.updateTask>[1] = { ...parsed.data }
+
+  const touchesAssignees =
+    parsed.data.assignees !== undefined ||
+    parsed.data.assigneeId !== undefined ||
+    parsed.data.assigneeName !== undefined
+
+  if (touchesAssignees) {
+    // assignees: [] または assigneeId/Name 空 → クリア
+    const clearingSingle =
+      (parsed.data.assigneeId === '' || parsed.data.assigneeId === null) &&
+      (parsed.data.assigneeName === '' ||
+        parsed.data.assigneeName === null ||
+        parsed.data.assigneeName === undefined) &&
+      parsed.data.assignees === undefined
+
+    const clearingList =
+      parsed.data.assignees !== undefined && parsed.data.assignees.length === 0
+
+    if (clearingList || clearingSingle) {
+      updates.assignees = []
       updates.assigneeId = undefined
       updates.assigneeName = undefined
+      updates.clearAssignees = true
     } else {
-      updates.assigneeId = assignee.assigneeId
-      updates.assigneeName = assignee.assigneeName
+      const normalized = await normalizeAssignees(project, {
+        assignees: parsed.data.assignees,
+        assigneeId:
+          parsed.data.assigneeId === '' || parsed.data.assigneeId === null
+            ? undefined
+            : parsed.data.assigneeId,
+        assigneeName:
+          parsed.data.assigneeName === '' || parsed.data.assigneeName === null
+            ? undefined
+            : parsed.data.assigneeName,
+      })
+      updates.assignees = normalized.assignees
+      updates.assigneeId = normalized.assigneeId
+      updates.assigneeName = normalized.assigneeName
+      updates.clearAssignees = normalized.assignees.length === 0
     }
+  }
+
+  // ステータスを完了にしたとき、完了度未指定なら 100 にする
+  if (
+    parsed.data.status === '完了' &&
+    parsed.data.completionPercent === undefined &&
+    (existing.completionPercent ?? 0) < 100
+  ) {
+    updates.completionPercent = 100
   }
 
   const updated = await repository.updateTask(taskId, updates)
@@ -326,7 +487,10 @@ export async function updateTaskStatus(
     )
   }
 
-  return repository.updateTaskStatus(taskId, parsed.data.status as TaskStatus)
+  const status = parsed.data.status as TaskStatus
+  const extra =
+    status === '完了' ? { status, completionPercent: 100 as const } : { status }
+  return repository.updateTask(taskId, extra)
 }
 
 /** タスクを論理削除する */

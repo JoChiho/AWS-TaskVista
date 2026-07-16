@@ -41,19 +41,49 @@ export async function getSummary(
   return summaries
 }
 
+/** タスクが指定ユーザーの担当か（複数担当・旧データ対応） */
+function isAssignedToUser(
+  t: Task,
+  userId: string,
+  nameCandidates: Set<string>,
+): boolean {
+  if (t.assigneeId === userId) return true
+  if (t.assignees?.some((a) => a.userId === userId)) return true
+  // 古いデータ: assigneeId 無し・名前のみ
+  if (!t.assigneeId && t.assigneeName) {
+    if (nameCandidates.has(t.assigneeName.trim().toLowerCase())) return true
+  }
+  if (t.assignees?.some((a) => {
+    if (a.userId) return false
+    return nameCandidates.has(a.displayName.trim().toLowerCase())
+  })) {
+    return true
+  }
+  return false
+}
+
 /**
  * 自分が担当する未完了タスクを期日昇順で取得する
  *
  * 判定ロジック:
- * 1. 主: assigneeId === ログインユーザーの Cognito sub（AssigneeIndex）
- * 2. 補: 古いデータで assigneeId が無く assigneeName のみの場合、
- *        クラウド表示名 / メールと一致すれば自分の担当とみなす
+ * 1. 主: assigneeId === ログインユーザー（AssigneeIndex・主担当）
+ * 2. 補: assignees[] に userId が含まれる（副担当）
+ * 3. 補: 古いデータで名前のみ一致
+ * 4. アクセス可能なプロジェクトのタスクのみ
  */
 export async function getMyTasks(
   userId: string,
   email?: string,
   name?: string,
 ): Promise<Task[]> {
+  // アクセス可能なプロジェクトを先に確定（フィルタの基準）
+  const projects = await projectService.listProjects({
+    userId,
+    email,
+    name: name || email || 'ユーザー',
+  })
+  const accessibleProjectIds = new Set(projects.map((p) => p.projectId))
+
   const byId = await taskRepository.listTasksByAssignee(userId)
 
   // 表示名（TaskVista-Users）とメールも照合用に取る
@@ -64,30 +94,22 @@ export async function getMyTasks(
       .map((s) => String(s).trim().toLowerCase()),
   )
 
-  // アクセス可能なプロジェクト横断で、名前のみ一致する古いタスクも拾う
-  const projects = await projectService.listProjects({
-    userId,
-    email,
-    name: name || email || 'ユーザー',
-  })
-
+  // プロジェクト横断: 副担当・名前のみ一致も拾う
   const projectTasks = (
     await Promise.all(
       projects.map((p) => taskRepository.listTasksByProject(p.projectId)),
     )
   ).flat()
 
-  const byName = projectTasks.filter((t) => {
+  const byMatch = projectTasks.filter((t) => {
     if (t.isDeleted || t.status === '完了') return false
-    if (t.assigneeId === userId) return true
-    if (!t.assigneeId && t.assigneeName) {
-      return nameCandidates.has(t.assigneeName.trim().toLowerCase())
-    }
-    return false
+    return isAssignedToUser(t, userId, nameCandidates)
   })
 
   const map = new Map<string, Task>()
-  for (const t of [...byId, ...byName]) {
+  for (const t of [...byId, ...byMatch]) {
+    // プロジェクト権限が無いタスクはダッシュボードに出さない
+    if (!accessibleProjectIds.has(t.projectId)) continue
     if (!t.isDeleted && t.status !== '完了') {
       map.set(t.taskId, t)
     }
@@ -99,14 +121,28 @@ export async function getMyTasks(
     return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
   })
 
-  // 担当者名をクラウド表示名で上書き（UI が一貫して最新名を出す）
-  const ids = tasks.map((t) => t.assigneeId).filter(Boolean) as string[]
+  // 担当者名をクラウド表示名で上書き（複数含む）
+  const ids = tasks.flatMap((t) => {
+    const list = [t.assigneeId, ...(t.assignees?.map((a) => a.userId) ?? [])]
+    return list.filter(Boolean) as string[]
+  })
   if (ids.length === 0) return tasks
   const names = await usersService.getDisplayNameMap(ids)
   if (names.size === 0) return tasks
-  return tasks.map((t) =>
-    t.assigneeId && names.has(t.assigneeId)
-      ? { ...t, assigneeName: names.get(t.assigneeId)! }
-      : t,
-  )
+  return tasks.map((t) => {
+    const assignees = (t.assignees ?? []).map((a) =>
+      a.userId && names.has(a.userId)
+        ? { ...a, displayName: names.get(a.userId)! }
+        : a,
+    )
+    const primaryName =
+      t.assigneeId && names.has(t.assigneeId)
+        ? names.get(t.assigneeId)!
+        : t.assigneeName
+    return {
+      ...t,
+      assignees: assignees.length > 0 ? assignees : t.assignees,
+      assigneeName: primaryName,
+    }
+  })
 }

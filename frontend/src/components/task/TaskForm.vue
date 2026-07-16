@@ -1,9 +1,16 @@
 <script setup lang="ts">
-// タスク作成・編集フォームコンポーネント
-// 担当者はプロジェクトメンバーのドロップダウン（userId + 表示名を保存）
+// タスク作成・編集フォーム
+// TaskDetail と同じビジュアル言語（セクション・色帯・完了度カード）
 import { ref, watch, computed } from 'vue'
-import type { Task, TaskStatus, TaskPriority } from '@/types/task'
-import { TASK_STATUSES, PRIORITY_LABELS } from '@/types/task'
+import type { Task, TaskStatus, TaskPriority, TaskAssignee } from '@/types/task'
+import {
+  TASK_STATUSES,
+  PRIORITY_LABELS,
+  STATUS_COLORS,
+  PRIORITY_COLORS,
+  normalizeCompletion,
+  completionColor,
+} from '@/types/task'
 import { useTasksStore } from '@/stores/tasks'
 import { useProjectsStore } from '@/stores/projects'
 import { resolveMemberDisplayName } from '@/utils/displayName'
@@ -22,35 +29,30 @@ const modelValue = defineModel<boolean>()
 const tasksStore = useTasksStore()
 const projectsStore = useProjectsStore()
 
-// フォームの入力値
 const title = ref('')
 const description = ref('')
 const status = ref<TaskStatus>('未着手')
 const priority = ref<TaskPriority>('medium')
 const requirement = ref('')
-/** 担当者の Cognito sub（ドロップダウンの value） */
-const assigneeId = ref<string | null>(null)
+/** 担当者 userId の配列（複数） */
+const selectedAssigneeIds = ref<string[]>([])
 const dueDate = ref('')
+const completionPercent = ref(0)
 
-// バリデーションルール
 const titleRules = [
-  (v: string) => !!v || 'タイトルは必須項目です',
-  (v: string) => v.length <= 200 || 'タイトルは 200 文字以内で入力してください',
+  (v: string) => !!v || 'タスク名は必須項目です',
+  (v: string) => v.length <= 200 || 'タスク名は 200 文字以内で入力してください',
 ]
 
-/** ステータスの選択肢 */
 const statusOptions = TASK_STATUSES.map((s) => ({ title: s, value: s }))
 
-/** 優先度の選択肢 */
 const priorityOptions = Object.entries(PRIORITY_LABELS).map(([value, title]) => ({
   title,
   value,
 }))
 
-/**
- * 担当者候補 = このプロジェクトのメンバー
- * 表示名はクラウド（TaskVista-Users）で解決済みの displayName
- */
+const isEditMode = computed(() => !!props.task)
+
 const assigneeOptions = computed(() => {
   const project =
     projectsStore.currentProject?.projectId === props.projectId
@@ -61,24 +63,45 @@ const assigneeOptions = computed(() => {
   return members
     .filter((m) => !!m.userId)
     .map((m) => ({
-      // 表示名はクラウドプロフィール（自分なら auth.displayName）と連動
       title: resolveMemberDisplayName(m),
       value: m.userId!,
       subtitle: m.email,
     }))
 })
 
-function selectedAssigneeName(): string | undefined {
-  if (!assigneeId.value) return undefined
-  const opt = assigneeOptions.value.find((o) => o.value === assigneeId.value)
-  return opt?.title
+function buildAssigneesPayload(): TaskAssignee[] {
+  const result: TaskAssignee[] = []
+  for (const id of selectedAssigneeIds.value) {
+    const opt = assigneeOptions.value.find((o) => o.value === id)
+    if (!opt) continue
+    result.push({ userId: id, displayName: opt.title })
+  }
+  return result
 }
 
-// ダイアログが開かれるたびにフォームを初期化し、メンバー一覧を最新化
+function initAssigneeSelection(task: Task) {
+  const ids: string[] = []
+  if (task.assignees && task.assignees.length > 0) {
+    for (const a of task.assignees) {
+      if (a.userId) {
+        ids.push(a.userId)
+      } else if (a.displayName) {
+        const byName = assigneeOptions.value.find((o) => o.title === a.displayName)
+        if (byName) ids.push(byName.value)
+      }
+    }
+  } else if (task.assigneeId) {
+    ids.push(task.assigneeId)
+  } else if (task.assigneeName) {
+    const byName = assigneeOptions.value.find((o) => o.title === task.assigneeName)
+    if (byName) ids.push(byName.value)
+  }
+  selectedAssigneeIds.value = [...new Set(ids)]
+}
+
 watch(modelValue, async (isOpen) => {
   if (!isOpen) return
 
-  // 担当者ドロップダウン用にプロジェクト（members）を取得
   try {
     if (
       projectsStore.currentProject?.projectId !== props.projectId ||
@@ -87,7 +110,7 @@ watch(modelValue, async (isOpen) => {
       await projectsStore.fetchProject(props.projectId)
     }
   } catch {
-    // 失敗してもフォームは開く（担当者だけ空になる）
+    // 失敗してもフォームは開く
   }
 
   if (props.task) {
@@ -96,29 +119,33 @@ watch(modelValue, async (isOpen) => {
     status.value = props.task.status
     priority.value = props.task.priority
     requirement.value = props.task.requirement ?? ''
-    // 既存タスク: assigneeId があればそれを使い、名前のみならメンバーから逆引き
-    assigneeId.value = props.task.assigneeId ?? null
-    if (!assigneeId.value && props.task.assigneeName) {
-      const byName = assigneeOptions.value.find(
-        (o) => o.title === props.task!.assigneeName,
-      )
-      assigneeId.value = byName?.value ?? null
-    }
     dueDate.value = props.task.dueDate ?? ''
+    completionPercent.value = normalizeCompletion(props.task.completionPercent)
+    initAssigneeSelection(props.task)
   } else {
     title.value = ''
     description.value = ''
     status.value = props.defaultStatus ?? '未着手'
     priority.value = 'medium'
     requirement.value = ''
-    assigneeId.value = null
+    selectedAssigneeIds.value = []
     dueDate.value = ''
+    completionPercent.value = props.defaultStatus === '完了' ? 100 : 0
   }
 })
 
-/** フォームを送信する（作成 or 更新） */
+// ステータスを完了にしたら完了度を 100 に寄せる
+watch(status, (s, prev) => {
+  if (s === '完了' && prev !== '完了' && completionPercent.value < 100) {
+    completionPercent.value = 100
+  }
+})
+
 async function handleSubmit() {
   if (!title.value.trim()) return
+
+  const assignees = buildAssigneesPayload()
+  const primary = assignees[0]
 
   const payload = {
     title: title.value.trim(),
@@ -126,9 +153,10 @@ async function handleSubmit() {
     status: status.value,
     priority: priority.value,
     requirement: requirement.value.trim() || undefined,
-    // 両方送る: ダッシュボードは assigneeId、画面表示は assigneeName
-    assigneeId: assigneeId.value || undefined,
-    assigneeName: selectedAssigneeName(),
+    assignees,
+    assigneeId: primary?.userId,
+    assigneeName: primary?.displayName,
+    completionPercent: normalizeCompletion(completionPercent.value),
     dueDate: dueDate.value || undefined,
   }
 
@@ -142,111 +170,255 @@ async function handleSubmit() {
   emit('saved', saved)
   modelValue.value = false
 }
-
-const isEditMode = !!props.task
 </script>
 
 <template>
-  <v-dialog v-model="modelValue" max-width="640" persistent scrollable>
-    <v-card rounded="lg">
-      <v-card-title class="text-subtitle-1 font-weight-bold pt-5 px-5">
-        {{ isEditMode ? 'タスクを編集する' : '新しいタスクを追加する' }}
-      </v-card-title>
+  <v-dialog
+    v-model="modelValue"
+    persistent
+    scrollable
+    content-class="task-form-dialog"
+    :max-width="760"
+  >
+    <v-card class="task-form-card d-flex flex-column" rounded="xl">
+      <!-- ヘッダー（詳細と同じトーン） -->
+      <div class="form-header flex-grow-0">
+        <div class="d-flex align-center px-6 pt-5 pb-2">
+          <div class="flex-grow-1 min-w-0">
+            <p class="form-kicker mb-1">
+              {{ isEditMode ? 'タスクを編集' : '新規タスク' }}
+            </p>
+            <h2 class="form-heading text-h6 font-weight-bold mb-0">
+              {{ isEditMode ? '内容を更新する' : '新しいタスクを追加する' }}
+            </h2>
+          </div>
+          <v-btn
+            icon="mdi-close"
+            variant="text"
+            size="small"
+            :disabled="tasksStore.isLoading"
+            @click="modelValue = false"
+          />
+        </div>
 
-      <v-divider />
-
-      <v-card-text class="px-5 py-4">
-        <v-form @submit.prevent="handleSubmit">
-          <!-- タイトル（必須） -->
+        <!-- タイトル（最重要・詳細のタイトル位置に相当） -->
+        <div class="px-6 pb-5">
+          <div class="section-label mb-2">
+            <v-icon size="18" class="mr-1">mdi-format-title</v-icon>
+            タスク名 *
+          </div>
           <v-text-field
             v-model="title"
-            label="タイトル *"
             :rules="titleRules"
-            placeholder="タスクのタイトルを入力してください"
-            class="mb-3"
+            placeholder="何をするタスクか、一目で分かる名前"
             counter="200"
             autofocus
+            variant="outlined"
+            density="comfortable"
+            hide-details="auto"
+            class="title-field"
+            bg-color="surface"
           />
+          <div class="d-flex flex-wrap align-center ga-2 mt-3">
+            <v-chip
+              :color="STATUS_COLORS[status]"
+              size="small"
+              label
+              variant="flat"
+            >
+              {{ status }}
+            </v-chip>
+            <v-chip
+              :color="PRIORITY_COLORS[priority]"
+              size="small"
+              label
+              variant="tonal"
+            >
+              優先度: {{ PRIORITY_LABELS[priority] }}
+            </v-chip>
+            <v-chip
+              size="small"
+              label
+              :color="completionColor(completionPercent)"
+              variant="tonal"
+            >
+              完了度 {{ completionPercent }}%
+            </v-chip>
+          </div>
+        </div>
+      </div>
 
-          <!-- ステータスと優先度（横並び） -->
-          <v-row dense class="mb-1">
-            <v-col cols="6">
+      <v-card-text class="form-body px-6 py-5 flex-grow-1">
+        <v-form @submit.prevent="handleSubmit">
+          <!-- 要望 -->
+          <section class="form-section mb-5">
+            <div class="section-label">
+              <v-icon size="18" class="mr-1">mdi-bullseye-arrow</v-icon>
+              要望
+            </div>
+            <div class="field-card field-card--requirement">
+              <v-textarea
+                v-model="requirement"
+                placeholder="依頼元の要望・ゴール・受け入れ条件など"
+                rows="3"
+                auto-grow
+                hide-details
+                variant="plain"
+                density="comfortable"
+                class="inner-field"
+              />
+            </div>
+          </section>
+
+          <!-- 説明 -->
+          <section class="form-section mb-5">
+            <div class="section-label">
+              <v-icon size="18" class="mr-1">mdi-text-box-outline</v-icon>
+              説明
+            </div>
+            <div class="field-card field-card--description">
+              <v-textarea
+                v-model="description"
+                placeholder="実装方針、注意点、関連リンクなど詳細を記入"
+                rows="4"
+                auto-grow
+                counter="5000"
+                variant="plain"
+                density="comfortable"
+                class="inner-field"
+              />
+            </div>
+          </section>
+
+          <!-- 完了度 -->
+          <section class="form-section completion-section mb-5">
+            <div class="d-flex align-center justify-space-between mb-2">
+              <div class="section-label mb-0">
+                <v-icon size="18" class="mr-1" color="primary">mdi-progress-check</v-icon>
+                完了度
+              </div>
+              <span
+                class="text-h6 font-weight-bold"
+                :class="`text-${completionColor(completionPercent)}`"
+              >
+                {{ completionPercent }}%
+              </span>
+            </div>
+            <v-slider
+              v-model="completionPercent"
+              :min="0"
+              :max="100"
+              :step="5"
+              :color="completionColor(completionPercent)"
+              thumb-label
+              hide-details
+              class="mb-2"
+            />
+            <v-text-field
+              v-model.number="completionPercent"
+              type="number"
+              min="0"
+              max="100"
+              step="1"
+              suffix="%"
+              density="compact"
+              variant="outlined"
+              hide-details
+              style="max-width: 120px"
+              @update:model-value="
+                (v: number | string) => {
+                  completionPercent = normalizeCompletion(Number(v))
+                }
+              "
+            />
+          </section>
+
+          <!-- ステータス / 優先度 / 期日 -->
+          <section class="form-section mb-5">
+            <div class="section-label">
+              <v-icon size="18" class="mr-1">mdi-tune-variant</v-icon>
+              ステータス・優先度・期日
+            </div>
+            <div class="meta-fields">
               <v-select
                 v-model="status"
                 :items="statusOptions"
                 label="ステータス"
                 hide-details
+                variant="outlined"
+                density="comfortable"
               />
-            </v-col>
-            <v-col cols="6">
               <v-select
                 v-model="priority"
                 :items="priorityOptions"
                 label="優先度"
                 hide-details
+                variant="outlined"
+                density="comfortable"
               />
-            </v-col>
-          </v-row>
-
-          <!-- 場所と要望（横並び） -->
-          <v-row dense class="mb-1 mt-3">
-            <v-col cols="6">
-              <v-text-field
-                v-model="requirement"
-                label="要望（任意）"
-                hide-details
-              />
-            </v-col>
-          </v-row>
-
-          <!-- 担当者（メンバー選択）と期日 -->
-          <v-row dense class="mb-1 mt-3">
-            <v-col cols="6">
-              <v-select
-                v-model="assigneeId"
-                :items="assigneeOptions"
-                item-title="title"
-                item-value="value"
-                label="担当者"
-                placeholder="メンバーを選択"
-                clearable
-                hide-details="auto"
-                :hint="
-                  assigneeOptions.length
-                    ? 'プロジェクトメンバーから選択（表示名はクラウドの設定名）'
-                    : 'メンバーがいません。先にプロジェクトへメンバーを追加してください'
-                "
-                persistent-hint
-              />
-            </v-col>
-            <v-col cols="6">
               <v-text-field
                 v-model="dueDate"
                 label="期日（任意）"
                 type="date"
                 hide-details
+                variant="outlined"
+                density="comfortable"
               />
-            </v-col>
-          </v-row>
+            </div>
+          </section>
 
-          <!-- 説明（任意） -->
-          <v-textarea
-            v-model="description"
-            label="説明（任意）"
-            placeholder="タスクの詳細を入力してください"
-            rows="3"
-            class="mt-3"
-            counter="5000"
-          />
+          <!-- 担当者 -->
+          <section class="form-section mb-2">
+            <div class="section-label">
+              <v-icon size="18" class="mr-1">mdi-account-multiple-outline</v-icon>
+              担当者（複数可）
+            </div>
+            <v-select
+              v-model="selectedAssigneeIds"
+              :items="assigneeOptions"
+              item-title="title"
+              item-value="value"
+              placeholder="メンバーを選択"
+              multiple
+              chips
+              closable-chips
+              clearable
+              hide-details="auto"
+              variant="outlined"
+              density="comfortable"
+              :hint="
+                assigneeOptions.length
+                  ? 'プロジェクトメンバーから複数選択できます'
+                  : 'メンバーがいません。先にプロジェクトへメンバーを追加してください'
+              "
+              persistent-hint
+            >
+              <template #chip="{ props: chipProps, item }">
+                <v-chip
+                  v-bind="chipProps"
+                  size="small"
+                  color="primary"
+                  variant="tonal"
+                >
+                  <v-avatar start size="20" color="primary">
+                    <span class="text-caption text-white" style="font-size: 9px">
+                      {{ String(item.title).slice(0, 2).toUpperCase() }}
+                    </span>
+                  </v-avatar>
+                  {{ item.title }}
+                </v-chip>
+              </template>
+            </v-select>
+          </section>
         </v-form>
       </v-card-text>
 
-      <v-divider />
-
-      <v-card-actions class="px-5 py-3">
+      <div class="form-footer flex-grow-0 d-flex align-center px-6 py-4">
         <v-spacer />
         <v-btn
           variant="text"
+          size="large"
+          class="mr-2"
           :disabled="tasksStore.isLoading"
           @click="modelValue = false"
         >
@@ -254,13 +426,125 @@ const isEditMode = !!props.task
         </v-btn>
         <v-btn
           color="primary"
+          size="large"
+          rounded="lg"
           :loading="tasksStore.isLoading"
           :disabled="!title.trim()"
+          prepend-icon="mdi-content-save-outline"
           @click="handleSubmit"
         >
           保存する
         </v-btn>
-      </v-card-actions>
+      </div>
     </v-card>
   </v-dialog>
 </template>
+
+<style>
+/* teleported dialog content */
+.task-form-dialog.v-overlay__content {
+  width: min(760px, calc(100vw - 24px)) !important;
+  max-width: min(760px, calc(100vw - 24px)) !important;
+  margin: 12px !important;
+}
+</style>
+
+<style scoped>
+.task-form-card {
+  max-height: min(92vh, 920px);
+  overflow: hidden;
+  background: rgb(var(--v-theme-surface));
+}
+
+.form-header {
+  border-bottom: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  background: linear-gradient(
+    165deg,
+    rgba(var(--v-theme-primary), 0.1) 0%,
+    rgba(var(--v-theme-primary), 0.03) 45%,
+    rgba(var(--v-theme-surface), 1) 100%
+  );
+}
+
+.form-kicker {
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: rgba(var(--v-theme-on-surface), 0.55);
+  margin: 0;
+}
+
+.form-heading {
+  letter-spacing: -0.01em;
+}
+
+.title-field :deep(.v-field) {
+  font-size: 1.15rem;
+  font-weight: 600;
+}
+
+.form-body {
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.section-label {
+  display: flex;
+  align-items: center;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: rgba(var(--v-theme-on-surface), 0.55);
+  margin-bottom: 10px;
+}
+
+.field-card {
+  border-radius: 14px;
+  padding: 6px 12px 4px;
+}
+
+.field-card--requirement {
+  background: rgba(var(--v-theme-warning), 0.12);
+  border-left: 5px solid rgb(var(--v-theme-warning));
+}
+
+.field-card--description {
+  background: rgba(var(--v-theme-on-surface), 0.03);
+  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+}
+
+.inner-field :deep(textarea) {
+  font-size: 1rem;
+  line-height: 1.65;
+}
+
+.completion-section {
+  padding: 18px 20px;
+  border-radius: 14px;
+  background: rgba(var(--v-theme-primary), 0.06);
+  border: 1px solid rgba(var(--v-theme-primary), 0.14);
+}
+
+.meta-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 12px;
+}
+
+@media (max-width: 640px) {
+  .meta-fields {
+    grid-template-columns: 1fr;
+  }
+}
+
+.form-footer {
+  border-top: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  background: rgba(var(--v-theme-on-surface), 0.02);
+}
+
+.min-w-0 {
+  min-width: 0;
+}
+</style>
