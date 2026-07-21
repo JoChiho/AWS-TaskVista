@@ -36,11 +36,15 @@ const requirement = ref('')
 const selectedAssigneeIds = ref<string[]>([])
 /** 評価者 userId の配列（レビュー待ち） */
 const selectedReviewerIds = ref<string[]>([])
-/** 開始日 YYYY-MM-DD */
-const startDate = ref('')
-const dueDate = ref('')
+/** 日付 YYYY-MM-DD */
+const plannedStartDate = ref('')
+const plannedDueDate = ref('')
+const actualStartDate = ref('')
+const actualDueDate = ref('')
 /** 予定工数（人日）。空文字 = 未設定 */
 const estimatedEffortDays = ref<string>('')
+/** 実績工数（人日）。空文字 = 未設定 */
+const actualEffortDays = ref<string>('')
 
 const titleRules = [
   (v: string) => !!v || 'タスク名は必須項目です',
@@ -149,12 +153,17 @@ watch(modelValue, async (isOpen) => {
     status.value = props.task.status
     priority.value = props.task.priority
     requirement.value = props.task.requirement ?? ''
-    startDate.value = props.task.startDate ?? ''
-    dueDate.value = props.task.dueDate ?? ''
+    plannedStartDate.value =
+      props.task.plannedStartDate ?? props.task.startDate ?? ''
+    plannedDueDate.value = props.task.plannedDueDate ?? props.task.dueDate ?? ''
+    actualStartDate.value = props.task.actualStartDate ?? ''
+    actualDueDate.value = props.task.actualDueDate ?? ''
     estimatedEffortDays.value =
       props.task.estimatedEffortDays != null
         ? String(props.task.estimatedEffortDays)
         : ''
+    actualEffortDays.value =
+      props.task.actualEffortDays != null ? String(props.task.actualEffortDays) : ''
     initAssigneeSelection(props.task)
     initReviewerSelection(props.task)
   } else {
@@ -165,14 +174,17 @@ watch(modelValue, async (isOpen) => {
     requirement.value = ''
     selectedAssigneeIds.value = []
     selectedReviewerIds.value = []
-    startDate.value = ''
-    dueDate.value = ''
+    plannedStartDate.value = ''
+    plannedDueDate.value = ''
+    actualStartDate.value = ''
+    actualDueDate.value = ''
     estimatedEffortDays.value = ''
+    actualEffortDays.value = ''
   }
 })
 
-function parseEffortDays(): number | null | undefined {
-  const raw = estimatedEffortDays.value.trim()
+function parseEffortDays(rawInput: string): number | null | undefined {
+  const raw = rawInput.trim()
   if (!raw) {
     // 編集時はクリア、新規時は未送信
     return props.task ? null : undefined
@@ -182,12 +194,18 @@ function parseEffortDays(): number | null | undefined {
   return n
 }
 
+function optionalDatePayload(value: string): string | null | undefined {
+  if (value) return value
+  return props.task ? null : undefined
+}
+
 async function handleSubmit() {
   if (!title.value.trim()) return
 
   const assignees = buildAssigneesPayload()
   const primary = assignees[0]
-  const effort = parseEffortDays()
+  const plannedEffort = parseEffortDays(estimatedEffortDays.value)
+  const actualEffort = parseEffortDays(actualEffortDays.value)
   // 評価者: 選択中の ID を常に送信（完了へ変えても保持。UI はレビュー待ち時のみ表示）
   const reviewers = buildReviewersPayload()
 
@@ -207,13 +225,12 @@ async function handleSubmit() {
       ? { reviewers }
       : {}),
     // 編集時は空文字でクリア（null）、新規は未設定なら送らない
-    startDate: startDate.value
-      ? startDate.value
-      : props.task
-        ? null
-        : undefined,
-    dueDate: dueDate.value ? dueDate.value : props.task ? null : undefined,
-    ...(effort !== undefined ? { estimatedEffortDays: effort } : {}),
+    plannedStartDate: optionalDatePayload(plannedStartDate.value),
+    plannedDueDate: optionalDatePayload(plannedDueDate.value),
+    actualStartDate: optionalDatePayload(actualStartDate.value),
+    actualDueDate: optionalDatePayload(actualDueDate.value),
+    ...(plannedEffort !== undefined ? { estimatedEffortDays: plannedEffort } : {}),
+    ...(actualEffort !== undefined ? { actualEffortDays: actualEffort } : {}),
   }
 
   let saved: Task
@@ -234,7 +251,7 @@ async function handleSubmit() {
     persistent
     scrollable
     content-class="task-form-dialog"
-    :max-width="760"
+    :max-width="920"
   >
     <v-card class="task-form-card d-flex flex-column" rounded="xl">
       <!-- ヘッダー（詳細と同じトーン） -->
@@ -338,7 +355,7 @@ async function handleSubmit() {
             </div>
           </section>
 
-          <!-- ステータス / 優先度 / 開始日 / 締切日 / 予定工数 -->
+          <!-- ステータス / 優先度 / 予定・実績の日付と工数 -->
           <section class="form-section mb-5">
             <div class="section-label">
               <v-icon size="18" class="mr-1">mdi-tune-variant</v-icon>
@@ -361,24 +378,27 @@ async function handleSubmit() {
                 variant="outlined"
                 density="comfortable"
               />
+            </div>
+            <p class="schedule-form-caption mt-4 mb-2">予定（開始 · 終了 · 工数）</p>
+            <div class="schedule-fields">
               <v-text-field
-                v-model="startDate"
-                label="開始日"
+                v-model="plannedStartDate"
+                label="予定開始日"
                 type="date"
                 hide-details="auto"
                 variant="outlined"
                 density="comfortable"
-                hint="タイムラインの基準日（完了後も変更可）"
+                hint="タイムラインの基準日"
                 persistent-hint
               />
               <v-text-field
-                v-model="dueDate"
-                label="締切日"
+                v-model="plannedDueDate"
+                label="予定終了日"
                 type="date"
                 hide-details="auto"
                 variant="outlined"
                 density="comfortable"
-                hint="参考用の期限。タイムラインの長さには使いません"
+                hint="予定上の終了日"
                 persistent-hint
               />
               <v-text-field
@@ -392,9 +412,39 @@ async function handleSubmit() {
                 variant="outlined"
                 density="comfortable"
                 suffix="人日"
-                hint="開始日からこの日数分をタイムラインに表示（締切からの逆算はしません）"
+                hint="タイムライン表示に使用"
                 persistent-hint
-                class="effort-field"
+              />
+            </div>
+            <p class="schedule-form-caption mt-4 mb-2">実績（開始 · 終了 · 工数）</p>
+            <div class="schedule-fields">
+              <v-text-field
+                v-model="actualStartDate"
+                label="実績開始日"
+                type="date"
+                hide-details
+                variant="outlined"
+                density="comfortable"
+              />
+              <v-text-field
+                v-model="actualDueDate"
+                label="実績終了日"
+                type="date"
+                hide-details
+                variant="outlined"
+                density="comfortable"
+              />
+              <v-text-field
+                v-model="actualEffortDays"
+                label="実績工数（人日）"
+                type="number"
+                min="0"
+                step="0.5"
+                placeholder="例: 3"
+                hide-details
+                variant="outlined"
+                density="comfortable"
+                suffix="人日"
               />
             </div>
           </section>
@@ -519,8 +569,8 @@ async function handleSubmit() {
 <style>
 /* teleported dialog content */
 .task-form-dialog.v-overlay__content {
-  width: min(760px, calc(100vw - 24px)) !important;
-  max-width: min(760px, calc(100vw - 24px)) !important;
+  width: min(920px, calc(100vw - 24px)) !important;
+  max-width: min(920px, calc(100vw - 24px)) !important;
   margin: 12px !important;
 }
 </style>
@@ -602,16 +652,28 @@ async function handleSubmit() {
   gap: 12px;
 }
 
-.effort-field {
-  grid-column: 1 / -1;
+.schedule-form-caption {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: rgba(var(--v-theme-on-surface), 0.55);
+}
+
+.schedule-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+@media (max-width: 720px) {
+  .schedule-fields {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 640px) {
   .meta-fields {
     grid-template-columns: 1fr;
-  }
-  .effort-field {
-    grid-column: auto;
   }
 }
 

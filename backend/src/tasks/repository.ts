@@ -16,7 +16,7 @@ function taskKey(projectId: string, taskId: string) {
 /**
  * タスクを ID で取得する
  * TaskIdIndex で projectId を特定したあと、ベーステーブル GetItem で全属性を返す。
- * （GSI の Projection が INCLUDE / KEYS_ONLY だと startDate 等の新属性が欠けるため）
+ * （GSI の Projection が INCLUDE / KEYS_ONLY だと新属性が欠けるため）
  */
 export async function getTaskById(taskId: string): Promise<Task | null> {
   const indexed = await docClient.send(
@@ -44,7 +44,7 @@ export async function getTaskById(taskId: string): Promise<Task | null> {
 
 /**
  * プロジェクト内のタスク一覧
- * ベーステーブルを projectId で Query し、全属性（startDate 含む）を確実に返す。
+ * ベーステーブルを projectId で Query し、全属性を確実に返す。
  * ※ 旧実装の ProjectStatusIndex は Projection 次第で新属性が欠落する
  */
 export async function listTasksByProject(projectId: string): Promise<Task[]> {
@@ -112,17 +112,30 @@ export type TaskUpdateFields = Partial<
 > & {
   /** 予定工数（人日）。null で属性削除 */
   estimatedEffortDays?: number | null
-  /** 開始日。null で属性削除 */
-  startDate?: string | null
-  /** 締切日。null で属性削除 */
+  /** 実績工数（人日）。null で属性削除 */
+  actualEffortDays?: number | null
+  /** 予定開始日。null で属性削除 */
+  plannedStartDate?: string | null
+  /** 予定締切日。null で属性削除 */
+  plannedDueDate?: string | null
+  /** 実績開始日。null で属性削除 */
+  actualStartDate?: string | null
+  /** 実績締切日。null で属性削除 */
+  actualDueDate?: string | null
+  /**
+   * AssigneeIndex SK 互換。通常は plannedDueDate と同期して書き込む
+   * null で属性削除
+   */
   dueDate?: string | null
+  /** 旧 startDate の削除用 */
+  startDate?: string | null
   /** 評価者一覧。null で属性削除 */
   reviewers?: Task['reviewers'] | null
   /** true のとき assigneeId / assigneeName を REMOVE（GSI から外す） */
   clearAssignees?: boolean
 }
 
-/** タスクを更新する（startDate / dueDate / estimatedEffortDays を含む） */
+/** タスクを更新する（予定/実績の日付・工数を含む） */
 export async function updateTask(
   taskId: string,
   updates: TaskUpdateFields,
@@ -144,11 +157,16 @@ export async function updateTask(
     ['status', 'status'],
     ['priority', 'priority'],
     ['requirement', 'requirement'],
+    ['plannedStartDate', 'plannedStartDate'],
+    ['plannedDueDate', 'plannedDueDate'],
+    ['actualStartDate', 'actualStartDate'],
+    ['actualDueDate', 'actualDueDate'],
     ['startDate', 'startDate'],
     ['dueDate', 'dueDate'],
     ['attachments', 'attachments'],
     ['completionPercent', 'completionPercent'],
     ['estimatedEffortDays', 'estimatedEffortDays'],
+    ['actualEffortDays', 'actualEffortDays'],
     ['assignees', 'assignees'],
     ['reviewers', 'reviewers'],
   ]

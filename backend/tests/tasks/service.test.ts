@@ -96,53 +96,65 @@ describe('tasks/service', () => {
     expect(result.priority).toBe('medium')
   })
 
-  it('開始日・予定工数・締切日を作成時に保存する', async () => {
+  it('予定開始日・予定工数・予定締切日・実績を作成時に保存する', async () => {
     vi.mocked(repository.createTask).mockImplementation(async (t) => t)
 
     const result = await service.createTask(PROJECT_ID, USER_ID, {
       title: 'スケジュール付き',
-      startDate: '2026-08-01',
-      dueDate: '2026-08-10',
+      plannedStartDate: '2026-08-01',
+      plannedDueDate: '2026-08-10',
+      actualStartDate: '2026-08-02',
+      actualDueDate: '2026-08-11',
       estimatedEffortDays: 3.5,
+      actualEffortDays: 4,
     })
 
-    expect(result.startDate).toBe('2026-08-01')
-    expect(result.dueDate).toBe('2026-08-10')
+    expect(result.plannedStartDate).toBe('2026-08-01')
+    expect(result.plannedDueDate).toBe('2026-08-10')
+    expect(result.actualStartDate).toBe('2026-08-02')
+    expect(result.actualDueDate).toBe('2026-08-11')
     expect(result.estimatedEffortDays).toBe(3.5)
+    expect(result.actualEffortDays).toBe(4)
     expect(repository.createTask).toHaveBeenCalledWith(
       expect.objectContaining({
-        startDate: '2026-08-01',
+        plannedStartDate: '2026-08-01',
+        plannedDueDate: '2026-08-10',
         dueDate: '2026-08-10',
+        actualStartDate: '2026-08-02',
+        actualDueDate: '2026-08-11',
         estimatedEffortDays: 3.5,
+        actualEffortDays: 4,
       }),
     )
   })
 
-  it('開始日を更新・クリアできる', async () => {
-    const task = makeTask({ startDate: undefined, dueDate: '2026-07-15' })
+  it('予定開始日を更新・クリアできる', async () => {
+    const task = makeTask({ plannedStartDate: undefined, plannedDueDate: '2026-07-15' })
     vi.mocked(repository.getTaskById).mockResolvedValue(task)
-    vi.mocked(repository.updateTask).mockImplementation(async (_id, updates) => ({
-      ...task,
-      ...updates,
-      startDate:
-        updates.startDate === null ? undefined : (updates.startDate ?? task.startDate),
-    }))
+    vi.mocked(repository.updateTask).mockImplementation(async (_id, updates) => {
+      const next = { ...task, ...updates }
+      if (updates.plannedStartDate === null) delete next.plannedStartDate
+      else if (updates.plannedStartDate !== undefined) {
+        next.plannedStartDate = updates.plannedStartDate
+      }
+      return next
+    })
 
     const saved = await service.updateTask(TASK_ID, USER_ID, {
-      startDate: '2026-07-01',
+      plannedStartDate: '2026-07-01',
     })
-    expect(saved.startDate).toBe('2026-07-01')
+    expect(saved.plannedStartDate).toBe('2026-07-01')
     expect(repository.updateTask).toHaveBeenCalledWith(
       TASK_ID,
-      expect.objectContaining({ startDate: '2026-07-01' }),
+      expect.objectContaining({ plannedStartDate: '2026-07-01' }),
     )
 
-    const cleared = await service.updateTask(TASK_ID, USER_ID, { startDate: null })
+    const cleared = await service.updateTask(TASK_ID, USER_ID, { plannedStartDate: null })
     expect(repository.updateTask).toHaveBeenCalledWith(
       TASK_ID,
-      expect.objectContaining({ startDate: null }),
+      expect.objectContaining({ plannedStartDate: null }),
     )
-    expect(cleared.startDate).toBeUndefined()
+    expect(cleared.plannedStartDate).toBeUndefined()
   })
 
   it('レビュー待ちで評価者を保存できる', async () => {
@@ -191,24 +203,28 @@ describe('tasks/service', () => {
     )
   })
 
-  it('完了ステータスでも開始日を更新できる', async () => {
+  it('完了ステータスでも予定開始日を更新できる', async () => {
     const task = makeTask({
       status: '完了',
       completionPercent: 100,
-      dueDate: '2026-07-15',
+      plannedDueDate: '2026-07-15',
     })
     vi.mocked(repository.getTaskById).mockResolvedValue(task)
     vi.mocked(repository.updateTask).mockImplementation(async (_id, updates) => ({
       ...task,
       ...updates,
+      plannedStartDate:
+        updates.plannedStartDate === null
+          ? undefined
+          : (updates.plannedStartDate ?? task.plannedStartDate),
     }))
 
     const result = await service.updateTask(TASK_ID, USER_ID, {
-      startDate: '2026-07-10',
+      plannedStartDate: '2026-07-10',
       estimatedEffortDays: 2,
       status: '完了',
     })
-    expect(result.startDate).toBe('2026-07-10')
+    expect(result.plannedStartDate).toBe('2026-07-10')
     expect(result.estimatedEffortDays).toBe(2)
     expect(result.status).toBe('完了')
   })

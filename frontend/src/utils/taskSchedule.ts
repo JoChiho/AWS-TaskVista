@@ -1,17 +1,18 @@
 /**
  * タスクのスケジュール期間を算出する（タイムライン / カレンダー用）
  *
- * 【方針】開始日が実作業の基準。締切からの逆算はしない。
+ * 【方針】予定開始日がタイムラインの基準。予定締切からの逆算はしない。
  *
  * バーを描画する条件:
- *   - 開始日があること（必須）
+ *   - 予定開始日があること（必須）
  *   - 長さ = 予定工数（人日）。未設定時は 1 日
  *
- * 締切日:
+ * 予定締切日:
  *   - 期間バーの位置・長さには使わない（フラグ表示のみ）
- *   - 開始日が無いタスクは「日程未設定」（締切だけあってもバーを出さない）
+ *   - 予定開始日が無いタスクは「日程未設定」（締切だけあってもバーを出さない）
  */
 import type { Task } from '@/types/task'
+import { getPlannedDueDate, getPlannedStartDate } from '@/types/task'
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000
 
@@ -21,7 +22,7 @@ export type ScheduleSource =
   | 'none'
 
 export interface TaskSchedule {
-  /** 期間開始（ローカル 0:00）= 開始日 */
+  /** 期間開始（ローカル 0:00）= 予定開始日 */
   start: Date | null
   /** 期間終了（ローカル 0:00・最終日の翌日 = 排他的終端） */
   endExclusive: Date | null
@@ -29,7 +30,7 @@ export interface TaskSchedule {
   endInclusive: Date | null
   durationDays: number
   source: ScheduleSource
-  /** タイムライン上にバーを描けるか（開始日あり） */
+  /** タイムライン上にバーを描けるか（予定開始日あり） */
   hasBar: boolean
 }
 
@@ -98,11 +99,11 @@ function buildRange(
 }
 
 /**
- * 開始日を基準に期間を決める。
- * ステータス（完了など）や締切日はバー位置に影響しない。
+ * 予定開始日を基準に期間を決める。
+ * ステータス（完了など）や予定締切日はバー位置に影響しない。
  */
 export function resolveTaskSchedule(task: Task): TaskSchedule {
-  const start = parseDateOnly(task.startDate)
+  const start = parseDateOnly(getPlannedStartDate(task))
   if (!start) {
     return {
       start: null,
@@ -120,15 +121,15 @@ export function resolveTaskSchedule(task: Task): TaskSchedule {
       : null
 
   if (effort != null && effort > 0) {
-    // 開始日 + 予定工数（締切まで伸ばさない / 締切から逆算しない）
+    // 予定開始日 + 予定工数
     return buildRange(start, effort, 'start+effort')
   }
 
-  // 工数未設定: 開始日の 1 日分
+  // 工数未設定: 予定開始日の 1 日分
   return buildRange(start, 1, 'start-only')
 }
 
-/** タイムライン全体の日付レンジ（開始日ベースのバー群から算出） */
+/** タイムライン全体の日付レンジ（予定開始日ベースのバー群から算出） */
 export function computeTimelineRange(
   tasks: Task[],
   paddingDays = 3,
@@ -155,9 +156,9 @@ export function computeTimelineRange(
     if (s.endExclusive && s.endExclusive > maxEx) maxEx = s.endExclusive
   }
 
-  // 締切フラグが見切れないよう、締切日もレンジに含める（バー位置は変えない）
+  // 予定締切フラグが見切れないよう、予定締切日もレンジに含める（バー位置は変えない）
   for (const t of tasks) {
-    const due = parseDateOnly(t.dueDate)
+    const due = parseDateOnly(getPlannedDueDate(t))
     if (!due) continue
     if (due < min) min = due
     if (due >= maxEx) maxEx = addDays(due, 1)

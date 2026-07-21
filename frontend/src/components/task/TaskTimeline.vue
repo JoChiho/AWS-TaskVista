@@ -32,7 +32,9 @@ const props = defineProps<{
 const emit = defineEmits<{
   open: [task: Task]
   /** 未設定タスクをカレンダーにドロップしたときの開始日設定 */
-  'set-start-date': [payload: { taskId: string; startDate: string; task: Task }]
+  'set-start-date': [
+    payload: { taskId: string; plannedStartDate: string; task: Task },
+  ]
 }>()
 
 /** 1 日あたりの幅（px）— 重なりにくい既定値 */
@@ -160,7 +162,7 @@ const rows = computed<TimelineRow[]>(() => {
     const visibleDays = Math.max(0.5, visibleEnd - visibleStart)
     const widthPx = visibleDays * dayWidth.value
 
-    const due = parseDateOnly(task.dueDate)
+    const due = parseDateOnly(task.plannedDueDate ?? task.dueDate)
     let dueLeftPx: number | null = null
     if (due) {
       const di = diffCalendarDays(due, range.value.rangeStart)
@@ -355,11 +357,11 @@ function applyStartDateDrop(dayIndex: number, e?: DragEvent) {
   if (!day) return
   const task = props.tasks.find((t) => t.taskId === taskId)
   if (!task) return
-  // 既に開始日があるタスクのドロップは無視（未設定の割当専用）
-  if (task.startDate) return
+  // 既に予定開始日があるタスクのドロップは無視（未設定の割当専用）
+  if (task.plannedStartDate || task.startDate) return
 
-  const startDate = formatDateOnly(day)
-  emit('set-start-date', { taskId, startDate, task })
+  const plannedStartDate = formatDateOnly(day)
+  emit('set-start-date', { taskId, plannedStartDate, task })
   draggingTaskId.value = null
   hoverDayIndex.value = null
   suppressClick.value = true
@@ -460,19 +462,19 @@ const cssVars = computed(() => ({
 
     <!-- 凡例（ドラッグ中は簡潔に） -->
     <div v-if="!isDragMode" class="tl-legend">
-      <span><i class="lg-swatch lg-bar" />期間 = 開始日 + 予定工数</span>
+      <span><i class="lg-swatch lg-bar" />期間 = 予定開始日 + 予定工数</span>
       <span><i class="lg-swatch lg-fill" />進捗</span>
       <span><i class="lg-line" />今日</span>
-      <span><v-icon size="12" color="error">mdi-flag-variant</v-icon> 締切（参考）</span>
+      <span><v-icon size="12" color="error">mdi-flag-variant</v-icon> 予定終了（参考）</span>
       <span class="lg-note">
         <v-icon size="12">mdi-cursor-move</v-icon>
-        未設定タスクを日付へドラッグすると、開始日を設定できます
+        未設定タスクを日付へドラッグすると、予定開始日を設定できます
       </span>
     </div>
     <div v-else class="tl-drag-banner">
       <v-icon size="20" color="primary" class="mr-2">mdi-calendar-cursor</v-icon>
       <span>
-        <strong>開始日を設定中</strong>
+        <strong>予定開始日を設定中</strong>
         — 下の日付を選んでください
         <template v-if="draggingTask && hoverDayIndex != null">
           ：「{{ draggingTask.title }}」→
@@ -491,7 +493,7 @@ const cssVars = computed(() => ({
         <v-icon size="18" class="mr-1">mdi-drag</v-icon>
         日程未設定 · {{ unscheduled.length }} 件
         <span class="unscheduled-hint">
-          — 日付へドラッグして開始日を設定
+          — 日付へドラッグして予定開始日を設定
         </span>
       </div>
       <div class="unscheduled-list">
@@ -539,7 +541,7 @@ const cssVars = computed(() => ({
             {{ isDragMode ? '日付' : 'タスク' }}
           </span>
           <span class="corner-sub">
-            <template v-if="isDragMode">開始日を選択</template>
+            <template v-if="isDragMode">予定開始日を選択</template>
             <template v-else>{{ rows.length }} / {{ tasks.length }}</template>
           </span>
         </div>
@@ -605,7 +607,7 @@ const cssVars = computed(() => ({
           <v-icon size="18" class="mr-1" color="primary">
             mdi-calendar-plus
           </v-icon>
-          開始日を設定
+          予定開始日を設定
         </div>
         <div
           class="tl-place-track"
@@ -638,7 +640,7 @@ const cssVars = computed(() => ({
           v-if="!rows.length && unscheduled.length === 0"
           class="tl-body-empty"
         >
-          開始日を設定すると、タイムラインが表示されます
+          予定開始日を設定すると、タイムラインが表示されます
         </div>
         <div
           v-else-if="!rows.length && unscheduled.length > 0"
@@ -705,7 +707,7 @@ const cssVars = computed(() => ({
               v-if="row.dueLeftPx != null"
               class="due-flag"
               :style="{ left: `${row.dueLeftPx}px` }"
-              title="締切日"
+              title="予定終了日"
             >
               <v-icon size="13" color="error">mdi-flag-variant</v-icon>
             </div>
@@ -724,7 +726,7 @@ const cssVars = computed(() => ({
     <div v-if="heldWithoutSchedule.length" class="tl-held">
       <div class="held-title">
         <v-icon size="18" class="mr-1" color="error">mdi-pause-circle-outline</v-icon>
-        保留（開始日なし）· {{ heldWithoutSchedule.length }} 件
+        保留（予定開始日なし）· {{ heldWithoutSchedule.length }} 件
         <span class="held-hint">— タイムラインには表示されません（クリックで詳細）</span>
       </div>
       <div class="held-list">

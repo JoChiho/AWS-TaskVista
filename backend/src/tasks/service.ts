@@ -54,23 +54,80 @@ const createTaskSchema = z.object({
     .max(10000, '予定工数は 10000 人日以内です')
     .optional()
     .nullable(),
-  /** 開始日 YYYY-MM-DD（空文字 / null はクリア） */
-  startDate: z
+  /** 実績工数（人日） */
+  actualEffortDays: z
+    .number({ invalid_type_error: '実績工数は数値で指定してください' })
+    .min(0, '実績工数は 0 以上です')
+    .max(10000, '実績工数は 10000 人日以内です')
+    .optional()
+    .nullable(),
+  /** 予定開始日 YYYY-MM-DD（空文字 / null はクリア） */
+  plannedStartDate: z
     .union([
-      z.string().regex(/^\d{4}-\d{2}-\d{2}$/, '開始日は YYYY-MM-DD 形式で指定してください'),
+      z
+        .string()
+        .regex(/^\d{4}-\d{2}-\d{2}$/, '予定開始日は YYYY-MM-DD 形式で指定してください'),
       z.literal(''),
       z.null(),
     ])
     .optional(),
-  /** 締切日 YYYY-MM-DD（空文字 / null はクリア） */
-  dueDate: z
+  /** 予定締切日 YYYY-MM-DD（空文字 / null はクリア） */
+  plannedDueDate: z
     .union([
-      z.string().regex(/^\d{4}-\d{2}-\d{2}$/, '締切日は YYYY-MM-DD 形式で指定してください'),
+      z
+        .string()
+        .regex(/^\d{4}-\d{2}-\d{2}$/, '予定終了日は YYYY-MM-DD 形式で指定してください'),
+      z.literal(''),
+      z.null(),
+    ])
+    .optional(),
+  /** 実績開始日 YYYY-MM-DD（空文字 / null はクリア） */
+  actualStartDate: z
+    .union([
+      z
+        .string()
+        .regex(/^\d{4}-\d{2}-\d{2}$/, '実績開始日は YYYY-MM-DD 形式で指定してください'),
+      z.literal(''),
+      z.null(),
+    ])
+    .optional(),
+  /** 実績締切日 YYYY-MM-DD（空文字 / null はクリア） */
+  actualDueDate: z
+    .union([
+      z
+        .string()
+        .regex(/^\d{4}-\d{2}-\d{2}$/, '実績終了日は YYYY-MM-DD 形式で指定してください'),
       z.literal(''),
       z.null(),
     ])
     .optional(),
 })
+
+/** 日付フィールド: 空 / null → 削除、YYYY-MM-DD → 保存、undefined → 触らない */
+function optionalDateUpdate(
+  value: string | null | undefined,
+): string | null | undefined {
+  if (value === undefined) return undefined
+  if (value === '' || value === null) return null
+  return value
+}
+
+/**
+ * 旧 startDate/dueDate を予定日へ寄せ、API レスポンスを正規化する
+ */
+function presentTask(task: Task): Task {
+  const plannedStartDate = task.plannedStartDate ?? task.startDate
+  const plannedDueDate = task.plannedDueDate ?? task.dueDate
+  const {
+    startDate: _legacyStart,
+    ...rest
+  } = task
+  return {
+    ...rest,
+    ...(plannedStartDate ? { plannedStartDate } : {}),
+    ...(plannedDueDate ? { plannedDueDate, dueDate: plannedDueDate } : {}),
+  }
+}
 
 const updateTaskSchema = createTaskSchema.partial()
 
@@ -405,7 +462,7 @@ async function enrichTaskAssignees(
     }
 
     const primary = resolved[0]
-    return {
+    return presentTask({
       ...t,
       assignees: resolved,
       assigneeId: primary?.userId,
@@ -415,7 +472,7 @@ async function enrichTaskAssignees(
         typeof t.completionPercent === 'number'
           ? Math.min(100, Math.max(0, Math.round(t.completionPercent)))
           : t.completionPercent ?? 0,
-    }
+    })
   })
 }
 
@@ -522,13 +579,24 @@ export async function createTask(
     task.estimatedEffortDays = parsed.data.estimatedEffortDays
   }
   if (
-    parsed.data.startDate &&
-    parsed.data.startDate !== ''
+    parsed.data.actualEffortDays !== null &&
+    parsed.data.actualEffortDays !== undefined
   ) {
-    task.startDate = parsed.data.startDate
+    task.actualEffortDays = parsed.data.actualEffortDays
   }
-  if (parsed.data.dueDate && parsed.data.dueDate !== '') {
-    task.dueDate = parsed.data.dueDate
+  if (parsed.data.plannedStartDate && parsed.data.plannedStartDate !== '') {
+    task.plannedStartDate = parsed.data.plannedStartDate
+  }
+  if (parsed.data.plannedDueDate && parsed.data.plannedDueDate !== '') {
+    task.plannedDueDate = parsed.data.plannedDueDate
+    // AssigneeIndex（SK=dueDate）互換
+    task.dueDate = parsed.data.plannedDueDate
+  }
+  if (parsed.data.actualStartDate && parsed.data.actualStartDate !== '') {
+    task.actualStartDate = parsed.data.actualStartDate
+  }
+  if (parsed.data.actualDueDate && parsed.data.actualDueDate !== '') {
+    task.actualDueDate = parsed.data.actualDueDate
   }
   if (reviewers.length > 0) {
     task.reviewers = reviewers
@@ -574,20 +642,26 @@ export async function updateTask(
     updates.estimatedEffortDays =
       parsed.data.estimatedEffortDays === null ? null : parsed.data.estimatedEffortDays
   }
-  // 開始日: 空文字 / null → 削除、YYYY-MM-DD → 保存
-  if (parsed.data.startDate !== undefined) {
-    updates.startDate =
-      parsed.data.startDate === '' || parsed.data.startDate === null
-        ? null
-        : parsed.data.startDate
+  if (parsed.data.actualEffortDays !== undefined) {
+    updates.actualEffortDays =
+      parsed.data.actualEffortDays === null ? null : parsed.data.actualEffortDays
   }
-  // 締切日
-  if (parsed.data.dueDate !== undefined) {
-    updates.dueDate =
-      parsed.data.dueDate === '' || parsed.data.dueDate === null
-        ? null
-        : parsed.data.dueDate
+  const plannedStart = optionalDateUpdate(parsed.data.plannedStartDate)
+  if (plannedStart !== undefined) {
+    updates.plannedStartDate = plannedStart
+    // 旧 startDate も合わせて消す（新規は plannedStartDate のみ）
+    updates.startDate = null
   }
+  const plannedDue = optionalDateUpdate(parsed.data.plannedDueDate)
+  if (plannedDue !== undefined) {
+    updates.plannedDueDate = plannedDue
+    // AssigneeIndex 互換: dueDate を plannedDueDate と同期
+    updates.dueDate = plannedDue
+  }
+  const actualStart = optionalDateUpdate(parsed.data.actualStartDate)
+  if (actualStart !== undefined) updates.actualStartDate = actualStart
+  const actualDue = optionalDateUpdate(parsed.data.actualDueDate)
+  if (actualDue !== undefined) updates.actualDueDate = actualDue
 
   // 評価者
   if (parsed.data.reviewers !== undefined) {
@@ -709,13 +783,15 @@ export async function updateTaskStatus(
 
   const status = parsed.data.status as TaskStatus
   // かんばん: 完了→100% / 未着手→0%。レビュー待ち・保留は完了度を触らない
+  let updated: Task
   if (status === '完了') {
-    return repository.updateTask(taskId, { status, completionPercent: 100 })
+    updated = await repository.updateTask(taskId, { status, completionPercent: 100 })
+  } else if (status === '未着手') {
+    updated = await repository.updateTask(taskId, { status, completionPercent: 0 })
+  } else {
+    updated = await repository.updateTask(taskId, { status })
   }
-  if (status === '未着手') {
-    return repository.updateTask(taskId, { status, completionPercent: 0 })
-  }
-  return repository.updateTask(taskId, { status })
+  return presentTask(updated)
 }
 
 /** タスクを論理削除する */

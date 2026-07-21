@@ -192,9 +192,11 @@ export async function getMyTasks(
   }
 
   const tasks = Array.from(map.values()).sort((a, b) => {
-    if (!a.dueDate) return 1
-    if (!b.dueDate) return -1
-    return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
+    const aDue = a.plannedDueDate ?? a.dueDate
+    const bDue = b.plannedDueDate ?? b.dueDate
+    if (!aDue) return 1
+    if (!bDue) return -1
+    return new Date(aDue).getTime() - new Date(bDue).getTime()
   })
 
   return enrichPeopleNames(tasks)

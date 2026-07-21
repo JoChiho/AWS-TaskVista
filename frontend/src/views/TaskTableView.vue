@@ -111,8 +111,29 @@ const headers = [
     headerProps: { class: 'col-chip' },
   },
   {
-    title: '開始日',
-    key: 'startDate',
+    title: '予定開始',
+    key: 'plannedStartDate',
+    sortable: true,
+    minWidth: '100px',
+    width: '100px',
+  },
+  {
+    title: '予定終了',
+    key: 'plannedDueDate',
+    sortable: true,
+    minWidth: '100px',
+    width: '100px',
+  },
+  {
+    title: '実績開始',
+    key: 'actualStartDate',
+    sortable: true,
+    minWidth: '100px',
+    width: '100px',
+  },
+  {
+    title: '実績終了',
+    key: 'actualDueDate',
     sortable: true,
     minWidth: '100px',
     width: '100px',
@@ -125,11 +146,11 @@ const headers = [
     width: '90px',
   },
   {
-    title: '締切日',
-    key: 'dueDate',
+    title: '実績工数',
+    key: 'actualEffortDays',
     sortable: true,
-    minWidth: '100px',
-    width: '100px',
+    minWidth: '90px',
+    width: '90px',
   },
   {
     title: '作成日',
@@ -335,10 +356,38 @@ watch(projectId, () => {
         </div>
       </template>
 
-      <!-- 開始日 -->
-      <template #[`item.startDate`]="{ item }">
+      <!-- 予定開始日 -->
+      <template #[`item.plannedStartDate`]="{ item }">
         <span class="text-body-2 cell-date">
-          {{ formatTableDate(item.startDate) }}
+          {{ formatTableDate(item.plannedStartDate ?? item.startDate) }}
+        </span>
+      </template>
+
+      <!-- 予定終了日 -->
+      <template #[`item.plannedDueDate`]="{ item }">
+        <span
+          class="text-body-2 cell-date"
+          :class="{
+            'text-error':
+              (item.plannedDueDate || item.dueDate) &&
+              new Date(item.plannedDueDate || item.dueDate!) < new Date(),
+          }"
+        >
+          {{ formatTableDate(item.plannedDueDate ?? item.dueDate) }}
+        </span>
+      </template>
+
+      <!-- 実績開始日 -->
+      <template #[`item.actualStartDate`]="{ item }">
+        <span class="text-body-2 cell-date">
+          {{ formatTableDate(item.actualStartDate) }}
+        </span>
+      </template>
+
+      <!-- 実績終了日 -->
+      <template #[`item.actualDueDate`]="{ item }">
+        <span class="text-body-2 cell-date">
+          {{ formatTableDate(item.actualDueDate) }}
         </span>
       </template>
 
@@ -353,15 +402,14 @@ watch(projectId, () => {
         </span>
       </template>
 
-      <!-- 締切日（短い日付・1行固定） -->
-      <template #[`item.dueDate`]="{ item }">
-        <span
-          class="text-body-2 cell-date"
-          :class="{
-            'text-error': item.dueDate && new Date(item.dueDate) < new Date(),
-          }"
-        >
-          {{ formatTableDate(item.dueDate) }}
+      <!-- 実績工数 -->
+      <template #[`item.actualEffortDays`]="{ item }">
+        <span class="text-body-2 cell-date">
+          {{
+            item.actualEffortDays != null
+              ? `${item.actualEffortDays} 人日`
+              : '—'
+          }}
         </span>
       </template>
 

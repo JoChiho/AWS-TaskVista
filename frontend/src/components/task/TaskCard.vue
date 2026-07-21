@@ -11,6 +11,8 @@ import {
   PRIORITY_COLORS,
   normalizeCompletion,
   completionColor,
+  getPlannedStartDate,
+  getPlannedDueDate,
 } from '@/types/task'
 import {
   resolveAssigneeLabels,
@@ -58,6 +60,9 @@ const reviewerLabels = computed(() => {
   void byEmail.value
   return resolveReviewerLabels(props.task)
 })
+
+const plannedStart = computed(() => getPlannedStartDate(props.task))
+const plannedDue = computed(() => getPlannedDueDate(props.task))
 
 function formatDueDate(dueDate: string): string {
   const d = new Date(dueDate)
@@ -199,30 +204,30 @@ function onBodyClick() {
           <v-spacer />
 
           <span
-            v-if="task.startDate"
+            v-if="plannedStart"
             class="text-caption text-medium-emphasis"
-            :title="`開始 ${formatDueDate(task.startDate)}`"
+            :title="`予定開始 ${formatDueDate(plannedStart)}`"
           >
             <v-icon size="10" class="mr-1">mdi-play-circle-outline</v-icon>
-            {{ formatDueDate(task.startDate) }}
+            {{ formatDueDate(plannedStart) }}
             <template v-if="task.estimatedEffortDays != null">
-              · {{ task.estimatedEffortDays }}人日
+              · 予{{ task.estimatedEffortDays }}人日
             </template>
           </span>
 
           <span
-            v-if="task.dueDate"
+            v-if="plannedDue"
             class="text-caption"
             :class="{
-              'text-error font-weight-bold': isOverdue(task.dueDate),
+              'text-error font-weight-bold': isOverdue(plannedDue),
               'text-warning font-weight-bold':
-                isDueSoon(task.dueDate) && !isOverdue(task.dueDate),
+                isDueSoon(plannedDue) && !isOverdue(plannedDue),
               'text-medium-emphasis':
-                !isOverdue(task.dueDate) && !isDueSoon(task.dueDate),
+                !isOverdue(plannedDue) && !isDueSoon(plannedDue),
             }"
           >
             <v-icon size="10" class="mr-1">mdi-calendar</v-icon>
-            {{ formatDueDate(task.dueDate) }}
+            {{ formatDueDate(plannedDue) }}
           </span>
         </div>
 

@@ -11,6 +11,8 @@ import {
   normalizeCompletion,
   completionColor,
   resolveStatusAfterCompletionChange,
+  getPlannedDueDate,
+  getPlannedStartDate,
 } from '@/types/task'
 import CommentThread from '@/components/comment/CommentThread.vue'
 import TaskForm from './TaskForm.vue'
@@ -48,6 +50,63 @@ const assigneeLabels = computed(() =>
 
 const reviewerLabels = computed(() =>
   task.value ? resolveReviewerLabels(task.value) : [],
+)
+
+const plannedStart = computed(() =>
+  task.value ? getPlannedStartDate(task.value) : undefined,
+)
+const plannedDue = computed(() =>
+  task.value ? getPlannedDueDate(task.value) : undefined,
+)
+
+/**
+ * 実績 vs 予定の比較クラス
+ * - ok: 予定と同じ or 早い / 工数が予定以内 → 浅绿
+ * - late: 予定より遅い / 工数超過 → 浅红
+ * - どちらか未設定 → ニュートラル
+ */
+type ActualVsPlanTone = 'ok' | 'late' | null
+
+function compareDateVsPlan(
+  actual?: string | null,
+  planned?: string | null,
+): ActualVsPlanTone {
+  if (!actual || !planned) return null
+  const a = actual.slice(0, 10)
+  const p = planned.slice(0, 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(a) || !/^\d{4}-\d{2}-\d{2}$/.test(p)) return null
+  if (a <= p) return 'ok'
+  return 'late'
+}
+
+function compareEffortVsPlan(
+  actual?: number | null,
+  planned?: number | null,
+): ActualVsPlanTone {
+  if (actual == null || planned == null || Number.isNaN(Number(actual)) || Number.isNaN(Number(planned))) {
+    return null
+  }
+  if (Number(actual) <= Number(planned)) return 'ok'
+  return 'late'
+}
+
+function actualToneClass(tone: ActualVsPlanTone): string {
+  if (tone === 'ok') return 'meta-item--ok'
+  if (tone === 'late') return 'meta-item--late'
+  return ''
+}
+
+const actualStartTone = computed((): ActualVsPlanTone =>
+  compareDateVsPlan(task.value?.actualStartDate, plannedStart.value),
+)
+const actualEndTone = computed((): ActualVsPlanTone =>
+  compareDateVsPlan(task.value?.actualDueDate, plannedDue.value),
+)
+const actualEffortTone = computed((): ActualVsPlanTone =>
+  compareEffortVsPlan(
+    task.value?.actualEffortDays,
+    task.value?.estimatedEffortDays,
+  ),
 )
 
 /**
@@ -215,18 +274,28 @@ function initials(name: string): string {
     <v-card v-if="task" class="task-detail-card d-flex flex-column" rounded="0">
       <!-- ヘッダー -->
       <div class="detail-header flex-grow-0">
-        <div class="d-flex align-center px-5 pt-4 pb-2">
+        <div class="d-flex align-start px-5 pt-4 pb-2 ga-2">
           <div class="flex-grow-1 min-w-0">
             <p class="text-caption text-medium-emphasis mb-0 detail-kicker">
               タスク詳細
             </p>
+          </div>
+          <div class="detail-timestamps flex-shrink-0 text-right">
+            <div class="detail-ts-line">
+              <span class="detail-ts-label">作成</span>
+              <span class="detail-ts-val">{{ formatDateTime(task.createdAt) }}</span>
+            </div>
+            <div class="detail-ts-line">
+              <span class="detail-ts-label">更新</span>
+              <span class="detail-ts-val">{{ formatDateTime(task.updatedAt) }}</span>
+            </div>
           </div>
           <v-btn
             icon="mdi-pencil-outline"
             variant="tonal"
             color="primary"
             size="small"
-            class="mr-1"
+            class="ml-1"
             title="編集"
             @click="showEditForm = true"
           />
@@ -265,15 +334,15 @@ function initials(name: string): string {
               優先度: {{ PRIORITY_LABELS[task.priority] }}
             </v-chip>
             <v-chip
-              v-if="task.dueDate"
+              v-if="plannedDue"
               size="default"
               label
-              :color="isOverdue(task.dueDate) ? 'error' : 'default'"
-              :variant="isOverdue(task.dueDate) ? 'flat' : 'tonal'"
+              :color="isOverdue(plannedDue) ? 'error' : 'default'"
+              :variant="isOverdue(plannedDue) ? 'flat' : 'tonal'"
               prepend-icon="mdi-calendar"
             >
-              {{ formatDate(task.dueDate) }}
-              <span v-if="isOverdue(task.dueDate)" class="ml-1">（期限切れ）</span>
+              予定終了 {{ formatDate(plannedDue) }}
+              <span v-if="isOverdue(plannedDue)" class="ml-1">（超過）</span>
             </v-chip>
           </div>
         </div>
@@ -407,37 +476,90 @@ function initials(name: string): string {
           </div>
         </section>
 
-        <!-- 属性グリッド: 開始 / 工数 / 締切 / 作成・更新 -->
-        <section class="meta-grid mx-5 mb-5">
-          <div class="meta-item">
-            <span class="meta-key">開始日</span>
-            <span class="meta-val">{{ formatDate(task.startDate) }}</span>
+        <!--
+          スケジュール（3 列 × 2 行・上下対応）:
+          予定: 開始 | 終了 | 工数
+          実績: 開始 | 終了 | 工数
+        -->
+        <section class="schedule-block mx-5 mb-5">
+          <div class="schedule-row schedule-row--planned">
+            <div class="schedule-row-label">予定</div>
+            <div class="schedule-cells">
+              <div class="meta-item">
+                <span class="meta-key">開始日</span>
+                <span class="meta-val">{{ formatDate(plannedStart) }}</span>
+              </div>
+              <div class="meta-item">
+                <span class="meta-key">終了日</span>
+                <span
+                  class="meta-val"
+                  :class="{ 'text-error font-weight-bold': isOverdue(plannedDue) }"
+                >
+                  {{ formatDate(plannedDue) }}
+                </span>
+              </div>
+              <div class="meta-item">
+                <span class="meta-key">工数（人日）</span>
+                <span class="meta-val">
+                  <template v-if="task.estimatedEffortDays != null">
+                    {{ task.estimatedEffortDays }} 人日
+                  </template>
+                  <template v-else>未設定</template>
+                </span>
+              </div>
+            </div>
           </div>
-          <div class="meta-item">
-            <span class="meta-key">予定工数（人日）</span>
-            <span class="meta-val">
-              <template v-if="task.estimatedEffortDays != null">
-                {{ task.estimatedEffortDays }} 人日
-              </template>
-              <template v-else>未設定</template>
-            </span>
-          </div>
-          <div class="meta-item">
-            <span class="meta-key">締切日</span>
-            <span
-              class="meta-val"
-              :class="{ 'text-error font-weight-bold': isOverdue(task.dueDate) }"
-            >
-              {{ formatDate(task.dueDate) }}
-            </span>
-          </div>
-          <div class="meta-item">
-            <span class="meta-key">作成日</span>
-            <span class="meta-val">{{ formatDateTime(task.createdAt) }}</span>
-          </div>
-          <div class="meta-item">
-            <span class="meta-key">更新日</span>
-            <span class="meta-val">{{ formatDateTime(task.updatedAt) }}</span>
+          <div class="schedule-row schedule-row--actual">
+            <div class="schedule-row-label">実績</div>
+            <div class="schedule-cells">
+              <div
+                class="meta-item"
+                :class="actualToneClass(actualStartTone)"
+                :title="
+                  actualStartTone === 'ok'
+                    ? '予定開始日と同じか早い'
+                    : actualStartTone === 'late'
+                      ? '予定開始日より遅い'
+                      : undefined
+                "
+              >
+                <span class="meta-key">開始日</span>
+                <span class="meta-val">{{ formatDate(task.actualStartDate) }}</span>
+              </div>
+              <div
+                class="meta-item"
+                :class="actualToneClass(actualEndTone)"
+                :title="
+                  actualEndTone === 'ok'
+                    ? '予定終了日と同じか早い'
+                    : actualEndTone === 'late'
+                      ? '予定終了日より遅い'
+                      : undefined
+                "
+              >
+                <span class="meta-key">終了日</span>
+                <span class="meta-val">{{ formatDate(task.actualDueDate) }}</span>
+              </div>
+              <div
+                class="meta-item"
+                :class="actualToneClass(actualEffortTone)"
+                :title="
+                  actualEffortTone === 'ok'
+                    ? '予定工数以内'
+                    : actualEffortTone === 'late'
+                      ? '予定工数を超過'
+                      : undefined
+                "
+              >
+                <span class="meta-key">工数（人日）</span>
+                <span class="meta-val">
+                  <template v-if="task.actualEffortDays != null">
+                    {{ task.actualEffortDays }} 人日
+                  </template>
+                  <template v-else>未設定</template>
+                </span>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -540,16 +662,16 @@ function initials(name: string): string {
   margin: 0 !important;
   height: 100% !important;
   max-height: 100% !important;
-  /* 画面の約 48% まで広げ、最小でも読みやすい幅を確保 */
-  width: min(720px, 100vw) !important;
-  max-width: min(720px, 100vw) !important;
+  /* 3 列スケジュールが窮屈にならないよう幅を広めに */
+  width: min(860px, 100vw) !important;
+  max-width: min(860px, 100vw) !important;
   align-self: stretch !important;
 }
 
 @media (min-width: 1400px) {
   .task-detail-dialog.v-overlay__content {
-    width: min(780px, 48vw) !important;
-    max-width: min(780px, 48vw) !important;
+    width: min(920px, 52vw) !important;
+    max-width: min(920px, 52vw) !important;
   }
 }
 </style>
@@ -576,6 +698,33 @@ function initials(name: string): string {
   text-transform: uppercase;
   font-size: 0.72rem !important;
   font-weight: 600;
+}
+
+.detail-timestamps {
+  padding-top: 2px;
+  line-height: 1.35;
+}
+
+.detail-ts-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.detail-ts-label {
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: rgba(var(--v-theme-on-surface), 0.4);
+}
+
+.detail-ts-val {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: rgba(var(--v-theme-on-surface), 0.55);
+  font-variant-numeric: tabular-nums;
 }
 
 .detail-title {
@@ -728,31 +877,110 @@ function initials(name: string): string {
   border: 1px dashed rgba(var(--v-border-color), var(--v-border-opacity));
 }
 
-.meta-grid {
+.schedule-block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.schedule-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px 14px;
+  grid-template-columns: 44px 1fr;
+  gap: 10px;
+  align-items: stretch;
+}
+
+.schedule-row-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  writing-mode: horizontal-tb;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  border-radius: 10px;
+  padding: 8px 4px;
+  text-align: center;
+  line-height: 1.2;
+}
+
+.schedule-row--planned .schedule-row-label {
+  color: rgb(var(--v-theme-primary));
+  background: rgba(var(--v-theme-primary), 0.1);
+}
+
+.schedule-row--actual .schedule-row-label {
+  color: rgba(var(--v-theme-on-surface), 0.7);
+  background: rgba(var(--v-theme-on-surface), 0.06);
+}
+
+.schedule-cells {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  min-width: 0;
 }
 
 .meta-item {
-  padding: 14px 16px;
-  border-radius: 12px;
+  padding: 12px 14px;
+  border-radius: 10px;
   background: rgba(var(--v-theme-on-surface), 0.035);
+  min-width: 0;
+}
+
+.schedule-row--planned .meta-item {
+  background: rgba(var(--v-theme-primary), 0.05);
+  border: 1px solid rgba(var(--v-theme-primary), 0.1);
+}
+
+.schedule-row--actual .meta-item {
+  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+}
+
+/* 実績が予定どおり or 早い / 工数以内 */
+.schedule-row--actual .meta-item--ok {
+  background: rgba(46, 125, 50, 0.12);
+  border-color: rgba(46, 125, 50, 0.28);
+}
+
+/* 実績が予定より遅い / 工数超過 */
+.schedule-row--actual .meta-item--late {
+  background: rgba(198, 40, 40, 0.1);
+  border-color: rgba(198, 40, 40, 0.28);
 }
 
 .meta-key {
   display: block;
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: rgba(var(--v-theme-on-surface), 0.45);
-  margin-bottom: 4px;
+  letter-spacing: 0.04em;
+  color: rgba(var(--v-theme-on-surface), 0.48);
+  margin-bottom: 6px;
 }
 
 .meta-val {
-  font-size: 0.95rem;
-  font-weight: 600;
+  font-size: 0.98rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  word-break: break-word;
+  line-height: 1.35;
+}
+
+@media (max-width: 560px) {
+  .schedule-row {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .schedule-row-label {
+    justify-content: flex-start;
+    padding: 6px 10px;
+    width: fit-content;
+  }
+
+  .schedule-cells {
+    grid-template-columns: 1fr;
+  }
 }
 
 .attachment-list {

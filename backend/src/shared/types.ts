@@ -88,13 +88,29 @@ export interface Task {
   completionPercent?: number
   /** 予定工数（人日） */
   estimatedEffortDays?: number
+  /** 実績工数（人日） */
+  actualEffortDays?: number
   /**
-   * タスク開始日（YYYY-MM-DD）
-   * 予定工数と組み合わせてスケジュール上の期間を表す
+   * 予定開始日（YYYY-MM-DD）
+   * 予定工数と組み合わせてタイムライン上の期間を表す
+   */
+  plannedStartDate?: string
+  /** 予定終了日（YYYY-MM-DD） */
+  plannedDueDate?: string
+  /** 実績開始日（YYYY-MM-DD） */
+  actualStartDate?: string
+  /** 実績終了日（YYYY-MM-DD） */
+  actualDueDate?: string
+  /**
+   * AssigneeIndex のソートキー互換用（= plannedDueDate をミラー）
+   * API 利用側は plannedDueDate を参照すること
+   */
+  dueDate?: string
+  /**
+   * 旧フィールド（読み取り互換のみ。新規書き込みは plannedStartDate を使う）
+   * @deprecated
    */
   startDate?: string
-  /** 締切日（YYYY-MM-DD） */
-  dueDate?: string
   attachments: AttachmentMeta[]
   createdBy: string
   createdAt: string

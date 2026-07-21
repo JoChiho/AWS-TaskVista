@@ -65,11 +65,30 @@ describe('dashboard/service', () => {
     // アクセス可能なプロジェクトが無いと担当タスクは返さない
     vi.mocked(projectService.listProjects).mockResolvedValue([makeProject()])
     vi.mocked(taskRepository.listTasksByAssignee).mockResolvedValue([
-      makeTask({ taskId: 't1', dueDate: '2026-07-20', status: '進行中', assigneeId: USER_ID }),
-      makeTask({ taskId: 't2', dueDate: '2026-07-10', status: '未着手', assigneeId: USER_ID }),
-      makeTask({ taskId: 't3', dueDate: '2026-07-15', status: '完了', assigneeId: USER_ID }),
+      makeTask({
+        taskId: 't1',
+        plannedDueDate: '2026-07-20',
+        dueDate: '2026-07-20',
+        status: '進行中',
+        assigneeId: USER_ID,
+      }),
+      makeTask({
+        taskId: 't2',
+        plannedDueDate: '2026-07-10',
+        dueDate: '2026-07-10',
+        status: '未着手',
+        assigneeId: USER_ID,
+      }),
+      makeTask({
+        taskId: 't3',
+        plannedDueDate: '2026-07-15',
+        dueDate: '2026-07-15',
+        status: '完了',
+        assigneeId: USER_ID,
+      }),
       makeTask({
         taskId: 't4',
+        plannedDueDate: undefined,
         dueDate: undefined,
         status: '保留',
         assigneeId: USER_ID,

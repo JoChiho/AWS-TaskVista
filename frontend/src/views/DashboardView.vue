@@ -33,6 +33,10 @@ const projectNameById = computed(() => {
 })
 
 /** 締切日が近いタスクかどうかを判定する（3 日以内） */
+function taskDueDate(task: { plannedDueDate?: string; dueDate?: string }): string | undefined {
+  return task.plannedDueDate || task.dueDate || undefined
+}
+
 function isDueSoon(dueDate?: string): boolean {
   if (!dueDate) return false
   const due = new Date(dueDate)
@@ -274,7 +278,7 @@ onMounted(() => {
           <div class="my-task-col-meta">プロジェクト</div>
           <div class="my-task-col-status">ステータス</div>
           <div class="my-task-col-priority">優先度</div>
-          <div class="my-task-col-due">締切日</div>
+          <div class="my-task-col-due">予定終了</div>
           <div class="my-task-col-action" />
         </div>
         <v-divider class="d-none d-md-flex" />
@@ -336,13 +340,13 @@ onMounted(() => {
               <div
                 class="d-flex align-center justify-end"
                 :class="{
-                  'text-error font-weight-bold': isOverdue(task.dueDate),
+                  'text-error font-weight-bold': isOverdue(taskDueDate(task)),
                   'text-warning font-weight-medium':
-                    isDueSoon(task.dueDate) && !isOverdue(task.dueDate),
+                    isDueSoon(taskDueDate(task)) && !isOverdue(taskDueDate(task)),
                 }"
               >
                 <v-icon
-                  v-if="isOverdue(task.dueDate)"
+                  v-if="isOverdue(taskDueDate(task))"
                   size="16"
                   color="error"
                   class="mr-1"
@@ -357,7 +361,7 @@ onMounted(() => {
                 >
                   mdi-calendar
                 </v-icon>
-                <span class="text-body-2 cell-date">{{ formatDueDate(task.dueDate) }}</span>
+                <span class="text-body-2 cell-date">{{ formatDueDate(taskDueDate(task)) }}</span>
               </div>
             </div>
 
@@ -402,7 +406,7 @@ onMounted(() => {
           <div class="my-task-col-meta">プロジェクト</div>
           <div class="my-task-col-status">ステータス</div>
           <div class="my-task-col-priority">優先度</div>
-          <div class="my-task-col-due">締切日</div>
+          <div class="my-task-col-due">予定終了</div>
           <div class="my-task-col-action" />
         </div>
         <v-divider class="d-none d-md-flex" />
@@ -459,13 +463,13 @@ onMounted(() => {
               <div
                 class="d-flex align-center justify-end"
                 :class="{
-                  'text-error font-weight-bold': isOverdue(task.dueDate),
+                  'text-error font-weight-bold': isOverdue(taskDueDate(task)),
                   'text-warning font-weight-medium':
-                    isDueSoon(task.dueDate) && !isOverdue(task.dueDate),
+                    isDueSoon(taskDueDate(task)) && !isOverdue(taskDueDate(task)),
                 }"
               >
                 <v-icon size="14" class="mr-1 text-medium-emphasis">mdi-calendar</v-icon>
-                <span class="text-body-2 cell-date">{{ formatDueDate(task.dueDate) }}</span>
+                <span class="text-body-2 cell-date">{{ formatDueDate(taskDueDate(task)) }}</span>
               </div>
             </div>
             <div class="my-task-col-action">

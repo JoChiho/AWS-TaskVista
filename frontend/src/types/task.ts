@@ -83,9 +83,22 @@ export interface Task {
   completionPercent?: number
   /** 予定工数（人日） */
   estimatedEffortDays?: number
-  /** 開始日（YYYY-MM-DD） */
+  /** 実績工数（人日） */
+  actualEffortDays?: number
+  /** 予定開始日（YYYY-MM-DD） */
+  plannedStartDate?: string
+  /** 予定終了日（YYYY-MM-DD） */
+  plannedDueDate?: string
+  /** 実績開始日（YYYY-MM-DD） */
+  actualStartDate?: string
+  /** 実績終了日（YYYY-MM-DD） */
+  actualDueDate?: string
+  /**
+   * 旧フィールド互換（API は planned* を返す）
+   * @deprecated
+   */
   startDate?: string
-  /** 締切日（YYYY-MM-DD） */
+  /** @deprecated 互換用。表示は plannedDueDate を使う */
   dueDate?: string
   attachments: Attachment[]
   createdBy: string
@@ -108,8 +121,11 @@ export interface CreateTaskPayload {
   reviewers?: TaskReviewer[]
   completionPercent?: number
   estimatedEffortDays?: number | null
-  startDate?: string | null
-  dueDate?: string | null
+  actualEffortDays?: number | null
+  plannedStartDate?: string | null
+  plannedDueDate?: string | null
+  actualStartDate?: string | null
+  actualDueDate?: string | null
 }
 
 /** タスク更新リクエスト */
@@ -125,8 +141,21 @@ export interface UpdateTaskPayload {
   reviewers?: TaskReviewer[]
   completionPercent?: number
   estimatedEffortDays?: number | null
-  startDate?: string | null
-  dueDate?: string | null
+  actualEffortDays?: number | null
+  plannedStartDate?: string | null
+  plannedDueDate?: string | null
+  actualStartDate?: string | null
+  actualDueDate?: string | null
+}
+
+/** 予定開始日（旧 startDate フォールバック） */
+export function getPlannedStartDate(task: Pick<Task, 'plannedStartDate' | 'startDate'>): string | undefined {
+  return task.plannedStartDate || task.startDate || undefined
+}
+
+/** 予定終了日（旧 dueDate フォールバック） */
+export function getPlannedDueDate(task: Pick<Task, 'plannedDueDate' | 'dueDate'>): string | undefined {
+  return task.plannedDueDate || task.dueDate || undefined
 }
 
 /** ステータスのみ更新するリクエスト（かんばんドラッグ専用） */

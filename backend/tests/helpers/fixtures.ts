@@ -37,6 +37,7 @@ export function makeTask(overrides: Partial<Task> = {}): Task {
     requirement: '要望',
     assigneeId: USER_ID,
     assigneeName: 'テストユーザー',
+    plannedDueDate: '2026-07-15',
     dueDate: '2026-07-15',
     attachments: [],
     createdBy: USER_ID,

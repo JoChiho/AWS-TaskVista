@@ -86,17 +86,17 @@ function openTaskDetail(task: Task) {
   }
 }
 
-/** カレンダーへドロップ → 開始日を API 保存 */
+/** カレンダーへドロップ → 予定開始日を API 保存 */
 async function onSetStartDate(payload: {
   taskId: string
-  startDate: string
+  plannedStartDate: string
   task: Task
 }): Promise<void> {
   if (savingStartDate.value) return
   savingStartDate.value = true
   try {
     await tasksStore.updateTask(payload.taskId, {
-      startDate: payload.startDate,
+      plannedStartDate: payload.plannedStartDate,
     })
   } finally {
     savingStartDate.value = false
@@ -178,7 +178,7 @@ watch(projectId, () => {
           {{ projectsStore.currentProject?.name ?? 'タイムライン' }}
         </h1>
         <p class="text-caption text-medium-emphasis mb-0 mt-1">
-          開始日を基準に予定工数分の期間を表示
+          予定開始日を基準に予定工数分の期間を表示
         </p>
       </div>
       <v-progress-circular
