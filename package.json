@@ -7,6 +7,7 @@
     "deploy": "node scripts/deploy.mjs",
     "deploy:backend": "node scripts/deploy.mjs --backend",
     "deploy:frontend": "node scripts/deploy.mjs --frontend",
+    "deploy:routes": "node scripts/deploy.mjs --routes",
     "deploy:bootstrap": "node scripts/deploy.mjs --bootstrap",
     "deploy:dry-run": "node scripts/deploy.mjs --dry-run",
     "local:build": "node scripts/local-build.mjs",

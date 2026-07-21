@@ -4,31 +4,35 @@
  *
  * 使い方:
  *   node scripts/deploy.mjs              # バックエンド + フロントエンド
- *   node scripts/deploy.mjs --backend    # Lambda のみ
+ *   node scripts/deploy.mjs --backend    # Lambda + 不足 API ルート同期
  *   node scripts/deploy.mjs --frontend   # フロントエンドのみ
+ *   node scripts/deploy.mjs --routes     # API Gateway ルート同期のみ
  *   node scripts/deploy.mjs --bootstrap  # 初回: Lambda 作成 + API Gateway 構築
  *   node scripts/deploy.mjs --dry-run    # 実行内容の確認のみ
  */
 import { loadConfig, getApiBaseUrl } from './lib/config.mjs'
-import { run, checkAwsCredentials } from './lib/shell.mjs'
+import { checkAwsCredentials } from './lib/shell.mjs'
 import { deployLambdas } from './lib/lambda.mjs'
 import { deployFrontend } from './lib/frontend.mjs'
 import { bootstrapInfra } from './lib/bootstrap.mjs'
+import { syncApiRoutes } from './lib/sync-api-routes.mjs'
 
 const args = process.argv.slice(2)
 const dryRun = args.includes('--dry-run')
 const bootstrap = args.includes('--bootstrap')
 const backendOnly = args.includes('--backend')
 const frontendOnly = args.includes('--frontend')
-const deployAll = !backendOnly && !frontendOnly
+const routesOnly = args.includes('--routes')
+const deployAll = !backendOnly && !frontendOnly && !routesOnly
 
 function printUsage() {
   console.log(`
 TaskVista デプロイ
 
-  npm run deploy              全てデプロイ
-  npm run deploy:backend      Lambda のみ
+  npm run deploy              全てデプロイ（Lambda + API ルート同期 + フロント）
+  npm run deploy:backend      Lambda + 不足 API ルート同期
   npm run deploy:frontend     フロントエンドのみ
+  npm run deploy:routes       API Gateway ルート同期のみ（新エンドポイント追加時）
   npm run deploy:bootstrap    初回セットアップ（Lambda 作成 + API Gateway）
   npm run deploy -- --dry-run 確認のみ（AWS 操作なし）
 `)
@@ -61,9 +65,6 @@ async function main() {
   if (bootstrap) {
     await bootstrapInfra(config, dryRun)
     apiBaseUrl = getApiBaseUrl(loadConfig())
-    if (!frontendOnly) {
-      // bootstrap は backend も含む
-    }
     if (deployAll || frontendOnly) {
       deployFrontend(config, apiBaseUrl, dryRun)
     }
@@ -76,8 +77,20 @@ async function main() {
       ? `https://dry-run.execute-api.${config.region}.amazonaws.com`
       : getApiBaseUrl(config)
 
+  // 新エンドポイント（例: /dashboard/review-tasks）を API Gateway に反映
+  if (routesOnly) {
+    syncApiRoutes(config, dryRun)
+    console.log('\nルート同期完了!')
+    console.log(`API: ${apiBaseUrl}`)
+    return
+  }
+
   if (deployAll || backendOnly) {
     deployLambdas(config, { dryRun, createIfMissing: false })
+    // Lambda 更新後に不足ルートを自動追加（404 + CORS 誤表示を防ぐ）
+    if (config.apiGatewayId) {
+      syncApiRoutes(config, dryRun)
+    }
   }
 
   if (deployAll || frontendOnly) {
