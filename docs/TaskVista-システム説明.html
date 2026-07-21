@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TaskVista システム説明書</title>
+<style>
+  :root {
+    --c-bg: #0f1620;
+    --c-panel: #ffffff;
+    --c-ink: #1b2733;
+    --c-sub: #5a6b7b;
+    --c-line: #e2e8f0;
+    --c-aws: #ff9900;
+    --c-aws-d: #d97f00;
+    --c-web: #3f51b5;
+    --c-accent: #2563eb;
+    --c-code-bg: #0f172a;
+    --c-warn: #b45309;
+    --c-warn-bg: #fffbeb;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN",
+      "Noto Sans JP", "Segoe UI", Meiryo, sans-serif;
+    color: var(--c-ink);
+    background: #f1f5f9;
+    line-height: 1.75;
+  }
+  header.hero {
+    background: linear-gradient(135deg, #0f1620 0%, #1a237e 55%, #283593 100%);
+    color: #fff;
+    padding: 56px 24px 48px;
+    text-align: center;
+  }
+  header.hero h1 { margin: 0 0 8px; font-size: 2.1rem; letter-spacing: .02em; }
+  header.hero p { margin: 4px 0; color: #cbd5e1; }
+  header.hero .badges { margin-top: 20px; display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+  .badge {
+    display: inline-block; padding: 5px 13px; border-radius: 999px;
+    font-size: .8rem; font-weight: 600; background: rgba(255,255,255,.12);
+    border: 1px solid rgba(255,255,255,.25); color: #e2e8f0;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 20px 80px; }
+  nav.toc {
+    background: var(--c-panel); border: 1px solid var(--c-line); border-radius: 14px;
+    padding: 20px 26px; margin: 28px 0; box-shadow: 0 1px 3px rgba(0,0,0,.05);
+  }
+  nav.toc h2 { margin: 0 0 12px; font-size: 1rem; color: var(--c-sub); letter-spacing: .08em; }
+  nav.toc ol { margin: 0; padding-left: 20px; columns: 2; column-gap: 40px; }
+  nav.toc li { margin: 4px 0; break-inside: avoid; }
+  nav.toc a { color: var(--c-accent); text-decoration: none; }
+  nav.toc a:hover { text-decoration: underline; }
+  section {
+    background: var(--c-panel); border: 1px solid var(--c-line); border-radius: 14px;
+    padding: 30px 34px; margin: 22px 0; box-shadow: 0 1px 3px rgba(0,0,0,.05);
+  }
+  section > h2 {
+    margin: 0 0 18px; font-size: 1.45rem; padding-bottom: 12px;
+    border-bottom: 3px solid var(--c-line); display: flex; align-items: center; gap: 10px;
+  }
+  section > h2 .num {
+    flex: 0 0 auto; width: 32px; height: 32px; border-radius: 8px;
+    background: var(--c-ink); color: #fff; font-size: .95rem; font-weight: 700;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  h3 { font-size: 1.12rem; margin: 26px 0 10px; color: var(--c-ink); }
+  p { margin: 10px 0; }
+  .lead { color: var(--c-sub); }
+  table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: .92rem; }
+  th, td { text-align: left; padding: 9px 12px; border: 1px solid var(--c-line); vertical-align: top; }
+  th { background: #f8fafc; font-weight: 700; color: var(--c-sub); white-space: nowrap; }
+  tr:nth-child(even) td { background: #fbfcfe; }
+  code {
+    background: #eef2f7; color: #b91c5c; padding: 1px 6px; border-radius: 5px;
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; font-size: .86em;
+  }
+  pre {
+    background: var(--c-code-bg); color: #e2e8f0; padding: 16px 18px; border-radius: 10px;
+    overflow-x: auto; font-size: .84rem; line-height: 1.6;
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  }
+  pre code { background: none; color: inherit; padding: 0; }
+  .fig {
+    margin: 20px 0; padding: 18px; background: #f8fafc; border: 1px solid var(--c-line);
+    border-radius: 12px; overflow-x: auto;
+  }
+  .fig figcaption { text-align: center; color: var(--c-sub); font-size: .85rem; margin-top: 10px; }
+  .callout {
+    border-left: 4px solid var(--c-warn); background: var(--c-warn-bg); color: #78350f;
+    padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 16px 0; font-size: .92rem;
+  }
+  .callout strong { color: #92400e; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  @media (max-width: 760px) { .grid2 { grid-template-columns: 1fr; } nav.toc ol { columns: 1; } }
+  .card { border: 1px solid var(--c-line); border-radius: 10px; padding: 16px 18px; background: #fcfdff; }
+  .card h4 { margin: 0 0 6px; font-size: 1rem; }
+  .pill { display:inline-block; padding:2px 9px; border-radius:6px; font-size:.78rem; font-weight:600; }
+  .pill-web { background: #e8eaf6; color: #283593; }
+  .pill-aws { background: #fff3e0; color: var(--c-aws-d); }
+  footer { text-align: center; color: var(--c-sub); font-size: .82rem; padding: 30px; }
+  .icon-note { font-size: .82rem; color: var(--c-sub); margin-top: 8px; }
+  svg text { font-family: -apple-system, "Noto Sans JP", sans-serif; }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <h1>TaskVista システム説明書</h1>
+  <p>小規模チーム向けタスク・プロジェクト進捗管理 Web アプリ</p>
+  <p style="font-size:.85rem;opacity:.8">Vue 3 / Cognito / API Gateway + Lambda / DynamoDB / S3 / CloudFront</p>
+  <div class="badges">
+    <span class="badge">Vue 3 + TypeScript + Vuetify 3</span>
+    <span class="badge">Amazon Cognito</span>
+    <span class="badge">API Gateway (HTTP API)</span>
+    <span class="badge">Lambda (Node.js 20)</span>
+    <span class="badge">DynamoDB · S3 · CloudFront</span>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <nav class="toc">
+    <h2>目次</h2>
+    <ol>
+      <li><a href="#overview">システム概要</a></li>
+      <li><a href="#architecture">全体構成図</a></li>
+      <li><a href="#auth">認証フロー</a></li>
+      <li><a href="#request">リクエストフロー</a></li>
+      <li><a href="#attach">添付ファイルフロー</a></li>
+      <li><a href="#data">データモデル</a></li>
+      <li><a href="#api">API 一覧</a></li>
+      <li><a href="#features">主要機能</a></li>
+      <li><a href="#local">ローカル開発</a></li>
+      <li><a href="#deploy">デプロイ</a></li>
+      <li><a href="#security">セキュリティ</a></li>
+    </ol>
+  </nav>
+
+  <!-- 1 -->
+  <section id="overview">
+    <h2><span class="num">1</span>システム概要</h2>
+    <p class="lead">
+      <strong>TaskVista</strong> は、5〜15 名規模のチーム向けタスク管理システムです。
+      プロジェクト単位でメンバーを共有し、かんばん・テーブル・ダッシュボードで進捗を可視化します。
+      フロントエンドは SPA、バックエンドは AWS Serverless で構成します。
+    </p>
+    <div class="grid2">
+      <div class="card">
+        <h4><span class="pill pill-web">フロントエンド</span> frontend/</h4>
+        <p style="margin:6px 0 0;font-size:.9rem;color:var(--c-sub)">
+          Vue 3 + TypeScript + Vuetify 3 + Pinia。S3 + CloudFront で配信。
+          認証は Cognito Hosted UI（OAuth）。
+        </p>
+      </div>
+      <div class="card">
+        <h4><span class="pill pill-aws">バックエンド</span> backend/</h4>
+        <p style="margin:6px 0 0;font-size:.9rem;color:var(--c-sub)">
+          API Gateway (HTTP API) + Lambda (Node.js 20 / TypeScript) + DynamoDB + S3。
+          ドメイン別に Lambda を分割（projects / tasks / comments / attachments / dashboard）。
+        </p>
+      </div>
+    </div>
+    <h3>主な画面</h3>
+    <table>
+      <tr><th>画面</th><th>内容</th></tr>
+      <tr><td>ダッシュボード</td><td>プロジェクト概要、自分の担当タスク</td></tr>
+      <tr><td>プロジェクト一覧</td><td>作成・編集・詳細・メンバー管理</td></tr>
+      <tr><td>かんばん</td><td>ステータス列のドラッグ＆ドロップ</td></tr>
+      <tr><td>テーブル</td><td>ソート・フィルタ・一覧表示</td></tr>
+      <tr><td>タスク詳細</td><td>要望・説明・完了度・工数・コメント・添付</td></tr>
+    </table>
+  </section>
+
+  <!-- 2 全体構成図 — eg.html と同じ SVG 描画方式 + 公式 AWS アイコン -->
+  <section id="architecture">
+    <h2><span class="num">2</span>全体構成図</h2>
+    <p class="lead">
+      ブラウザ（SPA）から AWS バックエンドまでの全体像です。
+      認証は Cognito、API は JWT 付きで API Gateway → Lambda → DynamoDB / S3 に到達します。
+      図中の番号は典型的な処理の一例であり、データの向きを一方向に固定するものではありません。
+    </p>
+    <figure class="fig">
+      <!--
+        配線ルール（レーン完全分離・交差なし）:
+        · ① x=120 上向き（User 上辺 → Hosting 左）
+        · ② 中段短い水平（User → Cognito）
+        · ④ User 右辺 → x=200 下 → y=378 水平 → API 下辺
+        · ⑤ API 上辺 → Lambda（x=610）
+        · ⑥ 最上端 y=10 → 最左 x=28 → DDB 左辺（①・④ の外）
+        · ⑦ attachments 右下 → x=740（⑤ より右）→ S3 上辺
+        · ⑧ 最左 x=14 ＋ 最下 y=610（他縦レーンと共有しない）
+        · JWT 返却は線を描かず Cognito 内注記
+      -->
+      <svg viewBox="0 0 1060 650" width="100%" role="img" aria-label="TaskVista 全体構成図">
+        <defs>
+          <marker id="arr" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+            <path d="M0,0 L8,3 L0,6 Z" fill="#475569"/>
+          </marker>
+          <style>
+            .box{rx:10;ry:10;stroke-width:1.5;}
+            .lbl{font-size:13px;font-weight:600;fill:#1b2733;}
+            .sub{font-size:11px;fill:#5a6b7b;}
+            .edge{stroke:#475569;stroke-width:1.75;fill:none;marker-end:url(#arr);}
+            .edged{stroke:#0f766e;stroke-width:1.75;fill:none;marker-end:url(#arr);stroke-dasharray:6 4;}
+            .elbl{font-size:11.5px;font-weight:700;fill:#1e293b;paint-order:stroke;stroke:#fff;stroke-width:4.5px;stroke-linejoin:round;}
+            .group{fill:#ffffff;fill-opacity:.65;stroke-width:1.6;stroke-dasharray:6 4;rx:14;ry:14;}
+            .gttl{font-size:12px;font-weight:700;letter-spacing:.04em;}
+          </style>
+        </defs>
+
+        <!-- ===== 上段左: ホスティング ===== -->
+        <rect class="group" x="170" y="24" width="250" height="132" stroke="#64748b"/>
+        <text class="gttl" x="184" y="44" fill="#64748b">ホスティング</text>
+        <rect class="box" x="186" y="54" width="218" height="40" fill="#e8f5e9" stroke="#2e7d32"/>
+        <image href="aws-icons/cloudfront.svg" x="194" y="61" width="26" height="26"/>
+        <text class="lbl" x="228" y="71" font-size="12">CloudFront</text>
+        <text class="sub" x="228" y="86">CDN · HTTPS</text>
+        <rect class="box" x="186" y="102" width="218" height="40" fill="#eef7e6" stroke="#569A31"/>
+        <image href="aws-icons/s3.svg" x="194" y="109" width="26" height="26"/>
+        <text class="lbl" x="228" y="119" font-size="12">S3 · frontend</text>
+        <text class="sub" x="228" y="134">静的 SPA</text>
+
+        <!-- ===== 上段右: Lambda ===== -->
+        <rect class="group" x="450" y="24" width="580" height="132" stroke="#ff9900"/>
+        <text class="gttl" x="464" y="44" fill="#d97f00">Lambda (Node.js 20)</text>
+        <image href="aws-icons/lambda.svg" x="990" y="30" width="22" height="22"/>
+
+        <rect class="box" x="466" y="54" width="100" height="42" fill="#fffaf0" stroke="#ff9900"/>
+        <image href="aws-icons/lambda.svg" x="472" y="61" width="18" height="18"/>
+        <text class="lbl" x="520" y="72" text-anchor="middle" font-size="11">projects</text>
+        <text class="sub" x="520" y="88" text-anchor="middle" font-size="9.5">PJ / メンバー</text>
+
+        <rect class="box" x="578" y="54" width="100" height="42" fill="#fffaf0" stroke="#ff9900"/>
+        <image href="aws-icons/lambda.svg" x="584" y="61" width="18" height="18"/>
+        <text class="lbl" x="632" y="72" text-anchor="middle" font-size="11">tasks</text>
+        <text class="sub" x="632" y="88" text-anchor="middle" font-size="9.5">タスク / 工数</text>
+
+        <rect class="box" x="690" y="54" width="100" height="42" fill="#fffaf0" stroke="#ff9900"/>
+        <image href="aws-icons/lambda.svg" x="696" y="61" width="18" height="18"/>
+        <text class="lbl" x="744" y="72" text-anchor="middle" font-size="11">comments</text>
+        <text class="sub" x="744" y="88" text-anchor="middle" font-size="9.5">コメント</text>
+
+        <rect class="box" x="802" y="54" width="100" height="42" fill="#fffaf0" stroke="#ff9900"/>
+        <image href="aws-icons/lambda.svg" x="808" y="61" width="18" height="18"/>
+        <text class="lbl" x="856" y="72" text-anchor="middle" font-size="11">dashboard</text>
+        <text class="sub" x="856" y="88" text-anchor="middle" font-size="9.5">統計 · /me</text>
+
+        <rect class="box" x="914" y="54" width="98" height="42" fill="#f8fafc" stroke="#94a3b8"/>
+        <image href="aws-icons/iam.svg" x="920" y="61" width="18" height="18"/>
+        <text class="lbl" x="968" y="80" text-anchor="middle" font-size="11">IAM</text>
+
+        <rect class="box" x="466" y="106" width="220" height="38" fill="#fffaf0" stroke="#ff9900"/>
+        <image href="aws-icons/lambda.svg" x="474" y="113" width="18" height="18"/>
+        <text class="lbl" x="590" y="130" text-anchor="middle" font-size="11.5">attachments · Presigned</text>
+
+        <rect class="box" x="702" y="106" width="310" height="38" fill="#f8fafc" stroke="#cbd5e1"/>
+        <text class="sub" x="857" y="130" text-anchor="middle">実行ロールで DDB / S3 / Cognito にアクセス</text>
+
+        <!-- ===== 中段: ユーザー | Cognito | API Gateway ===== -->
+        <rect class="box" x="50" y="236" width="140" height="90" fill="#eef2ff" stroke="#6366f1"/>
+        <image href="aws-icons/client.svg" x="60" y="246" width="26" height="26"/>
+        <text class="lbl" x="120" y="280" text-anchor="middle">ユーザー</text>
+        <text class="sub" x="120" y="300" text-anchor="middle">ブラウザ SPA</text>
+        <text class="sub" x="120" y="316" text-anchor="middle">Vue 3 + Vuetify</text>
+
+        <rect class="box" x="240" y="236" width="200" height="90" fill="#fdeaea" stroke="#DD344C"/>
+        <image href="aws-icons/cognito.svg" x="252" y="246" width="26" height="26"/>
+        <text class="lbl" x="340" y="276" text-anchor="middle">Amazon Cognito</text>
+        <text class="sub" x="340" y="296" text-anchor="middle">Hosted UI · JWT 発行</text>
+        <text class="sub" x="340" y="314" text-anchor="middle">（JWT は SPA へ返却）</text>
+
+        <rect class="box" x="510" y="236" width="200" height="90" fill="#fdeaf3" stroke="#E7157B"/>
+        <image href="aws-icons/api-gateway.svg" x="522" y="246" width="26" height="26"/>
+        <text class="lbl" x="610" y="276" text-anchor="middle">API Gateway</text>
+        <text class="sub" x="610" y="296" text-anchor="middle">HTTP API · CORS</text>
+        <text class="sub" x="610" y="314" text-anchor="middle">JWT 入口</text>
+
+        <!-- ===== 下段: データ（DDB 左寄せ → ⑥ 左外回り） ===== -->
+        <rect class="group" x="40" y="430" width="980" height="148" stroke="#00838f"/>
+        <text class="gttl" x="54" y="452" fill="#00838f">データストア</text>
+
+        <rect class="box" x="56" y="464" width="340" height="92" fill="#e0f7fa" stroke="#00838f"/>
+        <image href="aws-icons/dynamodb.svg" x="68" y="478" width="28" height="28"/>
+        <text class="lbl" x="240" y="492" text-anchor="middle">Amazon DynamoDB</text>
+        <text class="sub" x="240" y="514" text-anchor="middle">Projects · Tasks · Comments · Users</text>
+        <text class="sub" x="240" y="534" text-anchor="middle">GSI / isDeleted（論理削除）</text>
+
+        <rect class="box" x="430" y="464" width="320" height="92" fill="#eef7e6" stroke="#569A31"/>
+        <image href="aws-icons/s3.svg" x="442" y="478" width="28" height="28"/>
+        <text class="lbl" x="600" y="492" text-anchor="middle">S3 · attachments</text>
+        <text class="sub" x="600" y="514" text-anchor="middle">添付ファイル本体</text>
+        <text class="sub" x="600" y="534" text-anchor="middle">メタはタスク側に保持</text>
+
+        <rect class="box" x="780" y="464" width="120" height="92" fill="#f8fafc" stroke="#94a3b8"/>
+        <text class="sub" x="840" y="498" text-anchor="middle" font-size="10">破線</text>
+        <text class="sub" x="840" y="516" text-anchor="middle" font-size="10">= Presigned</text>
+        <text class="sub" x="840" y="534" text-anchor="middle" font-size="10">直接 PUT/GET</text>
+
+        <!-- ========== 配線（レーン完全分離） ========== -->
+
+        <!-- ① User 上辺 → x=120 上 → Hosting 左辺 -->
+        <path class="edge" d="M120,236 L120,84 L168,84"/>
+        <text class="elbl" x="6" y="155">① 静的配信</text>
+        <!-- Hosting 内部: CloudFront → S3 frontend -->
+        <path class="edge" d="M295,94 L295,102"/>
+
+        <!-- ② User → Cognito -->
+        <path class="edge" d="M190,281 L238,281"/>
+        <text class="elbl" x="192" y="271">② ログイン</text>
+
+        <!-- ④ User 右辺下部 → 下（x=200: User–Cognito 間）→ y=378 → API 下辺
+             ①(x=120)・⑥(x=28) と縦レーンを共有しない -->
+        <path class="edge" d="M190,310 L200,310 L200,378 L610,378 L610,326"/>
+        <text class="elbl" x="300" y="370">④ API 呼出 (Bearer JWT)</text>
+
+        <!-- ⑤ API 上辺 → Lambda 帯 下辺 -->
+        <path class="edge" d="M610,236 L610,158"/>
+        <text class="elbl" x="618" y="200">⑤ invoke</text>
+
+        <!-- ⑥ 最上端外回り: projects 上辺 → y=10 → 最左 x=28 → DDB 左辺
+             ① の上端は y=84 なので水平 y=10 とは交差しない -->
+        <path class="edge" d="M516,54 L516,10 L28,10 L28,510 L56,510"/>
+        <text class="elbl" x="34" y="360">⑥ 読み書き</text>
+
+        <!-- ⑦ attachments 右下 → x=740（API 右外・⑤ の x=610 より右）→ S3 上辺
+             水平区間は x≥686 のみなので ⑤ と交差しない -->
+        <path class="edge" d="M686,144 L686,160 L740,160 L740,464"/>
+        <text class="elbl" x="748" y="320">⑦ URL 発行</text>
+
+        <!-- ⑧ Presigned: User 左辺 → 最左 x=14 → 最下 y=610 → S3 下辺
+             ④・⑥ の縦レーンと共有しない -->
+        <path class="edged" d="M50,290 L14,290 L14,610 L600,610 L600,556"/>
+        <text class="elbl" x="220" y="602">⑧ Presigned PUT/GET（添付本体）</text>
+      </svg>
+      <figcaption>図1. 全体構成（レーン分離で交差を解消）</figcaption>
+    </figure>
+    <p style="font-size:.9rem">
+      <strong>①</strong> SPA 取得（CloudFront / S3 frontend）　
+      <strong>②</strong> Cognito ログイン（JWT は Hosted UI から SPA へ返却）　
+      <strong>④⑤</strong> API Gateway 経由で Lambda を invoke　
+      <strong>⑥</strong> DynamoDB へ業務データ　
+      <strong>⑦⑧</strong> 添付は URL 発行後、ブラウザと S3 が直接通信（破線）
+    </p>
+    <p class="icon-note">
+      アイコン出典:
+      <a href="https://aws.amazon.com/architecture/icons/" target="_blank" rel="noopener">AWS Architecture Icons</a>
+      （公式アセットパッケージ）。
+    </p>
+  </section>
+
+  <!-- 3 Auth -->
+  <section id="auth">
+    <h2><span class="num">3</span>認証フロー</h2>
+    <p class="lead">
+      認証は <strong>Cognito User Pool + Hosted UI（OAuth）</strong>。
+      コールバックで ID Token を受け取り、以降の API 呼び出しに付与します。
+    </p>
+    <figure class="fig">
+      <svg viewBox="0 0 960 340" width="100%" role="img" aria-label="認証シーケンス">
+        <defs>
+          <marker id="arr2" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+            <path d="M0,0 L8,3 L0,6 Z" fill="#475569"/>
+          </marker>
+          <style>
+            .actor{font-size:12.5px;font-weight:700;fill:#1b2733;}
+            .ll{stroke:#cbd5e1;stroke-width:1.4;}
+            .msg{stroke:#475569;stroke-width:1.5;marker-end:url(#arr2);}
+            .msgd{stroke:#9333ea;stroke-width:1.5;marker-end:url(#arr2);stroke-dasharray:5 4;}
+            .mt{font-size:11px;fill:#334155;}
+          </style>
+        </defs>
+        <g>
+          <rect x="40" y="20" width="160" height="40" rx="8" fill="#eef2ff" stroke="#6366f1"/>
+          <image href="aws-icons/client.svg" x="48" y="28" width="24" height="24"/>
+          <text class="actor" x="130" y="46" text-anchor="middle">ブラウザ (SPA)</text>
+          <line class="ll" x1="120" y1="60" x2="120" y2="310"/>
+
+          <rect x="360" y="20" width="180" height="40" rx="8" fill="#fdeaea" stroke="#DD344C"/>
+          <image href="aws-icons/cognito.svg" x="368" y="28" width="24" height="24"/>
+          <text class="actor" x="460" y="46" text-anchor="middle">Cognito Hosted UI</text>
+          <line class="ll" x1="450" y1="60" x2="450" y2="310"/>
+
+          <rect x="680" y="20" width="200" height="40" rx="8" fill="#fdeaf3" stroke="#E7157B"/>
+          <image href="aws-icons/api-gateway.svg" x="688" y="28" width="24" height="24"/>
+          <text class="actor" x="790" y="46" text-anchor="middle">API Gateway / Lambda</text>
+          <line class="ll" x1="780" y1="60" x2="780" y2="310"/>
+        </g>
+
+        <line class="msg" x1="120" y1="90" x2="448" y2="90"/>
+        <text class="mt" x="200" y="82">① /oauth2/authorize（Hosted UI）</text>
+
+        <line class="msgd" x1="448" y1="130" x2="122" y2="130"/>
+        <text class="mt" x="200" y="122">② redirect /callback?code=…</text>
+
+        <line class="msg" x1="120" y1="170" x2="448" y2="170"/>
+        <text class="mt" x="200" y="162">③ /oauth2/token でトークン交換</text>
+
+        <line class="msgd" x1="448" y1="210" x2="122" y2="210"/>
+        <text class="mt" x="200" y="202">④ ID / Access Token → sessionStorage</text>
+
+        <line class="msg" x1="120" y1="250" x2="778" y2="250"/>
+        <text class="mt" x="300" y="242">⑤ API: Authorization: Bearer &lt;ID Token&gt;</text>
+
+        <rect x="40" y="275" width="880" height="50" rx="8" fill="#f8fafc" stroke="#cbd5e1"/>
+        <text class="mt" x="55" y="296" font-weight="700">フロント側</text>
+        <text class="mt" x="55" y="314">auth ストアでセッション復元 · 401 時は Refresh Token で再取得 · 失敗時は /login へ</text>
+      </svg>
+      <figcaption>図2. 認証シーケンス</figcaption>
+    </figure>
+    <div class="callout">
+      <strong>表示名:</strong> DynamoDB <code>TaskVista-Users</code> に姓（familyName）・名（givenName）を保存。
+      フルネームは <code>displayName = "姓 名"</code>。アバター表示は姓のみ。
+    </div>
+  </section>
+
+  <!-- 4 Request -->
+  <section id="request">
+    <h2><span class="num">4</span>リクエストフロー</h2>
+    <p class="lead">タスク更新を例にした、フロントから永続化までの流れです。</p>
+    <figure class="fig">
+      <svg viewBox="0 0 980 160" width="100%" role="img" aria-label="リクエストフロー">
+        <defs>
+          <marker id="arr3" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+            <path d="M0,0 L8,3 L0,6 Z" fill="#475569"/>
+          </marker>
+          <style>
+            .fb{rx:9;ry:9;stroke-width:1.5;}
+            .ft{font-size:11.5px;font-weight:600;fill:#1b2733;}
+            .fs{font-size:9.5px;fill:#5a6b7b;}
+            .fe{stroke:#475569;stroke-width:1.6;fill:none;marker-end:url(#arr3);}
+          </style>
+        </defs>
+        <rect class="fb" x="10" y="40" width="140" height="70" fill="#e8eaf6" stroke="#3f51b5"/>
+        <image href="aws-icons/client.svg" x="20" y="50" width="22" height="22"/>
+        <text class="ft" x="80" y="80" text-anchor="middle">TaskDetail / Form</text>
+        <text class="fs" x="80" y="96" text-anchor="middle">UI · Pinia store</text>
+
+        <rect class="fb" x="180" y="40" width="140" height="70" fill="#e8eaf6" stroke="#3f51b5"/>
+        <text class="ft" x="250" y="72" text-anchor="middle">api/client.ts</text>
+        <text class="fs" x="250" y="90" text-anchor="middle">Bearer + Correlation-Id</text>
+
+        <rect class="fb" x="350" y="40" width="150" height="70" fill="#fdeaf3" stroke="#E7157B"/>
+        <image href="aws-icons/api-gateway.svg" x="360" y="50" width="22" height="22"/>
+        <text class="ft" x="430" y="80" text-anchor="middle">API Gateway</text>
+        <text class="fs" x="430" y="96" text-anchor="middle">HTTP API</text>
+
+        <rect class="fb" x="530" y="40" width="160" height="70" fill="#fffaf0" stroke="#ff9900"/>
+        <image href="aws-icons/lambda.svg" x="540" y="50" width="22" height="22"/>
+        <text class="ft" x="620" y="80" text-anchor="middle">Lambda (tasks)</text>
+        <text class="fs" x="620" y="96" text-anchor="middle">認可 · バリデーション</text>
+
+        <rect class="fb" x="720" y="40" width="230" height="70" fill="#e0f7fa" stroke="#00838f"/>
+        <image href="aws-icons/dynamodb.svg" x="730" y="50" width="22" height="22"/>
+        <text class="ft" x="845" y="80" text-anchor="middle">DynamoDB Tasks</text>
+        <text class="fs" x="845" y="96" text-anchor="middle">Put / Update / Query</text>
+
+        <path class="fe" d="M150,75 L178,75"/>
+        <path class="fe" d="M320,75 L348,75"/>
+        <path class="fe" d="M500,75 L528,75"/>
+        <path class="fe" d="M690,75 L718,75"/>
+        <text class="fs" x="490" y="140" text-anchor="middle">↩ JSON { data, meta: { correlationId, timestamp } }</text>
+      </svg>
+      <figcaption>図3. リクエストフロー（タスク更新）</figcaption>
+    </figure>
+  </section>
+
+  <!-- 5 Attach -->
+  <section id="attach">
+    <h2><span class="num">5</span>添付ファイルフロー</h2>
+    <p class="lead">
+      Lambda のペイロード上限を避けるため、ファイル本体はブラウザから S3 へ直接送受信します。
+    </p>
+    <figure class="fig">
+      <!-- 上段: 制御プレーン（API） / 下段: データプレーン（本体転送）で線を分離 -->
+      <svg viewBox="0 0 960 280" width="100%" role="img" aria-label="添付フロー">
+        <defs>
+          <marker id="arr4" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+            <path d="M0,0 L8,3 L0,6 Z" fill="#475569"/>
+          </marker>
+          <style>
+            .fb{rx:9;ry:9;stroke-width:1.5;}
+            .ft{font-size:12px;font-weight:600;fill:#1b2733;}
+            .fs{font-size:10.5px;fill:#5a6b7b;}
+            .fe{stroke:#475569;stroke-width:1.7;fill:none;marker-end:url(#arr4);}
+            .fed{stroke:#0f766e;stroke-width:1.7;fill:none;marker-end:url(#arr4);stroke-dasharray:6 4;}
+            .fl{font-size:11px;font-weight:600;fill:#334155;paint-order:stroke;stroke:#fff;stroke-width:3.5px;}
+            .lane{font-size:10px;font-weight:700;fill:#94a3b8;letter-spacing:.06em;}
+          </style>
+        </defs>
+
+        <text class="lane" x="24" y="28">CONTROL PLANE（URL 発行 · メタ）</text>
+        <text class="lane" x="24" y="188">DATA PLANE（ファイル本体）</text>
+
+        <!-- 上段 3 ノード水平 -->
+        <rect class="fb" x="40" y="48" width="170" height="70" fill="#eef2ff" stroke="#6366f1"/>
+        <image href="aws-icons/client.svg" x="52" y="60" width="26" height="26"/>
+        <text class="ft" x="135" y="80" text-anchor="middle">ブラウザ</text>
+        <text class="fs" x="135" y="98" text-anchor="middle">TaskDetail</text>
+
+        <rect class="fb" x="340" y="48" width="220" height="70" fill="#fffaf0" stroke="#ff9900"/>
+        <image href="aws-icons/lambda.svg" x="352" y="60" width="26" height="26"/>
+        <text class="ft" x="460" y="78" text-anchor="middle">attachments Lambda</text>
+        <text class="fs" x="460" y="98" text-anchor="middle">upload-url / download-url</text>
+
+        <rect class="fb" x="700" y="48" width="220" height="70" fill="#e0f7fa" stroke="#00838f"/>
+        <image href="aws-icons/dynamodb.svg" x="712" y="60" width="26" height="26"/>
+        <text class="ft" x="820" y="78" text-anchor="middle">DynamoDB Tasks</text>
+        <text class="fs" x="820" y="98" text-anchor="middle">attachments メタデータ</text>
+
+        <!-- ① ② 上段水平のみ -->
+        <path class="fe" d="M210,83 L338,83"/>
+        <text class="fl" x="245" y="74">① URL 発行</text>
+        <path class="fe" d="M560,83 L698,83"/>
+        <text class="fl" x="590" y="74">② メタ保存</text>
+
+        <!-- 下段: S3 のみ中央 -->
+        <rect class="fb" x="340" y="200" width="220" height="60" fill="#eef7e6" stroke="#569A31"/>
+        <image href="aws-icons/s3.svg" x="352" y="212" width="26" height="26"/>
+        <text class="ft" x="460" y="228" text-anchor="middle">S3 attachments</text>
+        <text class="fs" x="460" y="246" text-anchor="middle">ファイル本体</text>
+
+        <!-- ③ ブラウザ下 → 下レーン → S3（Lambda と交わらない） -->
+        <path class="fed" d="M125,118 L125,230 L338,230"/>
+        <text class="fl" x="140" y="180">③ Presigned PUT / GET</text>
+
+        <!-- Lambda から S3 への注釈（短い縦線・URL に使う先を示す） -->
+        <path class="fe" d="M450,118 L450,198"/>
+        <text class="fl" x="458" y="160">Presigned 先</text>
+      </svg>
+      <figcaption>図4. 添付ファイル（上段=制御、下段=本体。線はレーン分離）</figcaption>
+    </figure>
+  </section>
+
+  <!-- 6 Data -->
+  <section id="data">
+    <h2><span class="num">6</span>データモデル</h2>
+    <p class="lead">主要エンティティと DynamoDB テーブルの対応です。</p>
+    <figure class="fig">
+      <svg viewBox="0 0 980 420" width="100%" role="img" aria-label="データモデル">
+        <defs>
+          <style>
+            .eb{rx:10;ry:10;stroke-width:1.5;fill:#fff;}
+            .eh{font-size:13px;font-weight:700;fill:#fff;}
+            .el{font-size:11px;fill:#1b2733;}
+            .es{font-size:10px;fill:#5a6b7b;}
+            .er{stroke:#94a3b8;stroke-width:1.5;fill:none;marker-end:url(#arrD);}
+            .ert{font-size:11px;fill:#475569;font-weight:600;}
+          </style>
+          <marker id="arrD" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+            <path d="M0,0 L8,3 L0,6 Z" fill="#94a3b8"/>
+          </marker>
+        </defs>
+
+        <!-- USER -->
+        <rect class="eb" x="40" y="40" width="220" height="160" stroke="#c2185b"/>
+        <rect x="40" y="40" width="220" height="32" rx="10" fill="#c2185b"/>
+        <rect x="40" y="58" width="220" height="14" fill="#c2185b"/>
+        <image href="aws-icons/dynamodb.svg" x="48" y="44" width="20" height="20"/>
+        <text class="eh" x="74" y="60">USER · Users</text>
+        <text class="el" x="54" y="92">userId (PK / Cognito sub)</text>
+        <text class="el" x="54" y="112">email</text>
+        <text class="el" x="54" y="132">familyName / givenName</text>
+        <text class="el" x="54" y="152">displayName（姓 名）</text>
+        <text class="es" x="54" y="178">アバター表示は姓のみ</text>
+
+        <!-- PROJECT -->
+        <rect class="eb" x="360" y="40" width="240" height="180" stroke="#1565c0"/>
+        <rect x="360" y="40" width="240" height="32" rx="10" fill="#1565c0"/>
+        <rect x="360" y="58" width="240" height="14" fill="#1565c0"/>
+        <image href="aws-icons/dynamodb.svg" x="368" y="44" width="20" height="20"/>
+        <text class="eh" x="394" y="60">PROJECT · Projects</text>
+        <text class="el" x="374" y="92">projectId (PK)</text>
+        <text class="el" x="374" y="112">name / status / description</text>
+        <text class="el" x="374" y="132">createdBy</text>
+        <text class="el" x="374" y="152">memberIds[] / members[]</text>
+        <text class="el" x="374" y="172">createdAt / updatedAt</text>
+        <text class="es" x="374" y="198">isDeleted（論理削除）</text>
+
+        <!-- TASK -->
+        <rect class="eb" x="700" y="40" width="250" height="220" stroke="#ed7100"/>
+        <rect x="700" y="40" width="250" height="32" rx="10" fill="#ed7100"/>
+        <rect x="700" y="58" width="250" height="14" fill="#ed7100"/>
+        <image href="aws-icons/dynamodb.svg" x="708" y="44" width="20" height="20"/>
+        <text class="eh" x="734" y="60">TASK · Tasks</text>
+        <text class="el" x="714" y="92">projectId + taskId</text>
+        <text class="el" x="714" y="112">title / status / priority</text>
+        <text class="el" x="714" y="132">completionPercent</text>
+        <text class="el" x="714" y="152">estimatedEffortDays</text>
+        <text class="el" x="714" y="172">assignees[] / dueDate</text>
+        <text class="el" x="714" y="192">requirement / description</text>
+        <text class="es" x="714" y="218">attachments[] メタ / isDeleted</text>
+
+        <!-- COMMENT -->
+        <rect class="eb" x="360" y="280" width="240" height="120" stroke="#7b1fa2"/>
+        <rect x="360" y="280" width="240" height="32" rx="10" fill="#7b1fa2"/>
+        <rect x="360" y="298" width="240" height="14" fill="#7b1fa2"/>
+        <image href="aws-icons/dynamodb.svg" x="368" y="284" width="20" height="20"/>
+        <text class="eh" x="394" y="300">COMMENT · Comments</text>
+        <text class="el" x="374" y="332">commentId / taskId</text>
+        <text class="el" x="374" y="352">content / authorId</text>
+        <text class="el" x="374" y="372">createdAt / updatedAt</text>
+
+        <!-- ATTACH note -->
+        <rect class="eb" x="700" y="300" width="250" height="100" stroke="#569A31"/>
+        <rect x="700" y="300" width="250" height="32" rx="10" fill="#569A31"/>
+        <rect x="700" y="318" width="250" height="14" fill="#569A31"/>
+        <image href="aws-icons/s3.svg" x="708" y="304" width="20" height="20"/>
+        <text class="eh" x="734" y="320">ATTACHMENT · S3</text>
+        <text class="el" x="714" y="352">本体: taskvista-attachments</text>
+        <text class="es" x="714" y="372">メタ: タスク.attachments[]</text>
+
+        <!-- relations -->
+        <path class="er" d="M260,100 L358,100"/>
+        <text class="ert" x="280" y="92">member_of</text>
+        <path class="er" d="M600,120 L698,120"/>
+        <text class="ert" x="620" y="112">1 : N</text>
+        <path class="er" d="M820,260 L820,298"/>
+        <text class="ert" x="828" y="280">メタ</text>
+        <path class="er" d="M780,260 C700,280 620,280 520,280"/>
+        <text class="ert" x="620" y="268">1 : N comments</text>
+        <path class="er" d="M150,200 C150,320 300,340 358,340"/>
+        <text class="ert" x="160" y="280">author</text>
+        <path class="er" d="M150,160 C280,200 320,200 360,180"/>
+        <text class="ert" x="220" y="200">assigned</text>
+      </svg>
+      <figcaption>図5. データモデル（テーブル対応）</figcaption>
+    </figure>
+
+    <h3>プロジェクト status</h3>
+    <p><code>planning</code> / <code>active</code> / <code>on_hold</code> / <code>completed</code> / <code>archived</code>
+    （表示: 計画中 · 進行中 · 保留 · 完了 · アーカイブ）</p>
+    <h3>タスク status（日本語固定）</h3>
+    <p>未着手 / 進行中 / レビュー待ち / 完了 / 保留</p>
+    <h3>完了度とステータス連動</h3>
+    <table>
+      <tr><th>完了度</th><th>自動ステータス</th><th>例外</th></tr>
+      <tr><td>0%</td><td>未着手</td><td rowspan="3">レビュー待ち・保留は連動しない<br/>（任意の完了度で維持可能）</td></tr>
+      <tr><td>1〜99%</td><td>進行中</td></tr>
+      <tr><td>100%</td><td>完了</td></tr>
+    </table>
+  </section>
+
+  <!-- 7 API -->
+  <section id="api">
+    <h2><span class="num">7</span>API 一覧</h2>
+    <table>
+      <tr><th>メソッド</th><th>パス</th><th>Lambda</th><th>説明</th></tr>
+      <tr><td>GET/POST</td><td><code>/projects</code></td><td>projects</td><td>一覧・作成</td></tr>
+      <tr><td>GET/PUT/DELETE</td><td><code>/projects/{id}</code></td><td>projects</td><td>詳細・更新・削除</td></tr>
+      <tr><td>POST/DELETE</td><td><code>/projects/{id}/members…</code></td><td>projects</td><td>メンバー</td></tr>
+      <tr><td>GET/POST</td><td><code>/projects/{id}/tasks</code></td><td>tasks</td><td>タスク一覧・作成</td></tr>
+      <tr><td>GET/PUT/DELETE</td><td><code>/tasks/{id}</code></td><td>tasks</td><td>タスク詳細・更新</td></tr>
+      <tr><td>PATCH</td><td><code>/tasks/{id}/status</code></td><td>tasks</td><td>かんばん用</td></tr>
+      <tr><td>GET/POST/DELETE</td><td><code>/tasks/{id}/comments…</code></td><td>comments</td><td>コメント</td></tr>
+      <tr><td>GET/POST/DELETE</td><td><code>/tasks/{id}/attachments…</code></td><td>attachments</td><td>添付・URL</td></tr>
+      <tr><td>GET</td><td><code>/dashboard/summary</code></td><td>dashboard</td><td>概要統計</td></tr>
+      <tr><td>GET</td><td><code>/dashboard/my-tasks</code></td><td>dashboard</td><td>担当タスク</td></tr>
+      <tr><td>GET/PUT</td><td><code>/me</code></td><td>dashboard</td><td>プロフィール</td></tr>
+      <tr><td>POST</td><td><code>/users/display-names</code></td><td>dashboard</td><td>表示名一括</td></tr>
+    </table>
+  </section>
+
+  <!-- 8 Features -->
+  <section id="features">
+    <h2><span class="num">8</span>主要機能</h2>
+    <div class="grid2">
+      <div class="card">
+        <h4>プロジェクト</h4>
+        <p style="margin:0;font-size:.9rem;color:var(--c-sub)">
+          作成・編集・論理削除、ステータス、メンバー招待（オーナー権限）、
+          ダッシュボード概要（人数・最終更新・タスク集計）。
+        </p>
+      </div>
+      <div class="card">
+        <h4>タスク</h4>
+        <p style="margin:0;font-size:.9rem;color:var(--c-sub)">
+          かんばん / テーブル、複数担当、完了度、予定工数（人日）、
+          締切日、要望・説明、コメント、添付。
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 9 Local -->
+  <section id="local">
+    <h2><span class="num">9</span>ローカル開発</h2>
+    <p class="lead">
+      Lambda 相当の処理だけローカルで実行し、DynamoDB / Cognito / S3 はクラウドを共有します。
+    </p>
+    <figure class="fig">
+      <svg viewBox="0 0 900 140" width="100%" role="img" aria-label="ローカル構成">
+        <defs>
+          <marker id="arrL" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+            <path d="M0,0 L8,3 L0,6 Z" fill="#475569"/>
+          </marker>
+          <style>
+            .fb{rx:9;ry:9;stroke-width:1.5;}
+            .ft{font-size:12px;font-weight:600;fill:#1b2733;}
+            .fs{font-size:10px;fill:#5a6b7b;}
+            .fe{stroke:#475569;stroke-width:1.6;fill:none;marker-end:url(#arrL);}
+          </style>
+        </defs>
+        <rect class="fb" x="40" y="35" width="180" height="70" fill="#eef2ff" stroke="#6366f1"/>
+        <image href="aws-icons/client.svg" x="50" y="48" width="24" height="24"/>
+        <text class="ft" x="140" y="68" text-anchor="middle">frontend :5173</text>
+        <text class="fs" x="140" y="86" text-anchor="middle">npm run dev</text>
+
+        <rect class="fb" x="300" y="35" width="220" height="70" fill="#fffaf0" stroke="#ff9900"/>
+        <image href="aws-icons/lambda.svg" x="310" y="48" width="24" height="24"/>
+        <text class="ft" x="420" y="68" text-anchor="middle">local:api :3001</text>
+        <text class="fs" x="420" y="86" text-anchor="middle">backend/dist handlers</text>
+
+        <rect class="fb" x="600" y="35" width="260" height="70" fill="#e0f7fa" stroke="#00838f"/>
+        <image href="aws-icons/dynamodb.svg" x="610" y="48" width="24" height="24"/>
+        <text class="ft" x="740" y="68" text-anchor="middle">AWS クラウド</text>
+        <text class="fs" x="740" y="86" text-anchor="middle">DynamoDB · Cognito · S3</text>
+
+        <path class="fe" d="M220,70 L298,70"/>
+        <path class="fe" d="M520,70 L598,70"/>
+      </svg>
+      <figcaption>図6. ローカル開発構成</figcaption>
+    </figure>
+<pre><code># 端末1
+cd backend &amp;&amp; npm run build
+
+# 端末2
+npm run local:api
+
+# 端末3
+cd frontend &amp;&amp; npm run dev
+# VITE_API_BASE_URL=http://127.0.0.1:3001</code></pre>
+    <div class="callout">
+      Cognito アプリクライアントに
+      <code>http://localhost:5173/callback</code> と
+      <code>http://localhost:5173/login</code> を登録してください。
+    </div>
+  </section>
+
+  <!-- 10 Deploy -->
+  <section id="deploy">
+    <h2><span class="num">10</span>デプロイ</h2>
+    <p>本番反映はルートの <code>scripts/deploy.mjs</code> を使用します。</p>
+<pre><code>npm run deploy              # 全体
+npm run deploy:backend      # Lambda 等
+npm run deploy:frontend     # S3 + CloudFront 無効化</code></pre>
+    <p style="font-size:.9rem;color:var(--c-sub)">
+      設定は <code>deploy.config.json</code>。
+      <code>template.yaml</code> は主に SAM ローカル向けです。
+    </p>
+  </section>
+
+  <!-- 11 Security -->
+  <section id="security">
+    <h2><span class="num">11</span>セキュリティ</h2>
+    <ul>
+      <li>API は JWT 必須（ローカル開発時のみモックヘッダ可）</li>
+      <li>プロジェクト権限は createdBy / memberIds / 招待メールで判定</li>
+      <li>メンバー追加は原則オーナーのみ</li>
+      <li>添付は時間制限付き Presigned URL</li>
+      <li>Cognito Admin API はフロントから直接呼ばない</li>
+      <li>相関 ID（X-Correlation-Id）でリクエスト追跡</li>
+    </ul>
+  </section>
+
+  <footer>
+    TaskVista システム説明書 · 2026-07-17 ·
+    図は eg.html と同様の SVG 方式 ·
+    アイコン:
+    <a href="https://aws.amazon.com/architecture/icons/">AWS Architecture Icons</a>
+  </footer>
+</div>
+</body>
+</html>

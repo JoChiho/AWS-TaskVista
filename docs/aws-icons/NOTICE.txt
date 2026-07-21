@@ -1,0 +1,4 @@
+﻿AWS Architecture Icons
+Source: https://aws.amazon.com/architecture/icons/
+Official Icon package (quarterly release). Used for architecture documentation diagrams.
+AWS permits customers and partners to use these assets for architecture diagrams.

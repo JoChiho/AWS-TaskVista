@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Findix Chat（AWS版）システム説明書</title>
+<style>
+  :root {
+    --c-bg: #0f1620;
+    --c-panel: #ffffff;
+    --c-ink: #1b2733;
+    --c-sub: #5a6b7b;
+    --c-line: #e2e8f0;
+    --c-aws: #ff9900;
+    --c-aws-d: #d97f00;
+    --c-web: #42b883;
+    --c-cognito: #c925d1;
+    --c-bedrock: #01a88d;
+    --c-accent: #2563eb;
+    --c-code-bg: #0f172a;
+    --c-warn: #b45309;
+    --c-warn-bg: #fffbeb;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN",
+      "Noto Sans JP", "Segoe UI", Meiryo, sans-serif;
+    color: var(--c-ink);
+    background: #f1f5f9;
+    line-height: 1.75;
+  }
+  header.hero {
+    background: linear-gradient(135deg, #0f1620 0%, #1d3a53 60%, #235a4a 100%);
+    color: #fff;
+    padding: 56px 24px 48px;
+    text-align: center;
+  }
+  header.hero h1 { margin: 0 0 8px; font-size: 2.1rem; letter-spacing: .02em; }
+  header.hero p { margin: 4px 0; color: #cbd5e1; }
+  header.hero .badges { margin-top: 20px; display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+  .badge {
+    display: inline-block; padding: 5px 13px; border-radius: 999px;
+    font-size: .8rem; font-weight: 600; background: rgba(255,255,255,.12);
+    border: 1px solid rgba(255,255,255,.25); color: #e2e8f0;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 20px 80px; }
+  nav.toc {
+    background: var(--c-panel); border: 1px solid var(--c-line); border-radius: 14px;
+    padding: 20px 26px; margin: 28px 0; box-shadow: 0 1px 3px rgba(0,0,0,.05);
+  }
+  nav.toc h2 { margin: 0 0 12px; font-size: 1rem; color: var(--c-sub); letter-spacing: .08em; }
+  nav.toc ol { margin: 0; padding-left: 20px; columns: 2; column-gap: 40px; }
+  nav.toc li { margin: 4px 0; break-inside: avoid; }
+  nav.toc a { color: var(--c-accent); text-decoration: none; }
+  nav.toc a:hover { text-decoration: underline; }
+  section {
+    background: var(--c-panel); border: 1px solid var(--c-line); border-radius: 14px;
+    padding: 30px 34px; margin: 22px 0; box-shadow: 0 1px 3px rgba(0,0,0,.05);
+  }
+  section > h2 {
+    margin: 0 0 18px; font-size: 1.45rem; padding-bottom: 12px;
+    border-bottom: 3px solid var(--c-line); display: flex; align-items: center; gap: 10px;
+  }
+  section > h2 .num {
+    flex: 0 0 auto; width: 32px; height: 32px; border-radius: 8px;
+    background: var(--c-ink); color: #fff; font-size: .95rem; font-weight: 700;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  h3 { font-size: 1.12rem; margin: 26px 0 10px; color: var(--c-ink); }
+  p { margin: 10px 0; }
+  .lead { color: var(--c-sub); }
+  table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: .92rem; }
+  th, td { text-align: left; padding: 9px 12px; border: 1px solid var(--c-line); vertical-align: top; }
+  th { background: #f8fafc; font-weight: 700; color: var(--c-sub); white-space: nowrap; }
+  tr:nth-child(even) td { background: #fbfcfe; }
+  code {
+    background: #eef2f7; color: #b91c5c; padding: 1px 6px; border-radius: 5px;
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; font-size: .86em;
+  }
+  pre {
+    background: var(--c-code-bg); color: #e2e8f0; padding: 16px 18px; border-radius: 10px;
+    overflow-x: auto; font-size: .84rem; line-height: 1.6;
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  }
+  pre code { background: none; color: inherit; padding: 0; }
+  .fig {
+    margin: 20px 0; padding: 18px; background: #f8fafc; border: 1px solid var(--c-line);
+    border-radius: 12px; overflow-x: auto;
+  }
+  .fig figcaption { text-align: center; color: var(--c-sub); font-size: .85rem; margin-top: 10px; }
+  .callout {
+    border-left: 4px solid var(--c-warn); background: var(--c-warn-bg); color: #78350f;
+    padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 16px 0; font-size: .92rem;
+  }
+  .callout strong { color: #92400e; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  @media (max-width: 760px) { .grid2 { grid-template-columns: 1fr; } nav.toc ol { columns: 1; } }
+  .card { border: 1px solid var(--c-line); border-radius: 10px; padding: 16px 18px; background: #fcfdff; }
+  .card h4 { margin: 0 0 6px; font-size: 1rem; }
+  .pill { display:inline-block; padding:2px 9px; border-radius:6px; font-size:.78rem; font-weight:600; }
+  .pill-web { background: #e6f7ef; color: #1d8a5d; }
+  .pill-aws { background: #fff3e0; color: var(--c-aws-d); }
+  footer { text-align: center; color: var(--c-sub); font-size: .82rem; padding: 30px; }
+  svg text { font-family: -apple-system, "Noto Sans JP", sans-serif; }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <h1>Findix Chat（AWS版）システム説明書</h1>
+  <p>findix-chat-web-aws &nbsp;＋&nbsp; findix-chat-api-aws</p>
+  <p style="font-size:.85rem;opacity:.8">Vue 3 / Cognito / API Gateway + Lambda / Amazon Bedrock</p>
+  <div class="badges">
+    <span class="badge">Vue 3 + TypeScript + Vuetify 3</span>
+    <span class="badge">Amazon Cognito</span>
+    <span class="badge">API Gateway (HTTP API)</span>
+    <span class="badge">Lambda (Python 3.12)</span>
+    <span class="badge">Amazon Bedrock</span>
+    <span class="badge">Terraform</span>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <nav class="toc">
+    <h2>目次</h2>
+    <ol>
+      <li><a href="#overview">システム概要</a></li>
+      <li><a href="#architecture">全体構成図</a></li>
+      <li><a href="#repos">リポジトリ構成</a></li>
+      <li><a href="#stack">技術スタック</a></li>
+      <li><a href="#modes">デプロイモード／操作モード</a></li>
+      <li><a href="#auth">認証フロー</a></li>
+      <li><a href="#request">リクエストフロー</a></li>
+      <li><a href="#rag">社内検索（RAG）構成</a></li>
+      <li><a href="#backend">バックエンド（AWS / Terraform）</a></li>
+      <li><a href="#env">環境変数</a></li>
+      <li><a href="#deploy">デプロイ手順</a></li>
+      <li><a href="#todo">デモレベルの割り切り（本番化TODO）</a></li>
+    </ol>
+  </nav>
+
+  <!-- 1 -->
+  <section id="overview">
+    <h2><span class="num">1</span>システム概要</h2>
+    <p class="lead">
+      Findix Chat は、ブラウザ上で動作する AI チャット／画像生成／社内文書検索のための Web アプリケーションです。
+      本書は <strong>AWS 版</strong>（GCP 版 <code>findix-chat-web</code> をフォークし、認証・ホスティング・バックエンドを AWS へ全面移植したもの）を対象とします。
+      Firebase 依存は一切含まず、GCP 版とは別リポジトリで並行運用しています。
+    </p>
+    <div class="grid2">
+      <div class="card">
+        <h4><span class="pill pill-web">フロントエンド</span> findix-chat-web-aws</h4>
+        <p style="margin:6px 0 0;font-size:.9rem;color:var(--c-sub)">
+          Vue 3 (TSX) + TypeScript + Vuetify 3 の SPA。Amplify Hosting または S3 + CloudFront で配信。
+          認証は Cognito Hosted UI（OAuth フェデレーション）。
+        </p>
+      </div>
+      <div class="card">
+        <h4><span class="pill pill-aws">バックエンド</span> findix-chat-api-aws</h4>
+        <p style="margin:6px 0 0;font-size:.9rem;color:var(--c-sub)">
+          API Gateway (HTTP API) + Lambda (Python) + Amazon Bedrock。Terraform で IaC 管理。
+          ai-tool 単一環境のデモレベル最小構成（navino は対象外）。
+        </p>
+      </div>
+    </div>
+    <h3>主な機能</h3>
+    <table>
+      <tr><th>機能</th><th>説明</th><th>エンドポイント</th><th>Bedrock モデル</th></tr>
+      <tr><td>チャット</td><td>AI との対話（直近6件の履歴を送信）</td><td><code>POST /v1/ai-chat</code></td><td>Claude (Haiku 4.5 / Sonnet 4.6)</td></tr>
+      <tr><td>画像生成</td><td>テキストから画像生成（best-effort）</td><td><code>POST /v1/ai-image</code></td><td>Amazon Nova Canvas</td></tr>
+      <tr><td>社内検索</td><td>社内文書 PDF への RAG 検索</td><td><code>POST /v1/internal-search</code></td><td>Claude + Titan Embeddings (KB)</td></tr>
+    </table>
+  </section>
+
+  <!-- 2 -->
+  <section id="architecture">
+    <h2><span class="num">2</span>全体構成図</h2>
+    <p class="lead">ブラウザ（SPA）から AWS バックエンドまでの全体像です。認証は Cognito、API は JWT 検証付きの API Gateway を経由して Lambda → Bedrock へ到達します。</p>
+    <figure class="fig">
+      <svg viewBox="0 0 980 560" width="100%" role="img" aria-label="全体構成図">
+        <defs>
+          <marker id="arr" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+            <path d="M0,0 L8,3 L0,6 Z" fill="#475569"/>
+          </marker>
+          <!-- service icons (公式アイコン風の簡易 SVG) -->
+          <symbol id="ic-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" fill="#6366f1"/><path d="M4 21c0-5 16-5 16 0z" fill="#6366f1"/></symbol>
+          <symbol id="ic-amplify" viewBox="0 0 24 24"><path d="M12 3 4 21h3.6l4.4-9.8L16.4 21H20z" fill="#FF9900"/><path d="M9.6 15.5h4.8l1.5 3.3H8.1z" fill="#232F3E"/></symbol>
+          <symbol id="ic-s3" viewBox="0 0 24 24"><path d="M5 5h14l-1.6 15H6.6z" fill="#569A31"/><ellipse cx="12" cy="5" rx="7" ry="2" fill="#7AA116"/></symbol>
+          <symbol id="ic-cognito" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-4 8-8 9-4-1-8-4-8-9V6z" fill="#DD344C"/><circle cx="12" cy="10" r="2.4" fill="#fff"/><path d="M8 16c0-3 8-3 8 0z" fill="#fff"/></symbol>
+          <symbol id="ic-apigw" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="4" fill="#E7157B"/><path d="M8 12l8-5M8 12l8 5" stroke="#fff" stroke-width="1.4"/><circle cx="8" cy="12" r="2" fill="#fff"/><circle cx="16" cy="7" r="2" fill="#fff"/><circle cx="16" cy="17" r="2" fill="#fff"/></symbol>
+          <symbol id="ic-lambda" viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="4" fill="#ED7100"/><path d="M7 18l4-12h2.4l5 12h-2.8l-3.5-9-2.4 9z" fill="#fff"/></symbol>
+          <symbol id="ic-cloudwatch" viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="4" fill="#E7157B"/><path d="M5 15l4-4 3 3 6-7" stroke="#fff" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+          <symbol id="ic-bedrock" viewBox="0 0 24 24"><path d="M12 2l9 5v10l-9 5-9-5V7z" fill="none" stroke="#01A88D" stroke-width="2"/><circle cx="12" cy="12" r="2.5" fill="#01A88D"/></symbol>
+          <style>
+            .box{rx:10;ry:10;stroke-width:1.5;}
+            .lbl{font-size:13px;font-weight:600;fill:#1b2733;}
+            .sub{font-size:11px;fill:#5a6b7b;}
+            .edge{stroke:#475569;stroke-width:1.6;fill:none;marker-end:url(#arr);}
+            .edged{stroke:#475569;stroke-width:1.6;fill:none;marker-end:url(#arr);stroke-dasharray:5 4;}
+            .elbl{font-size:10.5px;fill:#334155;paint-order:stroke;stroke:#fff;stroke-width:3.5px;stroke-linejoin:round;}
+            .group{fill:none;stroke-width:1.5;stroke-dasharray:6 4;rx:14;ry:14;}
+            .gttl{font-size:12px;font-weight:700;letter-spacing:.05em;}
+          </style>
+        </defs>
+
+        <!-- User -->
+        <rect class="box" x="30" y="40" width="150" height="86" fill="#eef2ff" stroke="#6366f1"/>
+        <use href="#ic-user" x="40" y="52" width="20" height="20"/>
+        <text class="lbl" x="112" y="72" text-anchor="middle">ユーザー</text>
+        <text class="sub" x="105" y="92" text-anchor="middle">ブラウザ (SPA)</text>
+        <text class="sub" x="105" y="108" text-anchor="middle">@findix.co.jp</text>
+
+        <!-- Hosting group -->
+        <rect class="group" x="240" y="20" width="220" height="150" stroke="#94a3b8"/>
+        <text class="gttl" x="250" y="40" fill="#5a6b7b">ホスティング (AWS)</text>
+        <rect class="box" x="262" y="55" width="176" height="44" fill="#fff3e0" stroke="#FF9900"/>
+        <use href="#ic-amplify" x="270" y="69" width="16" height="16"/>
+        <text class="lbl" x="292" y="82" font-size="11.5">Amplify / CloudFront</text>
+        <rect class="box" x="262" y="108" width="176" height="44" fill="#eef7e6" stroke="#569A31"/>
+        <use href="#ic-s3" x="270" y="121" width="16" height="16"/>
+        <text class="lbl" x="292" y="128">S3 (静的 dist/)</text>
+        <text class="sub" x="292" y="143">Vue SPA バンドル</text>
+
+        <!-- Cognito -->
+        <rect class="box" x="240" y="220" width="220" height="86" fill="#fdeaea" stroke="#DD344C"/>
+        <use href="#ic-cognito" x="250" y="232" width="22" height="22"/>
+        <text class="lbl" x="360" y="252" text-anchor="middle">Amazon Cognito</text>
+        <text class="sub" x="350" y="272" text-anchor="middle">User Pool + Hosted UI</text>
+        <text class="sub" x="350" y="288" text-anchor="middle">Google / Microsoft 連携</text>
+
+        <!-- API Gateway -->
+        <rect class="box" x="540" y="220" width="180" height="86" fill="#fdeaf3" stroke="#E7157B"/>
+        <use href="#ic-apigw" x="550" y="232" width="22" height="22"/>
+        <text class="lbl" x="642" y="250" text-anchor="middle">API Gateway</text>
+        <text class="sub" x="630" y="269" text-anchor="middle">HTTP API</text>
+        <text class="sub" x="630" y="285" text-anchor="middle">JWT オーソライザ</text>
+
+        <!-- Backend group -->
+        <rect class="group" x="540" y="40" width="410" height="150" stroke="#ff9900"/>
+        <text class="gttl" x="550" y="60" fill="#d97f00">バックエンド (Lambda Python 3.12)</text>
+        <use href="#ic-lambda" x="792" y="47" width="16" height="16"/>
+        <rect class="box" x="556" y="72" width="120" height="40" fill="#fffaf0" stroke="#ff9900"/>
+        <use href="#ic-lambda" x="562" y="82" width="15" height="15"/>
+        <text class="lbl" x="624" y="97" text-anchor="middle" font-size="12">ai-chat</text>
+        <rect class="box" x="688" y="72" width="120" height="40" fill="#fffaf0" stroke="#ff9900"/>
+        <use href="#ic-lambda" x="694" y="82" width="15" height="15"/>
+        <text class="lbl" x="756" y="97" text-anchor="middle" font-size="12">ai-image</text>
+        <rect class="box" x="556" y="122" width="252" height="40" fill="#fffaf0" stroke="#ff9900"/>
+        <use href="#ic-lambda" x="562" y="132" width="15" height="15"/>
+        <text class="lbl" x="686" y="147" text-anchor="middle" font-size="12">internal-search</text>
+        <rect x="820" y="72" width="118" height="90" rx="8" fill="#f1f5f9" stroke="#94a3b8"/>
+        <use href="#ic-cloudwatch" x="869" y="80" width="20" height="20"/>
+        <text class="sub" x="879" y="118" text-anchor="middle">CloudWatch</text>
+        <text class="sub" x="879" y="134" text-anchor="middle">Logs</text>
+
+        <!-- Bedrock -->
+        <rect class="box" x="540" y="370" width="410" height="150" fill="#e6f6f3" stroke="#01a88d"/>
+        <text class="gttl" x="560" y="396" fill="#01a88d">Amazon Bedrock</text>
+        <use href="#ic-bedrock" x="916" y="378" width="20" height="20"/>
+        <rect class="box" x="560" y="412" width="180" height="44" fill="#fff" stroke="#01a88d"/>
+        <text class="lbl" x="650" y="439" text-anchor="middle" font-size="12">Claude (Haiku/Sonnet)</text>
+        <rect class="box" x="752" y="412" width="178" height="44" fill="#fff" stroke="#01a88d"/>
+        <text class="lbl" x="841" y="439" text-anchor="middle" font-size="12">Nova Canvas</text>
+        <rect class="box" x="560" y="466" width="370" height="44" fill="#fff" stroke="#01a88d"/>
+        <text class="lbl" x="745" y="487" text-anchor="middle" font-size="12">Knowledge Base + Titan Embeddings</text>
+        <text class="sub" x="745" y="502" text-anchor="middle">S3 Vectors / 社内文書 S3</text>
+
+        <!-- edges -->
+        <!-- user -> hosting -->
+        <path class="edge" d="M180,72 L258,72"/>
+        <text class="elbl" x="200" y="62">① HTML/JS</text>
+        <!-- user -> cognito -->
+        <path class="edge" d="M150,126 C150,200 200,250 238,258"/>
+        <text class="elbl" x="85" y="172">② ログイン</text>
+        <!-- cognito -> user (token) -->
+        <path class="edged" d="M252,228 C170,180 150,160 150,128"/>
+        <text class="elbl" x="80" y="200">③ IDトークン</text>
+        <!-- user -> apigw (api call with bearer) -->
+        <path class="edge" d="M180,100 C420,140 470,200 538,238"/>
+        <text class="elbl" x="372" y="198">④ API呼出 (Bearer)</text>
+        <!-- apigw -> cognito (verify) -->
+        <path class="edged" d="M538,270 L462,270"/>
+        <text class="elbl" x="468" y="263">⑤ 署名検証</text>
+        <!-- apigw -> lambda -->
+        <path class="edge" d="M630,220 L630,165"/>
+        <text class="elbl" x="636" y="195">⑥ invoke</text>
+        <!-- lambda -> bedrock -->
+        <path class="edge" d="M682,162 C682,300 660,330 650,368"/>
+        <text class="elbl" x="688" y="340">⑦ 推論/検索</text>
+      </svg>
+      <figcaption>図1. 全体構成（番号は処理順を表す）</figcaption>
+    </figure>
+    <p style="font-size:.9rem">
+      ①ブラウザがホスティングから SPA を取得 → ②③ Cognito Hosted UI でログインし ID トークンを取得 →
+      ④ API 呼び出し時に <code>Authorization: Bearer &lt;IDトークン&gt;</code> を付与 →
+      ⑤ API Gateway の JWT オーソライザが Cognito の署名を検証 →
+      ⑥ 該当 Lambda を invoke →
+      ⑦ Lambda が Bedrock で推論／RAG 検索を実行して応答を返却。
+    </p>
+  </section>
+
+  <!-- 3 -->
+  <section id="repos">
+    <h2><span class="num">3</span>リポジトリ構成</h2>
+    <div class="grid2">
+      <div>
+        <h3><span class="pill pill-web">フロント</span> findix-chat-web-aws</h3>
+<pre><code>src/
+├── main.ts              # Amplify 初期化 + アプリ起動
+├── permission.ts        # router ガード（認証/ドメイン）
+├── api/request.ts       # IDトークン付与・API 呼び分け
+├── composables/
+│   ├── chat-service/    # チャット状態・履歴
+│   └── image-service/   # 画像生成状態
+├── pages/
+│   ├── top/             # メイン画面
+│   └── login/           # ログイン画面
+├── components/chat/     # 入力・表示UI
+└── utils/
+    ├── constants/common.ts  # モデル/モード定義
+    └── modules/
+        ├── amplify.ts   # Cognito 設定
+        ├── auth.ts      # サインイン/アウト
+        └── converter.ts # env/Markdown変換</code></pre>
+      </div>
+      <div>
+        <h3><span class="pill pill-aws">バック</span> findix-chat-api-aws</h3>
+<pre><code>├── modules/chat-api/    # 再利用モジュール
+│   ├── apigw.tf         # HTTP API + JWT認可
+│   ├── lambda.tf        # 3関数 + ログ
+│   ├── iam.tf           # 実行ロール
+│   └── knowledge_base.tf# KB + S3 Vectors
+├── envs/ai-tool/        # 環境レイヤ
+│   └── main.tf          # module 呼び出し
+└── src/
+    ├── common/          # http/auth/bedrock 等
+    ├── ai_chat/         # /v1/ai-chat
+    ├── ai_image/        # /v1/ai-image
+    └── internal_search/ # /v1/internal-search</code></pre>
+      </div>
+    </div>
+    <div class="callout">
+      <strong>IaC 方針:</strong> 現状は ai-tool 1 環境のみだが、将来の環境追加・本番分離を見据えて
+      <code>modules/</code>（再利用）と <code>envs/</code>（環境固有）に分割。環境を増やすときは
+      <code>envs/&lt;name&gt;/</code> を複製して tfvars を差し替えるだけ。
+    </div>
+  </section>
+
+  <!-- 4 -->
+  <section id="stack">
+    <h2><span class="num">4</span>技術スタック</h2>
+    <div class="grid2">
+      <div>
+        <h3>フロントエンド</h3>
+        <table>
+          <tr><th>種別</th><th>採用技術</th></tr>
+          <tr><td>ビルド</td><td>Vite</td></tr>
+          <tr><td>フレームワーク</td><td>Vue 3 (TSX) + TypeScript</td></tr>
+          <tr><td>UI</td><td>Vuetify 3（MDI アイコン）</td></tr>
+          <tr><td>状態管理</td><td>Pinia（最小限）+ Composables</td></tr>
+          <tr><td>認証</td><td>aws-amplify v6 (Cognito)</td></tr>
+          <tr><td>Markdown</td><td>marked + highlight.js + DOMPurify</td></tr>
+          <tr><td>ホスティング</td><td>Amplify Hosting または S3 + CloudFront</td></tr>
+        </table>
+      </div>
+      <div>
+        <h3>バックエンド / インフラ</h3>
+        <table>
+          <tr><th>種別</th><th>採用技術</th></tr>
+          <tr><td>API</td><td>API Gateway (HTTP API)</td></tr>
+          <tr><td>実行</td><td>Lambda (Python 3.12)</td></tr>
+          <tr><td>依存</td><td>標準ライブラリ + 同梱 boto3（pip 不要）</td></tr>
+          <tr><td>AI</td><td>Amazon Bedrock (Claude / Nova / Titan)</td></tr>
+          <tr><td>検索基盤</td><td>Bedrock Knowledge Base + S3 Vectors</td></tr>
+          <tr><td>IaC</td><td>Terraform ≥ 1.10（state: S3 + use_lockfile）</td></tr>
+          <tr><td>監視</td><td>CloudWatch Logs</td></tr>
+        </table>
+      </div>
+    </div>
+    <p style="font-size:.9rem;color:var(--c-sub)">
+      Lambda は依存ゼロのため <code>src/</code> をそのまま zip 化（Terraform の <code>archive_file</code>）。
+      各関数は <code>timeout 60s / memory 512MB</code>、<code>reserved_concurrent_executions</code> で並列 Bedrock 呼び出しをキャップしています。
+    </p>
+  </section>
+
+  <!-- 5 -->
+  <section id="modes">
+    <h2><span class="num">5</span>デプロイモード／操作モード</h2>
+    <h3>デプロイモード（プロダクト別ビルド）</h3>
+    <p>用途別に2つのプロダクトをビルドし、それぞれ <code>.env.&lt;mode&gt;</code> で切り替えます。<code>VITE_APP_ENV</code> がランタイムの識別子です。</p>
+    <table>
+      <tr><th>モード</th><th>プロダクト</th><th>起動コマンド</th></tr>
+      <tr><td><code>navino</code></td><td>Navino チャットボット</td><td><code>npm run serve:navino</code></td></tr>
+      <tr><td><code>ai-tool</code></td><td>社内 AI ツール（チャット + 画像生成 + 社内検索）</td><td><code>npm run serve:ai-tool</code></td></tr>
+    </table>
+    <div class="callout">バックエンド <code>findix-chat-api-aws</code> は <strong>ai-tool モードのみ</strong>を対象としています（navino は対象外）。</div>
+
+    <h3>操作モード（ai-tool 内、選択モデルで切替）</h3>
+    <p>選択中の AI モデルに応じて操作モードと呼び出しエンドポイントが決まります（<code>MODEL_CATEGORIES</code> マッピング）。</p>
+    <table>
+      <tr><th>操作モード</th><th>ラベル</th><th>エンドポイント</th><th>既定モデル</th></tr>
+      <tr><td><code>chat</code></td><td>チャット</td><td><code>/v1/ai-chat</code></td><td>Claude Haiku 4.5</td></tr>
+      <tr><td><code>image</code></td><td>画像生成</td><td><code>/v1/ai-image</code></td><td>Nova Canvas</td></tr>
+      <tr><td><code>internal-search</code></td><td>社内検索</td><td><code>/v1/internal-search</code></td><td>Claude Haiku 4.5（固定・ピッカー非表示）</td></tr>
+    </table>
+    <p style="font-size:.9rem;color:var(--c-sub)">デプロイごとに利用可能なモードは <code>VITE_APP_USABLE_FEATURES</code> で制御します。</p>
+  </section>
+
+  <!-- 6 -->
+  <section id="auth">
+    <h2><span class="num">6</span>認証フロー</h2>
+    <p class="lead">
+      認証は <strong>Cognito User Pool + Hosted UI（OAuth フェデレーション）</strong>。Google / Microsoft の
+      <code>signInWithRedirect</code> で Hosted UI へ遷移し、戻り時に ID トークンを受け取ります。
+    </p>
+    <figure class="fig">
+      <svg viewBox="0 0 940 320" width="100%" role="img" aria-label="認証シーケンス">
+        <defs>
+          <marker id="arr2" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+            <path d="M0,0 L8,3 L0,6 Z" fill="#475569"/></marker>
+          <style>
+            .actor{font-size:12.5px;font-weight:700;fill:#1b2733;}
+            .ll{stroke:#cbd5e1;stroke-width:1.4;}
+            .msg{stroke:#475569;stroke-width:1.5;marker-end:url(#arr2);}
+            .msgd{stroke:#9333ea;stroke-width:1.5;marker-end:url(#arr2);stroke-dasharray:5 4;}
+            .mt{font-size:11px;fill:#334155;}
+          </style>
+        </defs>
+        <!-- lifelines -->
+        <g>
+          <rect x="40" y="20" width="150" height="34" rx="8" fill="#eef2ff" stroke="#6366f1"/>
+          <text class="actor" x="115" y="42" text-anchor="middle">ブラウザ (SPA)</text>
+          <line class="ll" x1="115" y1="54" x2="115" y2="300"/>
+
+          <rect x="330" y="20" width="180" height="34" rx="8" fill="#fbeaff" stroke="#c925d1"/>
+          <text class="actor" x="420" y="42" text-anchor="middle">Cognito Hosted UI</text>
+          <line class="ll" x1="420" y1="54" x2="420" y2="300"/>
+
+          <rect x="640" y="20" width="180" height="34" rx="8" fill="#fff3e0" stroke="#ff9900"/>
+          <text class="actor" x="730" y="42" text-anchor="middle">IdP (Google/MS)</text>
+          <line class="ll" x1="730" y1="54" x2="730" y2="300"/>
+        </g>
+        <!-- messages -->
+        <line class="msg" x1="115" y1="85" x2="418" y2="85"/>
+        <text class="mt" x="130" y="78">signInWithRedirect()</text>
+
+        <line class="msg" x1="420" y1="120" x2="728" y2="120"/>
+        <text class="mt" x="445" y="113">フェデレーション認証</text>
+
+        <line class="msgd" x1="728" y1="155" x2="422" y2="155"/>
+        <text class="mt" x="470" y="148">認可コード</text>
+
+        <line class="msgd" x1="418" y1="190" x2="117" y2="190"/>
+        <text class="mt" x="150" y="183">リダイレクト + ID/Access トークン</text>
+
+        <rect x="40" y="215" width="640" height="74" rx="8" fill="#f8fafc" stroke="#cbd5e1"/>
+        <text class="mt" x="55" y="238" font-weight="700">permission.ts（router.beforeEach ガード）</text>
+        <text class="mt" x="55" y="258">・fetchAuthSession() でログイン状態を判定（自動リフレッシュ）</text>
+        <text class="mt" x="55" y="276">・email クレームのドメインを isApprovedDomain で検査 → 許可外はサインアウト</text>
+      </svg>
+      <figcaption>図2. ログインシーケンスとルートガード</figcaption>
+    </figure>
+    <table>
+      <tr><th>関数 / ファイル</th><th>役割</th></tr>
+      <tr><td><code>utils/modules/amplify.ts</code></td><td><code>Amplify.configure</code>（<code>VITE_APP_COGNITO_*</code> から設定）。env 未設定時はスキップ</td></tr>
+      <tr><td><code>utils/modules/auth.ts</code></td><td><code>signInWithGoogle</code> / <code>signInWithMicrosoft</code> / <code>logOut</code> / <code>getCurrentUserEmail</code> / <code>isApprovedDomain</code></td></tr>
+      <tr><td><code>permission.ts</code></td><td>グローバル router ガード。ログイン判定とドメイン許可リスト検査</td></tr>
+      <tr><td><code>api/request.ts</code></td><td><code>fetchAuthSession()</code> の ID トークンを <code>Authorization: Bearer</code> で付与</td></tr>
+    </table>
+    <div class="callout">
+      <strong>重要:</strong> Hosted UI は誰でもサインインを完了できるため、フロントのメールドメイン判定は <em>UX 用</em>。
+      実際の制限は <strong>バックエンド側でも強制</strong>します（API Gateway の JWT 検証に加え、各 Lambda が <code>email</code> クレームの
+      <code>@findix.co.jp</code> ドメインを再チェック）。
+    </div>
+  </section>
+
+  <!-- 7 -->
+  <section id="request">
+    <h2><span class="num">7</span>リクエストフロー</h2>
+    <p class="lead">チャット送信を例にした、フロント内部からバックエンドまでの流れです。</p>
+    <figure class="fig">
+      <svg viewBox="0 0 960 150" width="100%" role="img" aria-label="リクエストフロー">
+        <defs>
+          <marker id="arr3" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+            <path d="M0,0 L8,3 L0,6 Z" fill="#475569"/></marker>
+          <style>.fb{rx:9;ry:9;stroke-width:1.5;}.ft{font-size:11.5px;font-weight:600;fill:#1b2733;}.fs{font-size:9.5px;fill:#5a6b7b;}.fe{stroke:#475569;stroke-width:1.6;fill:none;marker-end:url(#arr3);}</style>
+        </defs>
+        <rect class="fb" x="10"  y="45" width="135" height="56" fill="#e6f7ef" stroke="#42b883"/>
+        <text class="ft" x="77"  y="70" text-anchor="middle">ChatInput</text>
+        <text class="fs" x="77"  y="87" text-anchor="middle">UI コンポーネント</text>
+
+        <rect class="fb" x="180" y="45" width="160" height="56" fill="#e6f7ef" stroke="#42b883"/>
+        <text class="ft" x="260" y="68" text-anchor="middle">useChatService</text>
+        <text class="fs" x="260" y="85" text-anchor="middle">composable / 履歴6件</text>
+
+        <rect class="fb" x="375" y="45" width="160" height="56" fill="#e6f7ef" stroke="#42b883"/>
+        <text class="ft" x="455" y="68" text-anchor="middle">api/request.ts</text>
+        <text class="fs" x="455" y="85" text-anchor="middle">Bearer 付与 / 呼び分け</text>
+
+        <rect class="fb" x="570" y="45" width="160" height="56" fill="#fff3e0" stroke="#ff9900"/>
+        <text class="ft" x="650" y="68" text-anchor="middle">API Gateway</text>
+        <text class="fs" x="650" y="85" text-anchor="middle">JWT 検証</text>
+
+        <rect class="fb" x="765" y="45" width="180" height="56" fill="#e6f6f3" stroke="#01a88d"/>
+        <text class="ft" x="855" y="68" text-anchor="middle">Lambda → Bedrock</text>
+        <text class="fs" x="855" y="85" text-anchor="middle">ドメイン再チェック</text>
+
+        <path class="fe" d="M145,73 L178,73"/>
+        <path class="fe" d="M340,73 L373,73"/>
+        <path class="fe" d="M535,73 L568,73"/>
+        <path class="fe" d="M730,73 L763,73"/>
+        <text class="fs" x="855" y="120" text-anchor="middle">↩ { result, body:{ answer, ... } }</text>
+      </svg>
+      <figcaption>図3. リクエストフロー（チャット）</figcaption>
+    </figure>
+    <h3>ポイント</h3>
+    <ul style="font-size:.92rem">
+      <li><strong>履歴:</strong> composable が直近 6 件の会話を送信。テキストは先頭+末尾で 1000 文字に切り詰め（<code>getChatHistory</code>）。</li>
+      <li><strong>送信形式:</strong> <code>multipart/form-data</code>（<code>inputText</code> / <code>chatHistory</code> / <code>model</code> ＋ 画像は <code>imageSize</code> / <code>aspectRatio</code>）。</li>
+      <li><strong>呼び分け:</strong> <code>VITE_APP_AI_TOOL_API_BASE</code> をベースに <code>/v1/ai-chat</code>・<code>/v1/ai-image</code>・<code>/v1/internal-search</code> を選択。</li>
+      <li><strong>レスポンス契約:</strong> フロントが <code>response.data.body.answer</code> / <code>error.response.data.body.detail</code> を読むため、バックエンドは <code>{ "result": "...", "body": { ... } }</code> でラップして返す。</li>
+    </ul>
+  </section>
+
+  <!-- 8 -->
+  <section id="rag">
+    <h2><span class="num">8</span>社内検索（RAG）構成</h2>
+    <p class="lead">
+      社内文書 PDF を Bedrock Knowledge Base（保存先は S3 Vectors）に取り込んで検索します。
+      取り込み（埋め込み生成・チャンク分割）は KB が担うため、Lambda は依存ゼロのまま <code>retrieve_and_generate</code> を呼ぶだけです。
+    </p>
+    <figure class="fig">
+      <svg viewBox="0 0 960 360" width="100%" role="img" aria-label="RAG構成図">
+        <defs>
+          <marker id="arr4" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+            <path d="M0,0 L8,3 L0,6 Z" fill="#475569"/></marker>
+          <style>
+            .rb{rx:10;ry:10;stroke-width:1.5;}.rt{font-size:12px;font-weight:600;fill:#1b2733;}
+            .rs{font-size:10px;fill:#5a6b7b;}.re{stroke:#475569;stroke-width:1.6;fill:none;marker-end:url(#arr4);}
+            .ret{font-size:10px;fill:#334155;}
+          </style>
+        </defs>
+        <!-- ingestion lane -->
+        <text x="20" y="34" font-size="12" font-weight="700" fill="#d97f00">取り込み（手動 sync）</text>
+        <rect class="rb" x="20"  y="46" width="120" height="50" fill="#fff3e0" stroke="#ff9900"/>
+        <text class="rt" x="80"  y="68" text-anchor="middle">管理者</text>
+        <text class="rs" x="80"  y="84" text-anchor="middle">PDF アップロード</text>
+
+        <rect class="rb" x="200" y="46" width="150" height="50" fill="#fffaf0" stroke="#ff9900"/>
+        <text class="rt" x="275" y="68" text-anchor="middle">S3 (社内文書)</text>
+        <text class="rs" x="275" y="84" text-anchor="middle">internal-docs バケット</text>
+
+        <rect class="rb" x="410" y="40" width="180" height="62" fill="#e6f6f3" stroke="#01a88d"/>
+        <text class="rt" x="500" y="62" text-anchor="middle">Bedrock KB</text>
+        <text class="rs" x="500" y="80" text-anchor="middle">抽出→チャンク→埋め込み</text>
+        <text class="rs" x="500" y="94" text-anchor="middle">Titan Embed Text v2</text>
+
+        <rect class="rb" x="650" y="46" width="170" height="50" fill="#e6f6f3" stroke="#01a88d"/>
+        <text class="rt" x="735" y="68" text-anchor="middle">S3 Vectors</text>
+        <text class="rs" x="735" y="84" text-anchor="middle">cosine / dim 一致</text>
+
+        <path class="re" d="M140,71 L198,71"/>
+        <path class="re" d="M350,71 L408,71"/>
+        <text class="ret" x="360" y="36">start-ingestion-job</text>
+        <path class="re" d="M590,71 L648,71"/>
+
+        <!-- divider -->
+        <line x1="20" y1="150" x2="900" y2="150" stroke="#e2e8f0" stroke-dasharray="4 4"/>
+
+        <!-- query lane -->
+        <text x="20" y="190" font-size="12" font-weight="700" fill="#2563eb">検索（実行時）</text>
+        <rect class="rb" x="20"  y="206" width="130" height="56" fill="#eef2ff" stroke="#6366f1"/>
+        <text class="rt" x="85"  y="230" text-anchor="middle">ユーザー</text>
+        <text class="rs" x="85"  y="246" text-anchor="middle">社内検索モード</text>
+
+        <rect class="rb" x="200" y="206" width="150" height="56" fill="#fff3e0" stroke="#ff9900"/>
+        <text class="rt" x="275" y="230" text-anchor="middle">API Gateway</text>
+        <text class="rs" x="275" y="246" text-anchor="middle">/v1/internal-search</text>
+
+        <rect class="rb" x="410" y="206" width="180" height="56" fill="#fffaf0" stroke="#ff9900"/>
+        <text class="rt" x="500" y="230" text-anchor="middle">Lambda</text>
+        <text class="rs" x="500" y="246" text-anchor="middle">retrieve_and_generate</text>
+
+        <rect class="rb" x="650" y="200" width="250" height="68" fill="#e6f6f3" stroke="#01a88d"/>
+        <text class="rt" x="775" y="222" text-anchor="middle">Bedrock</text>
+        <text class="rs" x="775" y="240" text-anchor="middle">KB 検索（S3 Vectors）</text>
+        <text class="rs" x="775" y="256" text-anchor="middle">+ Claude で回答生成</text>
+
+        <path class="re" d="M150,234 L198,234"/>
+        <path class="re" d="M350,234 L408,234"/>
+        <path class="re" d="M590,234 L648,234"/>
+        <path class="re" d="M775,268 C775,310 500,310 500,266" />
+        <text class="ret" x="560" y="305">回答 + 出典</text>
+        <path class="re" d="M410,300 C300,310 200,300 275,266"/>
+      </svg>
+      <figcaption>図4. 社内検索（RAG）— 取り込みは手動 sync、検索は実行時に KB を retrieve</figcaption>
+    </figure>
+    <div class="callout">
+      <strong>取り込みは手動 sync:</strong> PDF を S3 にアップロード後、<code>aws bedrock-agent start-ingestion-job</code> を実行する必要があります
+      （S3 イベント自動連携は未実装）。ステータスが <code>COMPLETE</code> になれば検索可能。文書を追加・差し替えたら都度 sync を再実行します。
+    </div>
+    <h3>主な Terraform リソース（knowledge_base.tf）</h3>
+    <table>
+      <tr><th>リソース</th><th>用途</th></tr>
+      <tr><td><code>aws_s3_bucket.docs</code></td><td>社内文書の原本（KB データソース）。パブリックアクセス全ブロック</td></tr>
+      <tr><td><code>aws_s3vectors_vector_bucket</code> / <code>aws_s3vectors_index</code></td><td>埋め込みベクトルの保存先（cosine 距離、Titan の次元に一致）</td></tr>
+      <tr><td><code>aws_bedrockagent_knowledge_base</code></td><td>取り込み・検索を担う KB 本体</td></tr>
+      <tr><td><code>aws_iam_role.kb</code></td><td>Bedrock サービスが assume するロール（埋め込み呼び出し・S3 読み取り・S3 Vectors 操作）</td></tr>
+    </table>
+    <p style="font-size:.86rem;color:var(--c-sub)">※ S3 Vectors を使う KB は AWS provider 6.27 以降が必要（本リポジトリは 6.50）。</p>
+  </section>
+
+  <!-- 9 -->
+  <section id="backend">
+    <h2><span class="num">9</span>バックエンド（AWS / Terraform）</h2>
+    <h3>API Gateway（HTTP API）</h3>
+    <ul style="font-size:.92rem">
+      <li><strong>JWT オーソライザ:</strong> Cognito User Pool のトークンを署名検証（<code>issuer</code> = Cognito、<code>audience</code> = App Client ID）。</li>
+      <li><strong>ルート:</strong> <code>POST /v1/ai-chat</code> / <code>POST /v1/ai-image</code> / <code>POST /v1/internal-search</code>（すべて JWT 認可必須）。</li>
+      <li><strong>CORS:</strong> <code>allowed_origins</code> に登録した Amplify URL のみ許可（メソッドは POST/OPTIONS）。</li>
+      <li><strong>スロットリング:</strong> ステージ全体に rate/burst 制限（denial of wallet 対策）。</li>
+    </ul>
+    <h3>Lambda（3 関数・共通設定）</h3>
+    <table>
+      <tr><th>関数</th><th>ハンドラ</th><th>主な環境変数</th></tr>
+      <tr><td><code>{name}-ai-chat</code></td><td><code>ai_chat.handler.lambda_handler</code></td><td><code>BEDROCK_CHAT_MODEL_ID</code> / <code>BEDROCK_CHAT_MODELS</code> / <code>ALLOWED_EMAIL_DOMAIN</code></td></tr>
+      <tr><td><code>{name}-ai-image</code></td><td><code>ai_image.handler.lambda_handler</code></td><td><code>BEDROCK_IMAGE_MODEL_ID</code> / <code>ALLOWED_EMAIL_DOMAIN</code></td></tr>
+      <tr><td><code>{name}-internal-search</code></td><td><code>internal_search.handler.lambda_handler</code></td><td><code>BEDROCK_KB_ID</code> / <code>BEDROCK_RAG_MODEL_ARN</code> / <code>KB_NUMBER_OF_RESULTS</code> / <code>ALLOWED_EMAIL_DOMAIN</code></td></tr>
+    </table>
+    <p style="font-size:.9rem;color:var(--c-sub)">
+      共通: runtime <code>python3.12</code> / timeout <code>60s</code> / memory <code>512MB</code> /
+      <code>reserved_concurrent_executions</code> による同時実行キャップ / CloudWatch Logs（保持日数は変数化）。
+    </p>
+    <h3>state 管理</h3>
+    <p style="font-size:.92rem">
+      Terraform state は <strong>S3 バケット <code>findix-chat-terraform</code>（ap-northeast-1）+ <code>use_lockfile</code> ネイティブロック</strong>（DynamoDB 不要）。
+      バージョニング有効化を推奨（誤操作からの復旧用）。
+    </p>
+  </section>
+
+  <!-- 10 -->
+  <section id="env">
+    <h2><span class="num">10</span>環境変数（<code>.env.&lt;mode&gt;</code>）</h2>
+    <p class="lead">UI カスタマイズに加え、AWS 連携に以下を使用します。AWS 構築前はプレースホルダ値が入っており、実値の記入が必要です。</p>
+    <table>
+      <tr><th>変数</th><th>用途</th></tr>
+      <tr><td><code>VITE_APP_ENV</code></td><td>ランタイム識別子（navino / ai-tool）</td></tr>
+      <tr><td><code>VITE_APP_COGNITO_USER_POOL_ID</code></td><td>Cognito User Pool ID</td></tr>
+      <tr><td><code>VITE_APP_COGNITO_USER_POOL_CLIENT_ID</code></td><td>App Client ID（public, no secret）</td></tr>
+      <tr><td><code>VITE_APP_COGNITO_DOMAIN</code></td><td>Hosted UI ドメイン</td></tr>
+      <tr><td><code>VITE_APP_COGNITO_REDIRECT_SIGN_IN</code> / <code>..._SIGN_OUT</code></td><td>ログイン/ログアウト後リダイレクト先（Cognito の Callback/Logout URL と一致）</td></tr>
+      <tr><td><code>VITE_APP_CHAT_API_BASE</code> / <code>VITE_APP_AI_TOOL_API_BASE</code></td><td>バックエンドのベース URL（navino / ai-tool）</td></tr>
+      <tr><td><code>VITE_APP_AUTH_ENABLED</code></td><td>認証の有効/無効</td></tr>
+      <tr><td><code>VITE_APP_AUTH_VALID_DOMAIN</code></td><td>許可するメールドメイン（カンマ区切り）</td></tr>
+      <tr><td><code>VITE_APP_AUTH_PROVIDER</code></td><td>表示するログインプロバイダ（Google / Microsoft）</td></tr>
+      <tr><td><code>VITE_APP_USABLE_FEATURES</code></td><td>利用可能な操作モード</td></tr>
+      <tr><td><code>VITE_APP_WEB_SOCKET_URL</code></td><td>音声入力（speech-to-text）用 WebSocket URL</td></tr>
+      <tr><td><code>VITE_APP_FEEDBACK_ENDPOINT</code></td><td>フィードバック送信先</td></tr>
+    </table>
+    <div class="callout">
+      Cognito の env がプレースホルダ（空）の間は <code>Amplify.configure</code> がスキップされ、実際のログイン／チャットは動作しません。
+      UI だけ確認したい場合は一時的に <code>VITE_APP_AUTH_ENABLED=false</code> でトップ画面を表示できます。
+    </div>
+  </section>
+
+  <!-- 11 -->
+  <section id="deploy">
+    <h2><span class="num">11</span>デプロイ手順</h2>
+    <div class="grid2">
+      <div>
+        <h3><span class="pill pill-aws">1.</span> バックエンド（先）</h3>
+<pre><code>cd envs/ai-tool
+cp terraform.tfvars.example terraform.tfvars
+terraform init
+terraform apply
+
+# API URL を取得
+terraform output -raw api_base_url
+# → https://xxxx.execute-api.ap-northeast-1.amazonaws.com</code></pre>
+        <p style="font-size:.85rem;color:var(--c-sub)">前提: AWS CLI 認証済み / Terraform ≥1.10 / state 用 S3 バケット作成済み / Bedrock のモデルアクセス有効化済み。</p>
+      </div>
+      <div>
+        <h3><span class="pill pill-web">2.</span> フロント（後）</h3>
+<pre><code># .env.ai-tool に API URL を記入
+VITE_APP_AI_TOOL_API_BASE = 'https://xxxx...'
+
+# ビルド + zip 化
+npm run package:ai-tool
+# → ai-tool-dist.zip を生成</code></pre>
+        <p style="font-size:.85rem;color:var(--c-sub)">
+          配信は手段A（推奨）: Amplify Console「Deploy without Git provider」で zip アップロード。
+          手段B: <code>aws s3 sync dist/ s3://&lt;bucket&gt; --delete</code> + CloudFront invalidation。
+        </p>
+      </div>
+    </div>
+    <div class="callout">
+      <strong>SPA catch-all rewrite が必須:</strong> <code>200 (Rewrite) → /index.html</code>。
+      無いと <code>/login</code> への直リンクやリロードで 404 になります。S3 + CloudFront では custom error response（403/404 → <code>/index.html</code>, 200）で代替します。
+    </div>
+  </section>
+
+  <!-- 12 -->
+  <section id="todo">
+    <h2><span class="num">12</span>デモレベルの割り切り（本番化 TODO）</h2>
+    <p class="lead">本構成は「デモレベルの最小構成」であり、本番化に向けて以下の割り切りがあります。</p>
+    <table>
+      <tr><th>項目</th><th>現状の割り切り</th></tr>
+      <tr><td>画像生成</td><td>best-effort。Nova Canvas / Titan Image の提供リージョン次第で、未対応なら画像のみ 502（チャットは動作）</td></tr>
+      <tr><td>添付ファイル</td><td>multipart の file 項目は受信するが Bedrock へは未連携</td></tr>
+      <tr><td>社内検索の取り込み</td><td>PDF アップロード後の <code>start-ingestion-job</code> は手動。会話履歴も検索には未使用（単発検索）</td></tr>
+      <tr><td>チャット履歴</td><td>直近 6 件をそのまま Claude messages に変換（要約・トークン制御なし）</td></tr>
+      <tr><td>Bedrock 権限</td><td><code>foundation-model/*</code> と <code>inference-profile/*</code> に限定。さらに絞るなら使用モデル ARN を明示</td></tr>
+      <tr><td>state</td><td>S3 + use_lockfile ネイティブロック（DynamoDB 不要）。バケットのバージョニング有効化を推奨</td></tr>
+      <tr><td>CORS</td><td><code>allowed_origins</code> に登録した Amplify URL のみ。本番ドメイン追加時は tfvars を更新</td></tr>
+    </table>
+  </section>
+
+</div>
+
+<footer>
+  Findix Chat（AWS版）システム説明書 ／ findix-chat-web-aws・findix-chat-api-aws の README・CLAUDE.md・ソースより作成
+</footer>
+
+</body>
+</html>
