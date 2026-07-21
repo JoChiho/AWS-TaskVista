@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * プロジェクトタスクのガント風カレンダー時間線
+ * プロジェクトタスクのガント風カレンダー（タイムライン）
  * - CSS sticky 行レイアウトでヘッダー/左列の重なりを解消
  * - 自分のタスク / 全体の切り替えは親から渡す tasks で制御
  */
@@ -77,7 +77,7 @@ const unscheduled = computed(() =>
 
 /**
  * 開始日なしの保留（ドラッグ対象外）。
- * 時間線バーには出ないが、下方リストで確認・詳細を開ける。
+ * タイムライン上のバーには出ないが、下方リストで確認・詳細を開ける。
  */
 const heldWithoutSchedule = computed(() =>
   props.tasks.filter(
@@ -185,7 +185,7 @@ const rows = computed<TimelineRow[]>(() => {
       leftPx: visibleStart * dayWidth.value,
       widthPx: Math.max(widthPx, 10),
       progress: normalizeCompletion(task.completionPercent),
-      assignees: resolveAssigneeLabels(task).join('、') || '未割当',
+      assignees: resolveAssigneeLabels(task).join('、') || '未割り当て',
       dueLeftPx,
       rangeLabel: startStr && endStr ? `${startStr}〜${endStr}` : startStr,
     }
@@ -461,19 +461,19 @@ const cssVars = computed(() => ({
     <!-- 凡例（ドラッグ中は簡潔に） -->
     <div v-if="!isDragMode" class="tl-legend">
       <span><i class="lg-swatch lg-bar" />期間 = 開始日 + 予定工数</span>
-      <span><i class="lg-swatch lg-fill" />完了度</span>
+      <span><i class="lg-swatch lg-fill" />進捗</span>
       <span><i class="lg-line" />今日</span>
       <span><v-icon size="12" color="error">mdi-flag-variant</v-icon> 締切（参考）</span>
       <span class="lg-note">
         <v-icon size="12">mdi-cursor-move</v-icon>
-        未設定をドラッグすると配置用カレンダーが現れます
+        未設定タスクを日付へドラッグすると、開始日を設定できます
       </span>
     </div>
     <div v-else class="tl-drag-banner">
       <v-icon size="20" color="primary" class="mr-2">mdi-calendar-cursor</v-icon>
       <span>
-        <strong>配置モード</strong>
-        — 他タスクは一時非表示。下の日付マスにドロップして開始日を設定
+        <strong>開始日を設定中</strong>
+        — 下の日付を選んでください
         <template v-if="draggingTask && hoverDayIndex != null">
           ：「{{ draggingTask.title }}」→
           <strong>{{ hoverDayLabel(hoverDayIndex) }}</strong>
@@ -491,7 +491,7 @@ const cssVars = computed(() => ({
         <v-icon size="18" class="mr-1">mdi-drag</v-icon>
         日程未設定 · {{ unscheduled.length }} 件
         <span class="unscheduled-hint">
-          — ドラッグすると配置用カレンダーが表示されます
+          — 日付へドラッグして開始日を設定
         </span>
       </div>
       <div class="unscheduled-list">
@@ -502,7 +502,7 @@ const cssVars = computed(() => ({
           class="unscheduled-item"
           :class="{ 'is-source': draggingTaskId === t.taskId }"
           draggable="true"
-          :title="'ドラッグしてカレンダーへ: ' + t.title"
+          :title="'日付へドラッグ: ' + t.title"
           @dragstart="onUnscheduledDragStart($event, t)"
           @dragend="onUnscheduledDragEnd"
           @click="openTask(t)"
@@ -523,7 +523,7 @@ const cssVars = computed(() => ({
     </div>
 
     <div v-if="!tasks.length" class="tl-empty">
-      表示するタスクがありません
+      タスクがありません
     </div>
 
     <div
@@ -536,10 +536,10 @@ const cssVars = computed(() => ({
       <div class="tl-header">
         <div class="tl-corner">
           <span class="corner-title">
-            {{ isDragMode ? '配置' : 'タスク' }}
+            {{ isDragMode ? '日付' : 'タスク' }}
           </span>
           <span class="corner-sub">
-            <template v-if="isDragMode">日付を選択</template>
+            <template v-if="isDragMode">開始日を選択</template>
             <template v-else>{{ rows.length }} / {{ tasks.length }}</template>
           </span>
         </div>
@@ -605,7 +605,7 @@ const cssVars = computed(() => ({
           <v-icon size="18" class="mr-1" color="primary">
             mdi-calendar-plus
           </v-icon>
-          ここにドロップ
+          開始日を設定
         </div>
         <div
           class="tl-place-track"
@@ -638,13 +638,13 @@ const cssVars = computed(() => ({
           v-if="!rows.length && unscheduled.length === 0"
           class="tl-body-empty"
         >
-          開始日を設定すると、ここに時間線が表示されます。
+          開始日を設定すると、タイムラインが表示されます
         </div>
         <div
           v-else-if="!rows.length && unscheduled.length > 0"
           class="tl-body-empty tl-body-empty--soft"
         >
-          まだ時間線上のタスクはありません。上の未設定をドラッグして日付を指定してください。
+          タイムラインに表示するタスクはまだありません。上の一覧から日付へドラッグしてください
         </div>
 
         <div
@@ -689,7 +689,7 @@ const cssVars = computed(() => ({
             <div
               :class="barClass(row.task)"
               :style="{ left: `${row.leftPx}px`, width: `${row.widthPx}px` }"
-              :title="`${row.task.title}\n${row.rangeLabel}\n完了 ${row.progress}%\n${row.assignees}`"
+              :title="`${row.task.title}\n${row.rangeLabel}\n進捗 ${row.progress}%\n${row.assignees}`"
             >
               <div class="bar-progress" :style="{ width: `${row.progress}%` }" />
               <span v-if="row.widthPx >= 48" class="bar-text">
@@ -725,7 +725,7 @@ const cssVars = computed(() => ({
       <div class="held-title">
         <v-icon size="18" class="mr-1" color="error">mdi-pause-circle-outline</v-icon>
         保留（開始日なし）· {{ heldWithoutSchedule.length }} 件
-        <span class="held-hint">— 時間線には出ません。クリックで詳細を開けます</span>
+        <span class="held-hint">— タイムラインには表示されません（クリックで詳細）</span>
       </div>
       <div class="held-list">
         <button

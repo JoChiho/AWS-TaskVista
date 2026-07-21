@@ -198,7 +198,7 @@ function onDelete() {
             >
               {{ liveProject.description }}
             </p>
-            <p v-else class="text-body-2 text-medium-emphasis mb-0">説明は設定されていません</p>
+            <p v-else class="text-body-2 text-medium-emphasis mb-0">説明なし</p>
           </div>
 
           <!-- 統計 -->
@@ -289,7 +289,7 @@ function onDelete() {
           :disabled="!projectId"
           @click="goToBoard"
         >
-          かんばんを開く
+          かんばん
         </v-btn>
         <v-btn
           variant="tonal"
@@ -298,7 +298,7 @@ function onDelete() {
           :disabled="!projectId"
           @click="goToTable"
         >
-          テーブルを開く
+          テーブル
         </v-btn>
         <v-btn
           variant="tonal"
@@ -307,14 +307,14 @@ function onDelete() {
           :disabled="!projectId"
           @click="goToTimeline"
         >
-          時間線を開く
+          タイムライン
         </v-btn>
         <v-spacer />
         <v-btn
           icon="mdi-pencil"
           variant="text"
           size="small"
-          title="編集する"
+          title="編集"
           @click="onEdit"
         />
         <v-btn
@@ -323,7 +323,7 @@ function onDelete() {
           variant="text"
           size="small"
           color="error"
-          title="削除する"
+          title="削除"
           @click="onDelete"
         />
       </v-card-actions>

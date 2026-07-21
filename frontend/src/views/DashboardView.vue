@@ -18,7 +18,7 @@ const uiStore = useUiStore()
 const summaries = ref<ProjectSummary[]>([])
 // 自分の担当タスク
 const myTasks = ref<Task[]>([])
-// 自分への評価待ち（レビュー待ち & 自分が評価者）
+// 自分へのレビュー依頼（レビュー待ち & 自分がレビュアー）
 const reviewTasks = ref<Task[]>([])
 // ローディング状態
 const isLoading = ref(false)
@@ -52,9 +52,9 @@ function isOverdue(dueDate?: string): boolean {
  * 長文だと右列が折り返して横スペースを活かせないため
  */
 function formatDueDate(dueDate?: string): string {
-  if (!dueDate) return '締切日なし'
+  if (!dueDate) return '期限なし'
   const d = new Date(dueDate)
-  if (Number.isNaN(d.getTime())) return '締切日なし'
+  if (Number.isNaN(d.getTime())) return '期限なし'
   const y = d.getFullYear()
   const m = String(d.getMonth() + 1).padStart(2, '0')
   const day = String(d.getDate()).padStart(2, '0')
@@ -94,7 +94,7 @@ function goToMyTask(task: Task) {
   })
 }
 
-/** 評価待ち → かんばんのレビュー列ハイライト付きで開く */
+/** レビュー待ち → かんばんのレビュー列ハイライト付きで開く */
 function goToReviewTask(task: Task) {
   router.push({
     name: 'task-board',
@@ -141,7 +141,7 @@ onMounted(() => {
         :loading="isLoading"
         @click="loadDashboard"
       >
-        更新する
+        更新
       </v-btn>
     </div>
 
@@ -228,7 +228,7 @@ onMounted(() => {
                 size="small"
                 append-icon="mdi-arrow-right"
               >
-                プロジェクトを開く
+                開く
               </v-btn>
             </v-card-actions>
           </v-card>
@@ -247,7 +247,7 @@ onMounted(() => {
           prepend-icon="mdi-plus"
           :to="{ name: 'projects' }"
         >
-          プロジェクトを作成する
+          プロジェクトを作成
         </v-btn>
       </v-card>
 
@@ -255,7 +255,7 @@ onMounted(() => {
       <div class="d-flex align-center mb-4">
         <h2 class="text-h6 font-weight-bold mb-0">
           <v-icon class="mr-2">mdi-account-check</v-icon>
-          自分の担当タスク
+          担当タスク
         </h2>
         <v-chip
           v-if="myTasks.length > 0"
@@ -270,7 +270,7 @@ onMounted(() => {
 
       <v-card v-if="myTasks.length > 0" rounded="lg" class="my-tasks-panel mb-8">
         <div class="my-task-header d-none d-md-flex px-4 py-2 text-caption text-medium-emphasis">
-          <div class="my-task-col-main">タスク名 / 要望</div>
+          <div class="my-task-col-main">タスク / 要件</div>
           <div class="my-task-col-meta">プロジェクト</div>
           <div class="my-task-col-status">ステータス</div>
           <div class="my-task-col-priority">優先度</div>
@@ -298,7 +298,7 @@ onMounted(() => {
                 v-if="task.requirement"
                 class="text-body-2 text-medium-emphasis mt-1 my-task-requirement"
               >
-                <span class="text-caption font-weight-medium mr-1">要望</span>
+                <span class="text-caption font-weight-medium mr-1">要件</span>
                 {{ task.requirement }}
               </div>
             </div>
@@ -346,7 +346,7 @@ onMounted(() => {
                   size="16"
                   color="error"
                   class="mr-1"
-                  title="締切超過"
+                  title="期限超過"
                 >
                   mdi-alert-circle
                 </v-icon>
@@ -372,15 +372,15 @@ onMounted(() => {
       <v-card v-else class="text-center pa-6 mb-8" rounded="lg" variant="tonal">
         <v-icon size="40" color="success" class="mb-2">mdi-check-all</v-icon>
         <p class="text-body-1 text-medium-emphasis mb-0">
-          現在、担当中のタスクはありません。
+          担当中のタスクはありません
         </p>
       </v-card>
 
-      <!-- 評価待ち（自分が評価者）— 担当タスクの下 -->
+      <!-- レビュー待ち（自分がレビュアー）— 担当タスクの下 -->
       <div class="d-flex align-center mb-4">
         <h2 class="text-h6 font-weight-bold mb-0">
           <v-icon class="mr-2" color="warning">mdi-clipboard-check-outline</v-icon>
-          評価待ちのタスク
+          レビュー待ちのタスク
         </h2>
         <v-chip
           v-if="reviewTasks.length > 0"
@@ -393,12 +393,12 @@ onMounted(() => {
         </v-chip>
       </div>
       <p class="text-caption text-medium-emphasis mb-3">
-        ステータスが「レビュー待ち」で、あなたが評価者に指定されているタスクです
+        ステータスが「レビュー待ち」で、あなたがレビュアーのタスク
       </p>
 
       <v-card v-if="reviewTasks.length > 0" rounded="lg" class="my-tasks-panel review-tasks-panel">
         <div class="my-task-header d-none d-md-flex px-4 py-2 text-caption text-medium-emphasis">
-          <div class="my-task-col-main">タスク名 / 要望</div>
+          <div class="my-task-col-main">タスク / 要件</div>
           <div class="my-task-col-meta">プロジェクト</div>
           <div class="my-task-col-status">ステータス</div>
           <div class="my-task-col-priority">優先度</div>
@@ -423,7 +423,7 @@ onMounted(() => {
                 v-if="task.requirement"
                 class="text-body-2 text-medium-emphasis mt-1 my-task-requirement"
               >
-                <span class="text-caption font-weight-medium mr-1">要望</span>
+                <span class="text-caption font-weight-medium mr-1">要件</span>
                 {{ task.requirement }}
               </div>
               <div
@@ -431,7 +431,7 @@ onMounted(() => {
                 class="text-caption text-medium-emphasis mt-1"
               >
                 <v-icon size="12" class="mr-1">mdi-account-check-outline</v-icon>
-                評価者: {{ formatReviewerList(task) }}
+                レビュアー: {{ formatReviewerList(task) }}
               </div>
             </div>
             <div class="my-task-col-meta">
@@ -479,7 +479,7 @@ onMounted(() => {
       <v-card v-else class="text-center pa-6" rounded="lg" variant="tonal">
         <v-icon size="40" color="success" class="mb-2">mdi-clipboard-check</v-icon>
         <p class="text-body-1 text-medium-emphasis mb-0">
-          現在、あなたへの評価待ちタスクはありません。
+          レビュー待ちのタスクはありません
         </p>
       </v-card>
     </template>

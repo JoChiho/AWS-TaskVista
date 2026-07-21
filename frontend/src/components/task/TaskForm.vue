@@ -245,7 +245,7 @@ async function handleSubmit() {
               {{ isEditMode ? 'タスクを編集' : '新規タスク' }}
             </p>
             <h2 class="form-heading text-h6 font-weight-bold mb-0">
-              {{ isEditMode ? '内容を更新する' : '新しいタスクを追加する' }}
+              {{ isEditMode ? '内容を更新' : 'タスクを追加' }}
             </h2>
           </div>
           <v-btn
@@ -298,16 +298,16 @@ async function handleSubmit() {
 
       <v-card-text class="form-body px-6 py-5 flex-grow-1">
         <v-form @submit.prevent="handleSubmit">
-          <!-- 要望 -->
+          <!-- 要件 -->
           <section class="form-section mb-5">
             <div class="section-label">
               <v-icon size="18" class="mr-1">mdi-bullseye-arrow</v-icon>
-              要望
+              要件
             </div>
             <div class="field-card field-card--requirement">
               <v-textarea
                 v-model="requirement"
-                placeholder="依頼元の要望・ゴール・受け入れ条件など"
+                placeholder="依頼内容・ゴール・完了条件など"
                 rows="3"
                 auto-grow
                 hide-details
@@ -327,7 +327,7 @@ async function handleSubmit() {
             <div class="field-card field-card--description">
               <v-textarea
                 v-model="description"
-                placeholder="実装方針、注意点、関連リンクなど詳細を記入"
+                placeholder="実装方針、注意点、関連リンクなど"
                 rows="4"
                 auto-grow
                 counter="5000"
@@ -368,7 +368,7 @@ async function handleSubmit() {
                 hide-details="auto"
                 variant="outlined"
                 density="comfortable"
-                hint="時間線の基準日（必須・ステータス完了でも設定可）"
+                hint="タイムラインの基準日（完了後も変更可）"
                 persistent-hint
               />
               <v-text-field
@@ -378,7 +378,7 @@ async function handleSubmit() {
                 hide-details="auto"
                 variant="outlined"
                 density="comfortable"
-                hint="参考用の期限。時間線の長さには使いません"
+                hint="参考用の期限。タイムラインの長さには使いません"
                 persistent-hint
               />
               <v-text-field
@@ -392,7 +392,7 @@ async function handleSubmit() {
                 variant="outlined"
                 density="comfortable"
                 suffix="人日"
-                hint="開始日からこの日数分を時間線に表示します（締切からの逆算なし）"
+                hint="開始日からこの日数分をタイムラインに表示（締切からの逆算はしません）"
                 persistent-hint
                 class="effort-field"
               />
@@ -420,8 +420,8 @@ async function handleSubmit() {
               density="comfortable"
               :hint="
                 assigneeOptions.length
-                  ? 'プロジェクトメンバーから複数選択できます'
-                  : 'メンバーがいません。先にプロジェクトへメンバーを追加してください'
+                  ? 'プロジェクトメンバーから複数選択'
+                  : 'メンバーがいません。先にプロジェクトへ追加してください'
               "
               persistent-hint
             >
@@ -443,18 +443,18 @@ async function handleSubmit() {
             </v-select>
           </section>
 
-          <!-- 評価者（レビュー待ちのとき） -->
+          <!-- レビュアー（レビュー待ちのとき） -->
           <section v-if="showReviewers" class="form-section mb-2">
             <div class="section-label">
               <v-icon size="18" class="mr-1">mdi-account-check-outline</v-icon>
-              評価者（複数可）
+              レビュアー（複数可）
             </div>
             <v-select
               v-model="selectedReviewerIds"
               :items="assigneeOptions"
               item-title="title"
               item-value="value"
-              placeholder="評価するメンバーを選択"
+              placeholder="レビュアーを選択"
               multiple
               chips
               closable-chips
@@ -464,8 +464,8 @@ async function handleSubmit() {
               density="comfortable"
               :hint="
                 assigneeOptions.length
-                  ? 'プロジェクトメンバーから評価者を選択できます'
-                  : 'メンバーがいません。先にプロジェクトへメンバーを追加してください'
+                  ? 'プロジェクトメンバーから選択'
+                  : 'メンバーがいません。先にプロジェクトへ追加してください'
               "
               persistent-hint
             >
@@ -509,7 +509,7 @@ async function handleSubmit() {
           prepend-icon="mdi-content-save-outline"
           @click="handleSubmit"
         >
-          保存する
+          保存
         </v-btn>
       </div>
     </v-card>

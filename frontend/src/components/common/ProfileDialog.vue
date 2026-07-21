@@ -84,7 +84,7 @@ function handleCancel() {
   >
     <v-card rounded="lg">
       <v-card-title class="text-subtitle-1 font-weight-bold pt-5 px-5">
-        {{ required ? 'はじめに：表示名を設定してください' : '表示名を設定する' }}
+        {{ required ? 'はじめに：表示名を設定してください' : '表示名を設定' }}
       </v-card-title>
       <v-card-text class="px-5">
         <p class="text-body-2 text-medium-emphasis mb-4">
@@ -144,7 +144,7 @@ function handleCancel() {
           :disabled="!familyNameInput.trim() || !givenNameInput.trim()"
           @click="handleSave"
         >
-          保存する
+          保存
         </v-btn>
       </v-card-actions>
     </v-card>

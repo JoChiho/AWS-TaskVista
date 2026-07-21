@@ -165,7 +165,7 @@ function canRemove(member: ProjectMember): boolean {
 
 function removeButtonTitle(member: ProjectMember): string {
   if (isSelf(member) && !isCurrentUserOwner.value) {
-    return 'プロジェクトから退出する'
+    return 'プロジェクトから退出'
   }
   return 'メンバーから外す'
 }
@@ -278,7 +278,7 @@ function memberRowKey(member: ProjectMember): string {
         <template v-if="isCurrentUserOwner">
           <v-divider class="mb-4" />
 
-          <div class="text-subtitle-2 font-weight-bold mb-3">メンバーを追加する</div>
+          <div class="text-subtitle-2 font-weight-bold mb-3">メンバーを追加</div>
           <v-text-field
             v-model="email"
             label="メールアドレス *"
@@ -307,7 +307,7 @@ function memberRowKey(member: ProjectMember): string {
           prepend-icon="mdi-account-plus"
           @click="handleAdd"
         >
-          追加する
+          追加
         </v-btn>
       </v-card-actions>
     </v-card>

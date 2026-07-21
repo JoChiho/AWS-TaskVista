@@ -144,7 +144,7 @@
     <h2><span class="num">1</span>システム概要</h2>
     <p class="lead">
       <strong>TaskVista</strong> は、5〜15 名規模のチーム向けタスク管理システムです。
-      プロジェクト単位でメンバーを共有し、かんばん・テーブル・時間線・ダッシュボードで進捗と日程を可視化します。
+      プロジェクト単位でメンバーを共有し、かんばん・テーブル・タイムライン・ダッシュボードで進捗と日程を可視化します。
       フロントエンドは SPA、バックエンドは AWS Serverless で構成します。
     </p>
     <div class="grid2">
@@ -170,7 +170,7 @@
         <td>ダッシュボード</td>
         <td>
           プロジェクト概要、自分の担当タスク、
-          <strong>評価待ちタスク</strong>（自分が評価者のレビュー待ち）
+          <strong>レビュー待ちのタスク</strong>（自分がレビュアー）
         </td>
       </tr>
       <tr><td>プロジェクト一覧</td><td>作成・編集・詳細・メンバー管理</td></tr>
@@ -178,22 +178,22 @@
         <td>かんばん</td>
         <td>
           ステータス列のドラッグ＆ドロップ。
-          <strong>評価待ち（自分）</strong>フィルタでレビュー対象を強調
+          <strong>要レビュー</strong>フィルタで対象を強調
         </td>
       </tr>
-      <tr><td>テーブル</td><td>ソート・フィルタ・一覧（開始日・工数・評価者列含む）</td></tr>
+      <tr><td>テーブル</td><td>ソート・フィルタ・一覧（開始日・工数・レビュアー列含む）</td></tr>
       <tr>
-        <td>時間線</td>
+        <td>タイムライン</td>
         <td>
           開始日 + 予定工数（人日）によるガント風カレンダー。
-          未設定タスクのドラッグ配置、全体/自分切替
+          未設定タスクのドラッグで開始日設定、全体/自分切替
         </td>
       </tr>
       <tr>
         <td>タスク詳細</td>
         <td>
-          要望・説明・完了度・開始日・工数・締切・複数担当・
-          <strong>評価者</strong>・コメント・添付
+          要件・説明・進捗・開始日・工数・締切・複数担当・
+          <strong>レビュアー</strong>・コメント・添付
         </td>
       </tr>
     </table>
@@ -698,22 +698,22 @@
     （表示: 計画中 · 進行中 · 保留 · 完了 · アーカイブ）</p>
     <h3>タスク status（日本語固定）</h3>
     <p>未着手 / 進行中 / レビュー待ち / 完了 / 保留</p>
-    <h3>完了度とステータス連動</h3>
+    <h3>進捗とステータス連動</h3>
     <table>
-      <tr><th>完了度</th><th>自動ステータス</th><th>例外</th></tr>
-      <tr><td>0%</td><td>未着手</td><td rowspan="3">レビュー待ち・保留は連動しない<br/>（任意の完了度で維持可能）</td></tr>
+      <tr><th>進捗</th><th>自動ステータス</th><th>例外</th></tr>
+      <tr><td>0%</td><td>未着手</td><td rowspan="3">レビュー待ち・保留は連動しない<br/>（任意の進捗で維持可能）</td></tr>
       <tr><td>1〜99%</td><td>進行中</td></tr>
       <tr><td>100%</td><td>完了</td></tr>
     </table>
-    <h3>日程の解釈（時間線）</h3>
+    <h3>日程の解釈（タイムライン）</h3>
     <table>
-      <tr><th>条件</th><th>時間線バー</th></tr>
+      <tr><th>条件</th><th>タイムラインバー</th></tr>
       <tr><td>開始日あり + 予定工数</td><td>開始日から工数分（人日）をカレンダー上に表示</td></tr>
       <tr><td>開始日のみ</td><td>1 日分のバー</td></tr>
       <tr><td>開始日なし</td><td>バーなし（締切からの逆算は行わない）</td></tr>
       <tr><td>締切日</td><td>フラグ表示のみ（長さには使わない）</td></tr>
     </table>
-    <h3>評価者（reviewers）</h3>
+    <h3>レビュアー（reviewers）</h3>
     <p>
       主に <strong>レビュー待ち</strong> でプロジェクトメンバーから複数指定。
       <strong>完了</strong> 後も設定済みなら保持表示（未設定は「なし」）。
@@ -731,13 +731,13 @@
       <tr><td>GET/PUT/DELETE</td><td><code>/projects/{id}</code></td><td>projects</td><td>詳細・更新・削除</td></tr>
       <tr><td>POST/DELETE</td><td><code>/projects/{id}/members…</code></td><td>projects</td><td>メンバー</td></tr>
       <tr><td>GET/POST</td><td><code>/projects/{id}/tasks</code></td><td>tasks</td><td>タスク一覧・作成</td></tr>
-      <tr><td>GET/PUT/DELETE</td><td><code>/tasks/{id}</code></td><td>tasks</td><td>詳細・更新（開始日・評価者含む）</td></tr>
+      <tr><td>GET/PUT/DELETE</td><td><code>/tasks/{id}</code></td><td>tasks</td><td>詳細・更新（開始日・レビュアー含む）</td></tr>
       <tr><td>PATCH</td><td><code>/tasks/{id}/status</code></td><td>tasks</td><td>かんばん用</td></tr>
       <tr><td>GET/POST/DELETE</td><td><code>/tasks/{id}/comments…</code></td><td>comments</td><td>コメント</td></tr>
       <tr><td>GET/POST/DELETE</td><td><code>/tasks/{id}/attachments…</code></td><td>attachments</td><td>添付・URL</td></tr>
       <tr><td>GET</td><td><code>/dashboard/summary</code></td><td>dashboard</td><td>概要統計</td></tr>
       <tr><td>GET</td><td><code>/dashboard/my-tasks</code></td><td>dashboard</td><td>自分の担当タスク（未完了）</td></tr>
-      <tr><td>GET</td><td><code>/dashboard/review-tasks</code></td><td>dashboard</td><td>評価待ち（自分が評価者）</td></tr>
+      <tr><td>GET</td><td><code>/dashboard/review-tasks</code></td><td>dashboard</td><td>レビュー待ち（自分がレビュアー）</td></tr>
       <tr><td>GET/PUT</td><td><code>/me</code></td><td>dashboard</td><td>プロフィール（姓・名）</td></tr>
       <tr><td>POST</td><td><code>/users/display-names</code></td><td>dashboard</td><td>表示名一括解決</td></tr>
     </table>
@@ -763,24 +763,24 @@
       <div class="card">
         <h4>タスク（基本）</h4>
         <p style="margin:0;font-size:.9rem;color:var(--c-sub)">
-          かんばん / テーブル / 時間線、複数担当、完了度連動、
-          予定工数（人日）、開始日・締切日、要望・説明、コメント、添付。
+          かんばん / テーブル / タイムライン、複数担当、進捗連動、
+          予定工数（人日）、開始日・締切日、要件・説明、コメント、添付。
         </p>
       </div>
       <div class="card">
-        <h4>時間線（ガント風カレンダー）</h4>
+        <h4>タイムライン（ガント風カレンダー）</h4>
         <p style="margin:0;font-size:.9rem;color:var(--c-sub)">
           開始日を基準に工数分のバーを表示。全体 / 自分のタスク切替。
-          開始日未設定（保留以外）はドラッグで配置。
-          ドラッグ中は他タスクを隠し、配置用カレンダーのみ表示。
+          開始日未設定（保留以外）は日付へドラッグして設定。
+          ドラッグ中は他タスクを隠し、日付カレンダーのみ表示。
         </p>
       </div>
       <div class="card">
-        <h4>評価者・レビュー</h4>
+        <h4>レビュアー・レビュー</h4>
         <p style="margin:0;font-size:.9rem;color:var(--c-sub)">
-          レビュー待ちでプロジェクトメンバーを評価者に複数指定。
-          完了後も保持表示。ダッシュボードに「評価待ち」欄、
-          かんばんに「評価待ち（自分）」フィルタとカード強調。
+          レビュー待ちでプロジェクトメンバーをレビュアーに複数指定。
+          完了後も保持表示。ダッシュボードに「レビュー待ちのタスク」欄、
+          かんばんに「要レビュー」フィルタとカード強調。
         </p>
       </div>
     </div>
@@ -788,20 +788,20 @@
     <h3>画面ビュー切替（プロジェクト内）</h3>
     <table>
       <tr><th>ビュー</th><th>パス</th><th>用途</th></tr>
-      <tr><td>かんばん</td><td><code>/projects/:id/board</code></td><td>ステータス移動・評価待ち強調</td></tr>
+      <tr><td>かんばん</td><td><code>/projects/:id/board</code></td><td>ステータス移動・要レビュー強調</td></tr>
       <tr><td>テーブル</td><td><code>/projects/:id/table</code></td><td>一覧・ソート・フィルタ</td></tr>
-      <tr><td>時間線</td><td><code>/projects/:id/timeline</code></td><td>日程バー・開始日ドラッグ配置</td></tr>
+      <tr><td>タイムライン</td><td><code>/projects/:id/timeline</code></td><td>日程バー・ドラッグで開始日設定</td></tr>
     </table>
 
     <h3>ダッシュボード構成</h3>
     <ol>
       <li><strong>プロジェクト概要</strong> … ステータス別タスク数・メンバー数・最終更新</li>
       <li><strong>自分の担当タスク</strong> … 未完了の担当タスク（締切昇順）</li>
-      <li><strong>評価待ちのタスク</strong> … レビュー待ちかつ自分が評価者（担当欄の下）</li>
+      <li><strong>レビュー待ちのタスク</strong> … レビュー待ちかつ自分がレビュアー（担当欄の下）</li>
     </ol>
 
     <figure class="fig">
-      <svg viewBox="0 0 960 320" width="100%" role="img" aria-label="評価・日程フロー">
+      <svg viewBox="0 0 960 320" width="100%" role="img" aria-label="レビュー・日程フロー">
         <defs>
           <marker id="arrF" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
             <path d="M0,0 L8,3 L0,6 Z" fill="#475569"/>
@@ -815,39 +815,39 @@
           </style>
         </defs>
         <!-- 上段: レビュー -->
-        <text class="fl" x="40" y="28">レビュー（評価者）</text>
+        <text class="fl" x="40" y="28">レビュー（レビュアー）</text>
         <rect class="fb" x="40" y="42" width="160" height="70" fill="#fffaf0" stroke="#ff9900"/>
         <text class="ft" x="120" y="72" text-anchor="middle">タスク作成・更新</text>
         <text class="fs" x="120" y="92" text-anchor="middle">status=レビュー待ち</text>
 
         <rect class="fb" x="260" y="42" width="160" height="70" fill="#fff8e1" stroke="#f9a825"/>
-        <text class="ft" x="340" y="72" text-anchor="middle">評価者を選択</text>
+        <text class="ft" x="340" y="72" text-anchor="middle">レビュアーを選択</text>
         <text class="fs" x="340" y="92" text-anchor="middle">reviewers[]</text>
 
         <rect class="fb" x="480" y="42" width="180" height="70" fill="#e3f2fd" stroke="#1565c0"/>
         <text class="ft" x="570" y="72" text-anchor="middle">ダッシュボード</text>
-        <text class="fs" x="570" y="92" text-anchor="middle">評価待ち一覧</text>
+        <text class="fs" x="570" y="92" text-anchor="middle">レビュー待ち一覧</text>
 
         <rect class="fb" x="720" y="42" width="200" height="70" fill="#f3e5f5" stroke="#7b1fa2"/>
         <text class="ft" x="820" y="72" text-anchor="middle">かんばん</text>
-        <text class="fs" x="820" y="92" text-anchor="middle">評価待ち（自分）</text>
+        <text class="fs" x="820" y="92" text-anchor="middle">レビュー待ち（自分）</text>
 
         <path class="fe" d="M200,77 L258,77"/>
         <path class="fe" d="M420,77 L478,77"/>
         <path class="fe" d="M660,77 L718,77"/>
 
         <!-- 下段: 日程 -->
-        <text class="fl" x="40" y="160">日程（時間線）</text>
+        <text class="fl" x="40" y="160">日程（タイムライン）</text>
         <rect class="fb" x="40" y="176" width="180" height="70" fill="#e8f5e9" stroke="#2e7d32"/>
         <text class="ft" x="130" y="206" text-anchor="middle">開始日 + 工数</text>
-        <text class="fs" x="130" y="226" text-anchor="middle">またはドラッグ配置</text>
+        <text class="fs" x="130" y="226" text-anchor="middle">またはドラッグで開始日設定</text>
 
         <rect class="fb" x="280" y="176" width="200" height="70" fill="#e0f7fa" stroke="#00838f"/>
-        <text class="ft" x="380" y="206" text-anchor="middle">時間線ビュー</text>
+        <text class="ft" x="380" y="206" text-anchor="middle">タイムラインビュー</text>
         <text class="fs" x="380" y="226" text-anchor="middle">ガント風バー表示</text>
 
         <rect class="fb" x="540" y="176" width="220" height="70" fill="#eef2ff" stroke="#6366f1"/>
-        <text class="ft" x="650" y="206" text-anchor="middle">配置モード</text>
+        <text class="ft" x="650" y="206" text-anchor="middle">開始日を設定中</text>
         <text class="fs" x="650" y="226" text-anchor="middle">ドラッグ中のみカレンダー</text>
 
         <rect class="fb" x="820" y="176" width="100" height="70" fill="#fce4ec" stroke="#c2185b"/>
@@ -858,7 +858,7 @@
         <path class="fe" d="M480,211 L538,211"/>
         <path class="fe" d="M760,211 L818,211"/>
       </svg>
-      <figcaption>図7. 評価フローと日程配置（概要）</figcaption>
+      <figcaption>図7. レビューフローと開始日設定（概要）</figcaption>
     </figure>
   </section>
 

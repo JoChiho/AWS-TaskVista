@@ -22,7 +22,7 @@ const authStore = useAuthStore()
       <v-icon size="64" color="primary" class="mb-4">mdi-check-circle-outline</v-icon>
       <h1 class="text-h4 font-weight-bold text-primary mb-2">TaskVista</h1>
       <p class="text-body-1 text-medium-emphasis mb-6">
-        チームのタスクと進捗を一元管理する業務向けアプリケーションです
+        チームのタスクと進捗をまとめて管理できる業務アプリです
       </p>
 
       <v-divider class="mb-6" />
@@ -32,15 +32,15 @@ const authStore = useAuthStore()
         <v-col cols="12">
           <div class="d-flex align-center mb-3">
             <v-icon color="primary" class="mr-3">mdi-view-column</v-icon>
-            <span class="text-body-2">かんばんビューによる進捗管理</span>
+            <span class="text-body-2">かんばんで進捗を見える化</span>
           </div>
           <div class="d-flex align-center mb-3">
             <v-icon color="primary" class="mr-3">mdi-table</v-icon>
-            <span class="text-body-2">テーブルビューによる一覧確認</span>
+            <span class="text-body-2">テーブルで一覧・絞り込み</span>
           </div>
           <div class="d-flex align-center">
             <v-icon color="primary" class="mr-3">mdi-account-group</v-icon>
-            <span class="text-body-2">チームメンバーへのタスク割当</span>
+            <span class="text-body-2">メンバーへのタスク割り当て</span>
           </div>
         </v-col>
       </v-row>

@@ -39,7 +39,7 @@ const modelValue = defineModel<boolean>()
           :loading="loading"
           @click="emit('confirm')"
         >
-          {{ confirmText || '確認する' }}
+          {{ confirmText || '確認' }}
         </v-btn>
       </v-card-actions>
     </v-card>

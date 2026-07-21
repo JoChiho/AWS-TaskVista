@@ -129,23 +129,23 @@ function onBodyClick() {
           class="my-review-banner text-caption font-weight-bold mb-2"
         >
           <v-icon size="14" class="mr-1">mdi-clipboard-check-outline</v-icon>
-          あなたの評価が必要です
+          レビュー依頼
         </div>
         <p class="text-body-2 font-weight-medium mb-1 task-title">
           {{ task.title }}
         </p>
 
         <div v-if="task.requirement" class="mb-2">
-          <span class="text-caption text-medium-emphasis d-block mb-0">要望</span>
+          <span class="text-caption text-medium-emphasis d-block mb-0">要件</span>
           <p class="text-body-2 text-medium-emphasis ma-0 task-requirement">
             {{ task.requirement }}
           </p>
         </div>
 
-        <!-- 完了度バー -->
+        <!-- 進捗バー -->
         <div v-if="progress(task) > 0 || task.status === '進行中'" class="mb-2">
           <div class="d-flex align-center justify-space-between mb-0">
-            <span class="text-caption text-medium-emphasis">完了度</span>
+            <span class="text-caption text-medium-emphasis">進捗</span>
             <span
               class="text-caption font-weight-bold"
               :class="`text-${completionColor(progress(task))}`"
@@ -193,7 +193,7 @@ function onBodyClick() {
             prepend-icon="mdi-account-check-outline"
             :title="reviewerLabels.join('、')"
           >
-            評価 {{ reviewerLabels.length }}
+            レビュー {{ reviewerLabels.length }}
           </v-chip>
 
           <v-spacer />

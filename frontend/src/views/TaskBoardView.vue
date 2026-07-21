@@ -247,7 +247,7 @@ watch(
         class="mr-1"
         @click="toggleMyReviewFilter"
       >
-        評価待ち（自分）
+        要レビュー
         <v-chip
           v-if="myReviewCount > 0"
           size="x-small"
@@ -276,7 +276,7 @@ watch(
       closable
       @click:close="toggleMyReviewFilter"
     >
-      あなたが評価者の「レビュー待ち」タスクのみ表示中です。カード枠がオレンジのものが対象です。
+      あなたがレビュアーの「レビュー待ち」タスクのみ表示中（オレンジ枠）
     </v-alert>
 
     <v-row v-if="showInitialSkeleton">
@@ -347,7 +347,7 @@ watch(
           class="mt-1"
           @click="openCreateForm(status)"
         >
-          タスクを追加する
+          タスクを追加
         </v-btn>
       </div>
     </div>

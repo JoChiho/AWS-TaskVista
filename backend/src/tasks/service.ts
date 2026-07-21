@@ -42,10 +42,10 @@ const createTaskSchema = z.object({
   reviewers: z.array(taskAssigneeSchema).max(20).optional(),
   /** 完了度 0〜100 */
   completionPercent: z
-    .number({ invalid_type_error: '完了度は数値で指定してください' })
-    .int('完了度は整数で指定してください')
-    .min(0, '完了度は 0 以上です')
-    .max(100, '完了度は 100 以下です')
+    .number({ invalid_type_error: '進捗は数値で指定してください' })
+    .int('進捗は整数で指定してください')
+    .min(0, '進捗は 0 以上です')
+    .max(100, '進捗は 100 以下です')
     .optional(),
   /** 予定工数（人日） */
   estimatedEffortDays: z

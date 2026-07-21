@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// タスク時間線（ガント / カレンダー）ビュー
+// タスクタイムライン（ガント / カレンダー）ビュー
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useTasksStore } from '@/stores/tasks'
@@ -175,7 +175,7 @@ watch(projectId, () => {
     <div class="page-header d-flex align-center flex-wrap ga-3 mb-3">
       <div class="min-w-0">
         <h1 class="text-h6 font-weight-bold mb-0 text-truncate">
-          {{ projectsStore.currentProject?.name ?? '時間線' }}
+          {{ projectsStore.currentProject?.name ?? 'タイムライン' }}
         </h1>
         <p class="text-caption text-medium-emphasis mb-0 mt-1">
           開始日を基準に予定工数分の期間を表示
@@ -196,7 +196,7 @@ watch(projectId, () => {
         size="small"
         @click="showCreateForm = true"
       >
-        タスクを追加する
+        タスクを追加
       </v-btn>
     </div>
 
@@ -253,7 +253,7 @@ watch(projectId, () => {
       class="mb-3"
       icon="mdi-information-outline"
     >
-      あなたが担当に設定されているタスクがありません。担当者を設定するか「全体」に切り替えてください。
+      担当タスクがありません。「全体」に切り替えるか、タスクに担当者を設定してください
     </v-alert>
 
     <v-skeleton-loader v-if="showInitialSkeleton" type="image, list-item@6" />

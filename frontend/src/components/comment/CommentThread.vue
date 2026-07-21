@@ -144,7 +144,7 @@ watch(
       v-else-if="visibleComments.length === 0"
       class="text-body-2 text-medium-emphasis py-3"
     >
-      コメントはまだありません。最初のコメントを投稿してください。
+      コメントはまだありません
     </p>
 
     <!-- コメント一覧（作成日時昇順） -->
@@ -205,7 +205,7 @@ watch(
       <div class="flex-grow-1">
         <v-textarea
           v-model="newCommentContent"
-          placeholder="コメントを入力してください"
+          placeholder="コメントを入力"
           rows="2"
           auto-grow
           hide-details
@@ -222,7 +222,7 @@ watch(
             prepend-icon="mdi-send"
             @click="submitComment"
           >
-            コメントを送信する
+            送信
           </v-btn>
         </div>
       </div>

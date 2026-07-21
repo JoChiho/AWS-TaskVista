@@ -78,7 +78,7 @@ onMounted(() => {
       <h1 class="text-h5 font-weight-bold">プロジェクト一覧</h1>
       <v-spacer />
       <v-btn color="primary" prepend-icon="mdi-plus" @click="openCreateForm">
-        新しいプロジェクトを作成する
+        新規プロジェクト
       </v-btn>
     </div>
 
@@ -164,7 +164,7 @@ onMounted(() => {
               variant="text"
               size="small"
               color="error"
-              title="削除する"
+              title="削除"
               @click="openDeleteConfirm(project)"
             />
           </v-card-actions>
@@ -184,7 +184,7 @@ onMounted(() => {
         prepend-icon="mdi-plus"
         @click="openCreateForm"
       >
-        最初のプロジェクトを作成する
+        最初のプロジェクトを作成
       </v-btn>
     </v-card>
 
@@ -202,7 +202,7 @@ onMounted(() => {
       v-model="showDeleteConfirm"
       title="プロジェクトを削除しますか？"
       :message="`「${deletingProject?.name}」を削除します。この操作は元に戻せません。`"
-      confirm-text="削除する"
+      confirm-text="削除"
       confirm-color="error"
       :loading="projectsStore.isLoading"
       @confirm="handleDelete"

@@ -70,7 +70,7 @@ const itemsPerPageOptions = [
  */
 const headers = [
   { title: 'タスク名', key: 'title', sortable: true, minWidth: '180px' },
-  { title: '要望', key: 'requirement', sortable: false, minWidth: '160px' },
+  { title: '要件', key: 'requirement', sortable: false, minWidth: '160px' },
   {
     title: 'ステータス',
     key: 'status',
@@ -81,7 +81,7 @@ const headers = [
     headerProps: { class: 'col-chip' },
   },
   {
-    title: '完了度',
+    title: '進捗',
     key: 'completionPercent',
     sortable: true,
     minWidth: '100px',
@@ -95,7 +95,7 @@ const headers = [
     width: '140px',
   },
   {
-    title: '評価者',
+    title: 'レビュアー',
     key: 'reviewers',
     sortable: false,
     minWidth: '100px',
@@ -245,7 +245,7 @@ watch(projectId, () => {
         size="small"
         @click="showCreateForm = true"
       >
-        タスクを追加する
+        タスクを追加
       </v-btn>
     </div>
 
@@ -256,7 +256,7 @@ watch(projectId, () => {
         <v-text-field
           v-model="searchText"
           prepend-inner-icon="mdi-magnify"
-          placeholder="タスク名で検索する"
+          placeholder="タスク名で検索"
           clearable
           hide-details
           density="compact"
@@ -298,7 +298,7 @@ watch(projectId, () => {
         </span>
       </template>
 
-      <!-- 要望（タスク名と同等以上の幅を想定） -->
+      <!-- 要件 -->
       <template #[`item.requirement`]="{ item }">
         <span class="text-body-2 cell-main">
           {{ item.requirement || '—' }}
@@ -372,7 +372,7 @@ watch(projectId, () => {
         </span>
       </template>
 
-      <!-- 完了度 -->
+      <!-- 進捗 -->
       <template #[`item.completionPercent`]="{ item }">
         <div class="d-flex align-center ga-1" style="min-width: 88px">
           <v-progress-linear
@@ -428,7 +428,7 @@ watch(projectId, () => {
 </template>
 
 <style scoped>
-/* 本文列: タスク名・要望を読みやすく */
+/* 本文列: タスク名・要件を読みやすく */
 .task-table :deep(th),
 .task-table :deep(td) {
   vertical-align: middle;

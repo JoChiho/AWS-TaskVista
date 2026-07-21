@@ -18,7 +18,7 @@ const currentProjectId = computed(() => route.params.projectId as string | undef
 // プロジェクト詳細ページかどうかを判定する
 const isProjectPage = computed(() => !!currentProjectId.value)
 
-// 現在のビューモードを判定する（かんばん / テーブル / 時間線）
+// 現在のビューモードを判定する（かんばん / テーブル / タイムライン）
 const currentView = computed(() => {
   if (route.name === 'task-board') return 'board'
   if (route.name === 'task-table') return 'table'
@@ -40,7 +40,7 @@ function switchToTable() {
   }
 }
 
-/** 時間線ビューに切り替える */
+/** タイムラインビューに切り替える */
 function switchToTimeline() {
   if (currentProjectId.value) {
     router.push({ name: 'task-timeline', params: { projectId: currentProjectId.value } })
@@ -89,7 +89,7 @@ const userInitials = computed(() => authStore.avatarLabel || '?')
         :color="currentView === 'timeline' ? 'primary' : undefined"
         @click="switchToTimeline"
       >
-        時間線
+        タイムライン
       </v-btn>
     </template>
 
@@ -133,7 +133,7 @@ const userInitials = computed(() => authStore.avatarLabel || '?')
         <v-divider />
         <v-list-item
           prepend-icon="mdi-account-edit"
-          title="表示名を設定する"
+          title="表示名を設定"
           @click="showProfile = true"
         />
         <v-list-item

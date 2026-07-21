@@ -50,11 +50,11 @@ const emailRules = [
 const isEditMode = computed(() => !!props.project?.projectId)
 
 const dialogTitle = computed(() =>
-  isEditMode.value ? 'プロジェクトを編集する' : '新しいプロジェクトを作成する',
+  isEditMode.value ? 'プロジェクトを編集' : '新規プロジェクト',
 )
 
 const submitLabel = computed(() =>
-  isEditMode.value ? '変更を保存する' : 'プロジェクトを作成する',
+  isEditMode.value ? '保存' : '作成',
 )
 
 const statusOptions = PROJECT_STATUS_OPTIONS
@@ -155,7 +155,7 @@ async function handleAddMember() {
     return
   }
   if (authStore.currentUser?.email && normalizeEmail(authStore.currentUser.email) === email) {
-    memberError.value = '自分自身は追加する必要はありません'
+    memberError.value = '自分自身は追加できません'
     return
   }
 
@@ -361,7 +361,7 @@ function canRemoveMember(member: ProjectMember): boolean {
         <p class="text-caption text-medium-emphasis mb-1">説明（任意）</p>
         <v-textarea
           v-model="description"
-          placeholder="プロジェクトの目的や概要を入力してください"
+          placeholder="目的や概要（任意）"
           rows="3"
           counter="1000"
           hide-details="auto"

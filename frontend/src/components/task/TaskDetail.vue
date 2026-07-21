@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // タスク詳細パネル（右サイドのダイアログ）
-// タイトル・要望・説明・完了度を前面に出したレイアウト
+// タイトル・要件・説明・進捗を前面に出したレイアウト
 import { ref, computed, watch } from 'vue'
 import { useTasksStore } from '@/stores/tasks'
 import { useCommentsStore } from '@/stores/comments'
@@ -132,7 +132,7 @@ async function commitCompletion(value: number) {
     })
   } catch {
     localCompletion.value = normalizeCompletion(task.value.completionPercent)
-    uiStore.showError('完了度の更新に失敗しました')
+    uiStore.showError('進捗の更新に失敗しました')
   } finally {
     isSavingProgress.value = false
   }
@@ -273,24 +273,24 @@ function initials(name: string): string {
               prepend-icon="mdi-calendar"
             >
               {{ formatDate(task.dueDate) }}
-              <span v-if="isOverdue(task.dueDate)" class="ml-1">（締切超過）</span>
+              <span v-if="isOverdue(task.dueDate)" class="ml-1">（期限切れ）</span>
             </v-chip>
           </div>
         </div>
       </div>
 
       <div class="task-detail-body flex-grow-1">
-        <!-- 要望（ハイライト） -->
+        <!-- 要件（ハイライト） -->
         <section class="detail-section mx-5 mt-4 mb-4">
           <div class="section-label">
             <v-icon size="18" class="mr-1">mdi-bullseye-arrow</v-icon>
-            要望
+            要件
           </div>
           <div v-if="task.requirement?.trim()" class="requirement-card">
             <p class="requirement-text ma-0">{{ task.requirement }}</p>
           </div>
           <div v-else class="empty-block">
-            要望は未登録です。編集画面からご記入ください。
+            未入力（編集画面から入力できます）
           </div>
         </section>
 
@@ -304,16 +304,16 @@ function initials(name: string): string {
             <p class="description-text ma-0">{{ task.description }}</p>
           </div>
           <div v-else class="empty-block">
-            説明は未登録です。背景や手順は編集画面からご記入ください。
+            未入力（編集画面から入力できます）
           </div>
         </section>
 
-        <!-- 完了度（説明の下・担当者の上・コンパクト） -->
+        <!-- 進捗 -->
         <section class="detail-section completion-section mx-5 mb-4">
           <div class="completion-row">
             <div class="section-label completion-label mb-0">
               <v-icon size="16" class="mr-1" color="primary">mdi-progress-check</v-icon>
-              完了度
+              進捗
             </div>
             <v-slider
               v-model="localCompletion"
@@ -349,7 +349,7 @@ function initials(name: string): string {
               class="completion-btn"
               @click="commitCompletion(localCompletion)"
             >
-              適用
+              更新
             </v-btn>
           </div>
         </section>
@@ -375,14 +375,14 @@ function initials(name: string): string {
               {{ label }}
             </v-chip>
           </div>
-          <div v-else class="empty-block">未割当</div>
+          <div v-else class="empty-block">未設定</div>
         </section>
 
-        <!-- 評価者（レビュー待ち / 完了で設定済みなら保持表示） -->
+        <!-- レビュアー（レビュー待ち / 完了で設定済みなら保持表示） -->
         <section v-if="showReviewersSection" class="detail-section mx-5 mb-4">
           <div class="section-label">
             <v-icon size="18" class="mr-1">mdi-account-check-outline</v-icon>
-            評価者
+            レビュアー
           </div>
           <div v-if="reviewerLabels.length" class="d-flex flex-wrap ga-2">
             <v-chip
@@ -401,7 +401,7 @@ function initials(name: string): string {
           </div>
           <div v-else class="empty-block">
             <template v-if="task.status === 'レビュー待ち'">
-              未設定です。編集からプロジェクトメンバーを評価者に指定できます。
+              未指定（編集画面からメンバーを選べます）
             </template>
             <template v-else>なし</template>
           </div>
@@ -478,7 +478,7 @@ function initials(name: string): string {
           </div>
 
           <v-file-input
-            label="ファイルを添付する"
+            label="ファイルを添付"
             prepend-icon="mdi-upload"
             hide-details
             density="compact"
@@ -522,7 +522,7 @@ function initials(name: string): string {
     v-model="showDeleteConfirm"
     title="タスクを削除しますか？"
     :message="`「${task?.title}」を削除します。この操作は元に戻せません。`"
-    confirm-text="削除する"
+    confirm-text="削除"
     confirm-color="error"
     :loading="tasksStore.isLoading"
     @confirm="handleDelete"
