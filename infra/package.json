@@ -1,0 +1,36 @@
+{
+  "name": "taskvista-infra",
+  "version": "1.0.0",
+  "private": true,
+  "description": "TaskVista AWS CDK infrastructure (Auth / Storage / Backend / Frontend)",
+  "bin": {
+    "taskvista": "bin/taskvista.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "cdk": "cdk",
+    "synth": "cdk synth",
+    "diff": "cdk diff",
+    "deploy": "cdk deploy --all --require-approval broadening",
+    "deploy:dev": "cdk deploy --all -c env=dev --require-approval broadening",
+    "deploy:prod": "cdk deploy --all -c env=prod --require-approval broadening",
+    "destroy:dev": "cdk destroy --all -c env=dev",
+    "bootstrap": "cdk bootstrap"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "aws-cdk": "^2.1000.0",
+    "esbuild": "^0.25.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.2"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.189.0",
+    "constructs": "^10.4.2",
+    "source-map-support": "^0.5.21"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

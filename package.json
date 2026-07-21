@@ -11,6 +11,10 @@
     "deploy:dry-run": "node scripts/deploy.mjs --dry-run",
     "local:build": "node scripts/local-build.mjs",
     "local:api": "node scripts/local-api.mjs",
-    "local:sam": "node scripts/local-sam.mjs"
+    "local:sam": "node scripts/local-sam.mjs",
+    "cdk": "npm --prefix infra run cdk --",
+    "cdk:synth": "npm --prefix infra run synth --",
+    "cdk:deploy:dev": "npm --prefix infra run deploy:dev",
+    "cdk:deploy:prod": "npm --prefix infra run deploy:prod"
   }
 }
