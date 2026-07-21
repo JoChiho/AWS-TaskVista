@@ -7,8 +7,9 @@ import type { ProjectSummary } from '@/types/project'
 import { projectStatusLabel, projectStatusColor } from '@/types/project'
 import type { Task } from '@/types/task'
 import { STATUS_COLORS, PRIORITY_LABELS, PRIORITY_COLORS } from '@/types/task'
-import { fetchDashboardSummary, fetchMyTasks } from '@/api/dashboard'
+import { fetchDashboardSummary, fetchMyTasks, fetchMyReviewTasks } from '@/api/dashboard'
 import { useUiStore } from '@/stores/ui'
+import { formatReviewerList } from '@/utils/displayName'
 
 const router = useRouter()
 const uiStore = useUiStore()
@@ -17,6 +18,8 @@ const uiStore = useUiStore()
 const summaries = ref<ProjectSummary[]>([])
 // 自分の担当タスク
 const myTasks = ref<Task[]>([])
+// 自分への評価待ち（レビュー待ち & 自分が評価者）
+const reviewTasks = ref<Task[]>([])
 // ローディング状態
 const isLoading = ref(false)
 
@@ -91,17 +94,27 @@ function goToMyTask(task: Task) {
   })
 }
 
+/** 評価待ち → かんばんのレビュー列ハイライト付きで開く */
+function goToReviewTask(task: Task) {
+  router.push({
+    name: 'task-board',
+    params: { projectId: task.projectId },
+    query: { taskId: task.taskId, myReview: '1' },
+  })
+}
+
 /** ダッシュボードデータを読み込む */
 async function loadDashboard() {
   isLoading.value = true
   try {
-    // 並列でデータを取得する
-    const [summaryData, taskData] = await Promise.all([
+    const [summaryData, taskData, reviewData] = await Promise.all([
       fetchDashboardSummary(),
       fetchMyTasks(),
+      fetchMyReviewTasks(),
     ])
     summaries.value = summaryData
     myTasks.value = taskData
+    reviewTasks.value = reviewData
   } catch {
     uiStore.showError('ダッシュボードの読み込みに失敗しました')
   } finally {
@@ -238,7 +251,7 @@ onMounted(() => {
         </v-btn>
       </v-card>
 
-      <!-- 自分の担当タスクセクション（横幅を活かした行レイアウト） -->
+      <!-- 自分の担当タスク -->
       <div class="d-flex align-center mb-4">
         <h2 class="text-h6 font-weight-bold mb-0">
           <v-icon class="mr-2">mdi-account-check</v-icon>
@@ -255,8 +268,7 @@ onMounted(() => {
         </v-chip>
       </div>
 
-      <v-card v-if="myTasks.length > 0" rounded="lg" class="my-tasks-panel">
-        <!-- ヘッダー行（md 以上で表示・列の意味を明示） -->
+      <v-card v-if="myTasks.length > 0" rounded="lg" class="my-tasks-panel mb-8">
         <div class="my-task-header d-none d-md-flex px-4 py-2 text-caption text-medium-emphasis">
           <div class="my-task-col-main">タスク名 / 要望</div>
           <div class="my-task-col-meta">プロジェクト</div>
@@ -278,7 +290,6 @@ onMounted(() => {
             @click="goToMyTask(task)"
             @keydown.enter="goToMyTask(task)"
           >
-            <!-- 左: タスク名 + 要望（横幅の大部分） -->
             <div class="my-task-col-main">
               <div class="text-body-1 font-weight-medium my-task-title">
                 {{ task.title }}
@@ -292,7 +303,6 @@ onMounted(() => {
               </div>
             </div>
 
-            <!-- 右メタ情報（横並びでスペース活用） -->
             <div class="my-task-col-meta">
               <v-icon size="14" class="mr-1 text-medium-emphasis">mdi-folder-outline</v-icon>
               <span class="text-body-2 text-medium-emphasis text-truncate">
@@ -359,11 +369,117 @@ onMounted(() => {
         </div>
       </v-card>
 
-      <!-- 担当タスクがない場合の空状態 -->
-      <v-card v-else class="text-center pa-6" rounded="lg" variant="tonal">
+      <v-card v-else class="text-center pa-6 mb-8" rounded="lg" variant="tonal">
         <v-icon size="40" color="success" class="mb-2">mdi-check-all</v-icon>
-        <p class="text-body-1 text-medium-emphasis">
+        <p class="text-body-1 text-medium-emphasis mb-0">
           現在、担当中のタスクはありません。
+        </p>
+      </v-card>
+
+      <!-- 評価待ち（自分が評価者）— 担当タスクの下 -->
+      <div class="d-flex align-center mb-4">
+        <h2 class="text-h6 font-weight-bold mb-0">
+          <v-icon class="mr-2" color="warning">mdi-clipboard-check-outline</v-icon>
+          評価待ちのタスク
+        </h2>
+        <v-chip
+          v-if="reviewTasks.length > 0"
+          size="small"
+          color="warning"
+          variant="tonal"
+          class="ml-3"
+        >
+          {{ reviewTasks.length }} 件
+        </v-chip>
+      </div>
+      <p class="text-caption text-medium-emphasis mb-3">
+        ステータスが「レビュー待ち」で、あなたが評価者に指定されているタスクです
+      </p>
+
+      <v-card v-if="reviewTasks.length > 0" rounded="lg" class="my-tasks-panel review-tasks-panel">
+        <div class="my-task-header d-none d-md-flex px-4 py-2 text-caption text-medium-emphasis">
+          <div class="my-task-col-main">タスク名 / 要望</div>
+          <div class="my-task-col-meta">プロジェクト</div>
+          <div class="my-task-col-status">ステータス</div>
+          <div class="my-task-col-priority">優先度</div>
+          <div class="my-task-col-due">締切日</div>
+          <div class="my-task-col-action" />
+        </div>
+        <v-divider class="d-none d-md-flex" />
+
+        <div v-for="(task, index) in reviewTasks" :key="task.taskId">
+          <div
+            class="my-task-row px-4 py-3 review-row"
+            role="button"
+            tabindex="0"
+            @click="goToReviewTask(task)"
+            @keydown.enter="goToReviewTask(task)"
+          >
+            <div class="my-task-col-main">
+              <div class="text-body-1 font-weight-medium my-task-title">
+                {{ task.title }}
+              </div>
+              <div
+                v-if="task.requirement"
+                class="text-body-2 text-medium-emphasis mt-1 my-task-requirement"
+              >
+                <span class="text-caption font-weight-medium mr-1">要望</span>
+                {{ task.requirement }}
+              </div>
+              <div
+                v-if="formatReviewerList(task)"
+                class="text-caption text-medium-emphasis mt-1"
+              >
+                <v-icon size="12" class="mr-1">mdi-account-check-outline</v-icon>
+                評価者: {{ formatReviewerList(task) }}
+              </div>
+            </div>
+            <div class="my-task-col-meta">
+              <v-icon size="14" class="mr-1 text-medium-emphasis">mdi-folder-outline</v-icon>
+              <span class="text-body-2 text-medium-emphasis text-truncate">
+                {{ projectLabel(task.projectId) }}
+              </span>
+            </div>
+            <div class="my-task-col-status">
+              <v-chip color="warning" size="small" label variant="flat">
+                レビュー待ち
+              </v-chip>
+            </div>
+            <div class="my-task-col-priority">
+              <v-chip
+                :color="PRIORITY_COLORS[task.priority]"
+                size="small"
+                label
+                variant="tonal"
+              >
+                {{ PRIORITY_LABELS[task.priority] }}
+              </v-chip>
+            </div>
+            <div class="my-task-col-due">
+              <div
+                class="d-flex align-center justify-end"
+                :class="{
+                  'text-error font-weight-bold': isOverdue(task.dueDate),
+                  'text-warning font-weight-medium':
+                    isDueSoon(task.dueDate) && !isOverdue(task.dueDate),
+                }"
+              >
+                <v-icon size="14" class="mr-1 text-medium-emphasis">mdi-calendar</v-icon>
+                <span class="text-body-2 cell-date">{{ formatDueDate(task.dueDate) }}</span>
+              </div>
+            </div>
+            <div class="my-task-col-action">
+              <v-icon color="warning" size="20">mdi-chevron-right</v-icon>
+            </div>
+          </div>
+          <v-divider v-if="index < reviewTasks.length - 1" />
+        </div>
+      </v-card>
+
+      <v-card v-else class="text-center pa-6" rounded="lg" variant="tonal">
+        <v-icon size="40" color="success" class="mb-2">mdi-clipboard-check</v-icon>
+        <p class="text-body-1 text-medium-emphasis mb-0">
+          現在、あなたへの評価待ちタスクはありません。
         </p>
       </v-card>
     </template>
@@ -373,6 +489,14 @@ onMounted(() => {
 <style scoped>
 .my-tasks-panel {
   overflow: hidden;
+}
+
+.review-tasks-panel {
+  border: 1px solid rgba(var(--v-theme-warning), 0.35);
+}
+
+.review-row:hover {
+  background-color: rgba(var(--v-theme-warning), 0.06) !important;
 }
 
 /* デスクトップ: 1 行に情報を横展開 */

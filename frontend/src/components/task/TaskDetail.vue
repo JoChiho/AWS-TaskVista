@@ -18,7 +18,11 @@ import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import axios from 'axios'
 import { getUploadUrl, getDownloadUrl, deleteAttachment } from '@/api/comments'
 import { useUiStore } from '@/stores/ui'
-import { resolveAssigneeLabels, avatarLabelFromName } from '@/utils/displayName'
+import {
+  resolveAssigneeLabels,
+  resolveReviewerLabels,
+  avatarLabelFromName,
+} from '@/utils/displayName'
 
 const props = defineProps<{
   projectId: string
@@ -40,6 +44,23 @@ const task = computed(() => tasksStore.currentTask)
 
 const assigneeLabels = computed(() =>
   task.value ? resolveAssigneeLabels(task.value) : [],
+)
+
+const reviewerLabels = computed(() =>
+  task.value ? resolveReviewerLabels(task.value) : [],
+)
+
+/**
+ * 評価者セクション:
+ * - レビュー待ち / 完了 は常に表示（未設定なら「なし」）
+ * - それ以外でも評価者が残っていれば表示
+ */
+const showReviewersSection = computed(
+  () =>
+    !!task.value &&
+    (task.value.status === 'レビュー待ち' ||
+      task.value.status === '完了' ||
+      reviewerLabels.value.length > 0),
 )
 
 // コメント取得は CommentThread 側の ensureComments に一本化
@@ -357,8 +378,41 @@ function initials(name: string): string {
           <div v-else class="empty-block">未割当</div>
         </section>
 
-        <!-- 属性グリッド: 1行目 予定工数 / 締切日、2行目 作成 / 更新 -->
+        <!-- 評価者（レビュー待ち / 完了で設定済みなら保持表示） -->
+        <section v-if="showReviewersSection" class="detail-section mx-5 mb-4">
+          <div class="section-label">
+            <v-icon size="18" class="mr-1">mdi-account-check-outline</v-icon>
+            評価者
+          </div>
+          <div v-if="reviewerLabels.length" class="d-flex flex-wrap ga-2">
+            <v-chip
+              v-for="(label, idx) in reviewerLabels"
+              :key="`rev-${label}-${idx}`"
+              color="warning"
+              variant="tonal"
+              size="large"
+              class="font-weight-medium"
+            >
+              <v-avatar start size="28" color="warning">
+                <span class="text-caption text-white">{{ initials(label) }}</span>
+              </v-avatar>
+              {{ label }}
+            </v-chip>
+          </div>
+          <div v-else class="empty-block">
+            <template v-if="task.status === 'レビュー待ち'">
+              未設定です。編集からプロジェクトメンバーを評価者に指定できます。
+            </template>
+            <template v-else>なし</template>
+          </div>
+        </section>
+
+        <!-- 属性グリッド: 開始 / 工数 / 締切 / 作成・更新 -->
         <section class="meta-grid mx-5 mb-5">
+          <div class="meta-item">
+            <span class="meta-key">開始日</span>
+            <span class="meta-val">{{ formatDate(task.startDate) }}</span>
+          </div>
           <div class="meta-item">
             <span class="meta-key">予定工数（人日）</span>
             <span class="meta-val">

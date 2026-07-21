@@ -7,6 +7,7 @@ import draggable from 'vuedraggable'
 import { useTasksStore } from '@/stores/tasks'
 import { useProjectsStore } from '@/stores/projects'
 import { useDisplayNamesStore } from '@/stores/displayNames'
+import { useAuthStore } from '@/stores/auth'
 import type { Task, TaskStatus } from '@/types/task'
 import { TASK_STATUSES, STATUS_COLORS } from '@/types/task'
 import TaskCard from '@/components/task/TaskCard.vue'
@@ -21,6 +22,7 @@ const router = useRouter()
 const tasksStore = useTasksStore()
 const projectsStore = useProjectsStore()
 const displayNamesStore = useDisplayNamesStore()
+const authStore = useAuthStore()
 
 const projectId = computed(() => route.params.projectId as string)
 
@@ -30,12 +32,28 @@ const defaultStatus = ref<TaskStatus>('未着手')
 
 const filterAssignee = ref<string | null>(null)
 const filterPriority = ref<string | null>(null)
+/** 自分が評価者のレビュー待ちだけ表示 */
+const filterMyReview = ref(false)
+
+const myUserId = computed(() => authStore.currentUser?.sub ?? '')
+
+function isMyReviewTask(task: Task): boolean {
+  if (task.status !== 'レビュー待ち') return false
+  const uid = myUserId.value
+  if (!uid) return false
+  return (task.reviewers ?? []).some((r) => r.userId === uid)
+}
+
+const myReviewCount = computed(
+  () => tasksStore.activeTasks.filter((t) => isMyReviewTask(t)).length,
+)
 
 const filteredTasksByStatus = computed(() => {
   const result = {} as Record<TaskStatus, Task[]>
   for (const status of TASK_STATUSES) {
     result[status] = tasksStore.tasks.filter((task) => {
       if (task.isDeleted || task.status !== status) return false
+      if (filterMyReview.value && !isMyReviewTask(task)) return false
       if (
         filterAssignee.value &&
         !resolveAssigneeLabels(task).includes(filterAssignee.value)
@@ -125,6 +143,24 @@ async function openTaskFromQuery(): Promise<void> {
 function resetFilters() {
   filterAssignee.value = null
   filterPriority.value = null
+  filterMyReview.value = false
+}
+
+function toggleMyReviewFilter() {
+  filterMyReview.value = !filterMyReview.value
+  // URL と同期（ダッシュボードからの遷移と揃える）
+  const q = { ...route.query }
+  if (filterMyReview.value) {
+    q.myReview = '1'
+  } else {
+    delete q.myReview
+  }
+  void router.replace({ name: 'task-board', params: { projectId: projectId.value }, query: q }).catch(() => {})
+}
+
+function syncMyReviewFromQuery() {
+  filterMyReview.value =
+    route.query.myReview === '1' || route.query.myReview === 'true'
 }
 
 watch(showDetail, (open) => {
@@ -158,6 +194,7 @@ const showInitialSkeleton = computed(
 async function loadBoard(): Promise<void> {
   const id = projectId.value
   if (!id) return
+  syncMyReviewFromQuery()
   await Promise.all([
     projectsStore.ensureProject(id),
     tasksStore.ensureTasks(id),
@@ -177,6 +214,13 @@ onMounted(() => {
 watch(projectId, () => {
   void loadBoard()
 })
+
+watch(
+  () => route.query.myReview,
+  () => {
+    syncMyReviewFromQuery()
+  },
+)
 </script>
 
 <template>
@@ -195,6 +239,26 @@ watch(projectId, () => {
         title="最新データを確認中"
       />
       <v-spacer />
+      <v-btn
+        :variant="filterMyReview ? 'flat' : 'tonal'"
+        :color="filterMyReview ? 'warning' : undefined"
+        size="small"
+        prepend-icon="mdi-clipboard-check-outline"
+        class="mr-1"
+        @click="toggleMyReviewFilter"
+      >
+        評価待ち（自分）
+        <v-chip
+          v-if="myReviewCount > 0"
+          size="x-small"
+          :color="filterMyReview ? 'white' : 'warning'"
+          :variant="filterMyReview ? 'elevated' : 'flat'"
+          class="ml-2"
+          label
+        >
+          {{ myReviewCount }}
+        </v-chip>
+      </v-btn>
       <TaskFilters
         v-model:assignee="filterAssignee"
         v-model:priority="filterPriority"
@@ -202,6 +266,18 @@ watch(projectId, () => {
         @reset="resetFilters"
       />
     </div>
+
+    <v-alert
+      v-if="filterMyReview"
+      type="warning"
+      variant="tonal"
+      density="compact"
+      class="mb-3"
+      closable
+      @click:close="toggleMyReviewFilter"
+    >
+      あなたが評価者の「レビュー待ち」タスクのみ表示中です。カード枠がオレンジのものが対象です。
+    </v-alert>
 
     <v-row v-if="showInitialSkeleton">
       <v-col v-for="i in 5" :key="i" cols="12" sm="6" md="4" lg="2">
@@ -217,7 +293,8 @@ watch(projectId, () => {
       <div
         v-for="status in TASK_STATUSES"
         :key="status"
-        class="flex-shrink-0"
+        class="flex-shrink-0 board-col"
+        :class="{ 'board-col--review-focus': filterMyReview && status === 'レビュー待ち' }"
         style="width: 280px; min-width: 280px"
       >
         <div class="d-flex align-center mb-3 px-1">
@@ -252,7 +329,11 @@ watch(projectId, () => {
         >
           <template #item="{ element: task }">
             <div class="mb-2" @click="onItemClick(task, $event)">
-              <TaskCard :task="task" @open="openTaskDetail" />
+              <TaskCard
+                :task="task"
+                :needs-my-review="isMyReviewTask(task)"
+                @open="openTaskDetail"
+              />
             </div>
           </template>
         </draggable>
@@ -296,5 +377,12 @@ watch(projectId, () => {
 
 .task-column {
   padding: 4px;
+}
+
+.board-col--review-focus {
+  background: rgba(var(--v-theme-warning), 0.06);
+  border-radius: 12px;
+  padding: 8px 6px 12px;
+  outline: 1px solid rgba(var(--v-theme-warning), 0.35);
 }
 </style>

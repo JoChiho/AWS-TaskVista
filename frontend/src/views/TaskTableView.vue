@@ -19,6 +19,7 @@ import TaskForm from '@/components/task/TaskForm.vue'
 import {
   formatAssigneeList,
   formatAssigneeSurnames,
+  formatReviewerList,
   resolveAssigneeLabels,
 } from '@/utils/displayName'
 
@@ -94,6 +95,13 @@ const headers = [
     width: '140px',
   },
   {
+    title: '評価者',
+    key: 'reviewers',
+    sortable: false,
+    minWidth: '100px',
+    width: '120px',
+  },
+  {
     title: '優先度',
     key: 'priority',
     sortable: true,
@@ -101,6 +109,20 @@ const headers = [
     width: '90px',
     cellProps: { class: 'col-chip' },
     headerProps: { class: 'col-chip' },
+  },
+  {
+    title: '開始日',
+    key: 'startDate',
+    sortable: true,
+    minWidth: '100px',
+    width: '100px',
+  },
+  {
+    title: '予定工数',
+    key: 'estimatedEffortDays',
+    sortable: true,
+    minWidth: '90px',
+    width: '90px',
   },
   {
     title: '締切日',
@@ -313,6 +335,24 @@ watch(projectId, () => {
         </div>
       </template>
 
+      <!-- 開始日 -->
+      <template #[`item.startDate`]="{ item }">
+        <span class="text-body-2 cell-date">
+          {{ formatTableDate(item.startDate) }}
+        </span>
+      </template>
+
+      <!-- 予定工数 -->
+      <template #[`item.estimatedEffortDays`]="{ item }">
+        <span class="text-body-2 cell-date">
+          {{
+            item.estimatedEffortDays != null
+              ? `${item.estimatedEffortDays} 人日`
+              : '—'
+          }}
+        </span>
+      </template>
+
       <!-- 締切日（短い日付・1行固定） -->
       <template #[`item.dueDate`]="{ item }">
         <span
@@ -356,6 +396,19 @@ watch(projectId, () => {
           :title="formatAssigneeList(item) || undefined"
         >
           {{ formatAssigneeSurnames(item) || '—' }}
+        </span>
+      </template>
+
+      <template #[`item.reviewers`]="{ item }">
+        <span
+          class="text-body-2 text-no-wrap text-truncate d-inline-block"
+          style="max-width: 100%"
+          :title="formatReviewerList(item) || undefined"
+        >
+          {{
+            formatReviewerList(item) ||
+            (item.status === '完了' || item.status === 'レビュー待ち' ? 'なし' : '—')
+          }}
         </span>
       </template>
     </v-data-table>

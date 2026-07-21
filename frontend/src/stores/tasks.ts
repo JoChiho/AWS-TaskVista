@@ -37,7 +37,10 @@ export function tasksFingerprint(list: Task[]): string {
           t.assigneeId ?? '',
           t.assigneeName ?? '',
           t.priority,
+          t.startDate ?? '',
           t.dueDate ?? '',
+          t.estimatedEffortDays ?? '',
+          t.completionPercent ?? '',
           t.isDeleted ? '1' : '0',
         ].join(':'),
     )

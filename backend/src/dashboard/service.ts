@@ -78,6 +78,73 @@ function isAssignedToUser(
   return false
 }
 
+/** タスクの評価者に指定ユーザーが含まれるか */
+function isReviewerOfTask(
+  t: Task,
+  userId: string,
+  nameCandidates: Set<string>,
+): boolean {
+  const list = t.reviewers ?? []
+  if (list.length === 0) return false
+  for (const r of list) {
+    if (r.userId === userId) return true
+    if (!r.userId && r.displayName) {
+      if (nameCandidates.has(r.displayName.trim().toLowerCase())) return true
+    }
+  }
+  return false
+}
+
+async function buildNameCandidates(
+  userId: string,
+  email?: string,
+  name?: string,
+): Promise<Set<string>> {
+  const displayName = await usersService.getDisplayName(userId)
+  return new Set(
+    [displayName, name, email?.split('@')[0]]
+      .filter(Boolean)
+      .map((s) => String(s).trim().toLowerCase()),
+  )
+}
+
+/** 担当者・評価者名をクラウド表示名で上書き */
+async function enrichPeopleNames(tasks: Task[]): Promise<Task[]> {
+  const ids = tasks.flatMap((t) => {
+    const list = [
+      t.assigneeId,
+      ...(t.assignees?.map((a) => a.userId) ?? []),
+      ...(t.reviewers?.map((r) => r.userId) ?? []),
+    ]
+    return list.filter(Boolean) as string[]
+  })
+  if (ids.length === 0) return tasks
+  const names = await usersService.getDisplayNameMap(ids)
+  if (names.size === 0) return tasks
+  return tasks.map((t) => {
+    const assignees = (t.assignees ?? []).map((a) =>
+      a.userId && names.has(a.userId)
+        ? { ...a, displayName: names.get(a.userId)! }
+        : a,
+    )
+    const reviewers = (t.reviewers ?? []).map((r) =>
+      r.userId && names.has(r.userId)
+        ? { ...r, displayName: names.get(r.userId)! }
+        : r,
+    )
+    const primaryName =
+      t.assigneeId && names.has(t.assigneeId)
+        ? names.get(t.assigneeId)!
+        : t.assigneeName
+    return {
+      ...t,
+      assignees: assignees.length > 0 ? assignees : t.assignees,
+      reviewers: reviewers.length > 0 ? reviewers : t.reviewers,
+      assigneeName: primaryName,
+    }
+  })
+}
+
 /**
  * 自分が担当する未完了タスクを締切日昇順で取得する
  *
@@ -101,14 +168,7 @@ export async function getMyTasks(
   const accessibleProjectIds = new Set(projects.map((p) => p.projectId))
 
   const byId = await taskRepository.listTasksByAssignee(userId)
-
-  // 表示名（TaskVista-Users）とメールも照合用に取る
-  const displayName = await usersService.getDisplayName(userId)
-  const nameCandidates = new Set(
-    [displayName, name, email?.split('@')[0]]
-      .filter(Boolean)
-      .map((s) => String(s).trim().toLowerCase()),
-  )
+  const nameCandidates = await buildNameCandidates(userId, email, name)
 
   // プロジェクト横断: 副担当・名前のみ一致も拾う
   const projectTasks = (
@@ -137,28 +197,41 @@ export async function getMyTasks(
     return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
   })
 
-  // 担当者名をクラウド表示名で上書き（複数含む）
-  const ids = tasks.flatMap((t) => {
-    const list = [t.assigneeId, ...(t.assignees?.map((a) => a.userId) ?? [])]
-    return list.filter(Boolean) as string[]
+  return enrichPeopleNames(tasks)
+}
+
+/**
+ * 自分が評価者に指定されている「レビュー待ち」タスク
+ * ダッシュボード「評価待ち」欄用
+ */
+export async function getMyReviewTasks(
+  userId: string,
+  email?: string,
+  name?: string,
+): Promise<Task[]> {
+  const projects = await projectService.listProjects({
+    userId,
+    email,
+    name: name || email || 'ユーザー',
   })
-  if (ids.length === 0) return tasks
-  const names = await usersService.getDisplayNameMap(ids)
-  if (names.size === 0) return tasks
-  return tasks.map((t) => {
-    const assignees = (t.assignees ?? []).map((a) =>
-      a.userId && names.has(a.userId)
-        ? { ...a, displayName: names.get(a.userId)! }
-        : a,
+  const nameCandidates = await buildNameCandidates(userId, email, name)
+
+  const projectTasks = (
+    await Promise.all(
+      projects.map((p) => taskRepository.listTasksByProject(p.projectId)),
     )
-    const primaryName =
-      t.assigneeId && names.has(t.assigneeId)
-        ? names.get(t.assigneeId)!
-        : t.assigneeName
-    return {
-      ...t,
-      assignees: assignees.length > 0 ? assignees : t.assignees,
-      assigneeName: primaryName,
-    }
-  })
+  ).flat()
+
+  const tasks = projectTasks
+    .filter((t) => {
+      if (t.isDeleted) return false
+      if (t.status !== 'レビュー待ち') return false
+      return isReviewerOfTask(t, userId, nameCandidates)
+    })
+    .sort((a, b) => {
+      // 更新が新しい順（評価を急ぐものを上に）
+      return (b.updatedAt || '').localeCompare(a.updatedAt || '')
+    })
+
+  return enrichPeopleNames(tasks)
 }

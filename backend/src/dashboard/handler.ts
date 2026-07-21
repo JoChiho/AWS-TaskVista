@@ -89,6 +89,16 @@ export async function handler(
       return successResponse(200, tasks, correlationId)
     }
 
+    if (method === 'GET' && path === '/dashboard/review-tasks') {
+      const tasks = await service.getMyReviewTasks(user.userId, user.email, user.name)
+      logInfo(correlationId, '評価待ちタスク一覧を取得しました', {
+        requestId: event.requestContext.requestId,
+        userId: user.userId,
+        action: 'DASHBOARD_REVIEW_TASKS',
+      })
+      return successResponse(200, tasks, correlationId)
+    }
+
     return errorResponse(404, 'NOT_FOUND', 'ルートが見つかりません', correlationId)
   })
 }

@@ -12,11 +12,17 @@ import {
   normalizeCompletion,
   completionColor,
 } from '@/types/task'
-import { resolveAssigneeLabels, avatarLabelFromName } from '@/utils/displayName'
+import {
+  resolveAssigneeLabels,
+  resolveReviewerLabels,
+  avatarLabelFromName,
+} from '@/utils/displayName'
 import { useDisplayNamesStore } from '@/stores/displayNames'
 
 const props = defineProps<{
   task: Task
+  /** ログインユーザーが評価者のレビュー待ち（強調表示） */
+  needsMyReview?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -46,6 +52,12 @@ const overflowCount = computed(() =>
 const assigneeTitle = computed(() => assigneeLabels.value.join('、'))
 
 const primaryAssigneeName = computed(() => assigneeLabels.value[0] ?? '')
+
+const reviewerLabels = computed(() => {
+  void byUserId.value
+  void byEmail.value
+  return resolveReviewerLabels(props.task)
+})
 
 function formatDueDate(dueDate: string): string {
   const d = new Date(dueDate)
@@ -104,6 +116,7 @@ function onBodyClick() {
       rounded="lg"
       elevation="1"
       class="task-card"
+      :class="{ 'task-card--my-review': needsMyReview }"
       role="button"
       tabindex="0"
       @click="onBodyClick"
@@ -111,6 +124,13 @@ function onBodyClick() {
       @keydown.space.prevent="onBodyClick"
     >
       <v-card-text class="pa-3">
+        <div
+          v-if="needsMyReview"
+          class="my-review-banner text-caption font-weight-bold mb-2"
+        >
+          <v-icon size="14" class="mr-1">mdi-clipboard-check-outline</v-icon>
+          あなたの評価が必要です
+        </div>
         <p class="text-body-2 font-weight-medium mb-1 task-title">
           {{ task.title }}
         </p>
@@ -162,7 +182,33 @@ function onBodyClick() {
             {{ task.commentCount }}
           </v-chip>
 
+          <v-chip
+            v-if="
+              (task.status === 'レビュー待ち' || task.status === '完了') &&
+              reviewerLabels.length
+            "
+            size="x-small"
+            color="warning"
+            variant="tonal"
+            prepend-icon="mdi-account-check-outline"
+            :title="reviewerLabels.join('、')"
+          >
+            評価 {{ reviewerLabels.length }}
+          </v-chip>
+
           <v-spacer />
+
+          <span
+            v-if="task.startDate"
+            class="text-caption text-medium-emphasis"
+            :title="`開始 ${formatDueDate(task.startDate)}`"
+          >
+            <v-icon size="10" class="mr-1">mdi-play-circle-outline</v-icon>
+            {{ formatDueDate(task.startDate) }}
+            <template v-if="task.estimatedEffortDays != null">
+              · {{ task.estimatedEffortDays }}人日
+            </template>
+          </span>
 
           <span
             v-if="task.dueDate"
@@ -259,12 +305,25 @@ function onBodyClick() {
   flex: 1 1 auto;
   min-width: 0;
   cursor: pointer;
-  transition: box-shadow 0.2s ease, transform 0.1s ease;
+  transition: box-shadow 0.2s ease, transform 0.1s ease, outline 0.15s ease;
 }
 
 .task-card:hover {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12) !important;
   transform: translateY(-1px);
+}
+
+.task-card--my-review {
+  outline: 2px solid rgb(var(--v-theme-warning));
+  outline-offset: 0;
+  background: rgba(var(--v-theme-warning), 0.06);
+}
+
+.my-review-banner {
+  display: flex;
+  align-items: center;
+  color: rgb(var(--v-theme-warning));
+  letter-spacing: 0.02em;
 }
 
 .task-title {

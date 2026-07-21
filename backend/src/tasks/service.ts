@@ -38,6 +38,8 @@ const createTaskSchema = z.object({
   assigneeName: assigneeNameSchema,
   /** 担当者一覧（複数） */
   assignees: z.array(taskAssigneeSchema).max(20).optional(),
+  /** 評価者一覧（レビュー待ち向け・複数可） */
+  reviewers: z.array(taskAssigneeSchema).max(20).optional(),
   /** 完了度 0〜100 */
   completionPercent: z
     .number({ invalid_type_error: '完了度は数値で指定してください' })
@@ -52,7 +54,22 @@ const createTaskSchema = z.object({
     .max(10000, '予定工数は 10000 人日以内です')
     .optional()
     .nullable(),
-  dueDate: z.string().max(30).optional(),
+  /** 開始日 YYYY-MM-DD（空文字 / null はクリア） */
+  startDate: z
+    .union([
+      z.string().regex(/^\d{4}-\d{2}-\d{2}$/, '開始日は YYYY-MM-DD 形式で指定してください'),
+      z.literal(''),
+      z.null(),
+    ])
+    .optional(),
+  /** 締切日 YYYY-MM-DD（空文字 / null はクリア） */
+  dueDate: z
+    .union([
+      z.string().regex(/^\d{4}-\d{2}-\d{2}$/, '締切日は YYYY-MM-DD 形式で指定してください'),
+      z.literal(''),
+      z.null(),
+    ])
+    .optional(),
 })
 
 const updateTaskSchema = createTaskSchema.partial()
@@ -211,6 +228,27 @@ async function normalizeAssignees(
   }
 }
 
+/**
+ * 評価者を正規化する（担当者と同じ解決ロジック）
+ */
+async function normalizeReviewers(
+  project: Awaited<ReturnType<typeof projectRepository.getProjectById>>,
+  reviewers: TaskAssignee[] | undefined,
+): Promise<TaskAssignee[]> {
+  if (reviewers === undefined) return []
+  const resolved: TaskAssignee[] = []
+  const seen = new Set<string>()
+  for (const raw of reviewers) {
+    const one = await resolveOneAssignee(project, raw.displayName, raw.userId)
+    if (!one) continue
+    const key = (one.userId || one.displayName).toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    resolved.push(one)
+  }
+  return resolved
+}
+
 /** 既存タスクから担当者配列を復元（旧データ互換） */
 function assigneesFromTask(task: Task): TaskAssignee[] {
   if (task.assignees && task.assignees.length > 0) {
@@ -226,6 +264,16 @@ function assigneesFromTask(task: Task): TaskAssignee[] {
         displayName: task.assigneeName || 'ユーザー',
       },
     ]
+  }
+  return []
+}
+
+function reviewersFromTask(task: Task): TaskAssignee[] {
+  if (task.reviewers && task.reviewers.length > 0) {
+    return task.reviewers.map((a) => ({
+      userId: a.userId,
+      displayName: a.displayName,
+    }))
   }
   return []
 }
@@ -258,6 +306,9 @@ async function enrichTaskAssignees(
       if (t.assigneeId) ids.push(t.assigneeId)
       for (const a of t.assignees ?? []) {
         if (a.userId) ids.push(a.userId)
+      }
+      for (const r of t.reviewers ?? []) {
+        if (r.userId) ids.push(r.userId)
       }
       return ids
     }),
@@ -341,12 +392,25 @@ async function enrichTaskAssignees(
       if (one) resolved.push(one)
     }
 
+    const revSource = reviewersFromTask(t)
+    const revResolved: TaskAssignee[] = []
+    const revSeen = new Set<string>()
+    for (const a of revSource) {
+      const one = resolveOne(a.userId, a.displayName)
+      if (!one) continue
+      const key = (one.userId || one.displayName).toLowerCase()
+      if (revSeen.has(key)) continue
+      revSeen.add(key)
+      revResolved.push(one)
+    }
+
     const primary = resolved[0]
     return {
       ...t,
       assignees: resolved,
       assigneeId: primary?.userId,
       assigneeName: primary?.displayName,
+      reviewers: revResolved,
       completionPercent:
         typeof t.completionPercent === 'number'
           ? Math.min(100, Math.max(0, Math.round(t.completionPercent)))
@@ -398,6 +462,10 @@ export async function createTask(
     assigneeId: parsed.data.assigneeId,
     assigneeName: parsed.data.assigneeName,
   })
+  const reviewers =
+    parsed.data.reviewers !== undefined
+      ? await normalizeReviewers(project, parsed.data.reviewers)
+      : []
 
   const now = new Date().toISOString()
   let completion =
@@ -439,17 +507,31 @@ export async function createTask(
     assigneeName: normalized.assigneeName,
     assignees: normalized.assignees,
     completionPercent: completion,
-    estimatedEffortDays:
-      parsed.data.estimatedEffortDays === null ||
-      parsed.data.estimatedEffortDays === undefined
-        ? undefined
-        : parsed.data.estimatedEffortDays,
-    dueDate: parsed.data.dueDate,
     attachments: [],
     createdBy: userId,
     createdAt: now,
     updatedAt: now,
     isDeleted: false,
+  }
+
+  // オプション属性は値があるときだけ載せる（DynamoDB に確実に書き込む）
+  if (
+    parsed.data.estimatedEffortDays !== null &&
+    parsed.data.estimatedEffortDays !== undefined
+  ) {
+    task.estimatedEffortDays = parsed.data.estimatedEffortDays
+  }
+  if (
+    parsed.data.startDate &&
+    parsed.data.startDate !== ''
+  ) {
+    task.startDate = parsed.data.startDate
+  }
+  if (parsed.data.dueDate && parsed.data.dueDate !== '') {
+    task.dueDate = parsed.data.dueDate
+  }
+  if (reviewers.length > 0) {
+    task.reviewers = reviewers
   }
 
   const created = await repository.createTask(task)
@@ -476,7 +558,46 @@ export async function updateTask(
   }
 
   const project = await projectRepository.getProjectById(existing.projectId)
-  const updates: Parameters<typeof repository.updateTask>[1] = { ...parsed.data }
+
+  // 明示的に更新フィールドを組み立て（スプレッドだと意図しないキーが混ざるのを避ける）
+  const updates: Parameters<typeof repository.updateTask>[1] = {}
+
+  if (parsed.data.title !== undefined) updates.title = parsed.data.title
+  if (parsed.data.description !== undefined) updates.description = parsed.data.description
+  if (parsed.data.status !== undefined) updates.status = parsed.data.status
+  if (parsed.data.priority !== undefined) updates.priority = parsed.data.priority
+  if (parsed.data.requirement !== undefined) updates.requirement = parsed.data.requirement
+  if (parsed.data.completionPercent !== undefined) {
+    updates.completionPercent = clampCompletion(parsed.data.completionPercent)
+  }
+  if (parsed.data.estimatedEffortDays !== undefined) {
+    updates.estimatedEffortDays =
+      parsed.data.estimatedEffortDays === null ? null : parsed.data.estimatedEffortDays
+  }
+  // 開始日: 空文字 / null → 削除、YYYY-MM-DD → 保存
+  if (parsed.data.startDate !== undefined) {
+    updates.startDate =
+      parsed.data.startDate === '' || parsed.data.startDate === null
+        ? null
+        : parsed.data.startDate
+  }
+  // 締切日
+  if (parsed.data.dueDate !== undefined) {
+    updates.dueDate =
+      parsed.data.dueDate === '' || parsed.data.dueDate === null
+        ? null
+        : parsed.data.dueDate
+  }
+
+  // 評価者
+  if (parsed.data.reviewers !== undefined) {
+    const reviewers = await normalizeReviewers(project, parsed.data.reviewers)
+    if (reviewers.length === 0) {
+      updates.reviewers = null
+    } else {
+      updates.reviewers = reviewers
+    }
+  }
 
   const touchesAssignees =
     parsed.data.assignees !== undefined ||

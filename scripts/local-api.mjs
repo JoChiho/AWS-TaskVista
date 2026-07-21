@@ -140,6 +140,12 @@ const ROUTES = [
     module: 'dashboard',
   },
   {
+    methods: ['GET'],
+    pattern: /^\/dashboard\/review-tasks\/?$/,
+    keys: [],
+    module: 'dashboard',
+  },
+  {
     methods: ['GET', 'PUT'],
     pattern: /^\/me\/?$/,
     keys: [],

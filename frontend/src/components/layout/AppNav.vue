@@ -18,10 +18,11 @@ const currentProjectId = computed(() => route.params.projectId as string | undef
 // プロジェクト詳細ページかどうかを判定する
 const isProjectPage = computed(() => !!currentProjectId.value)
 
-// 現在のビューモードを判定する（かんばん or テーブル）
+// 現在のビューモードを判定する（かんばん / テーブル / 時間線）
 const currentView = computed(() => {
   if (route.name === 'task-board') return 'board'
   if (route.name === 'task-table') return 'table'
+  if (route.name === 'task-timeline') return 'timeline'
   return null
 })
 
@@ -36,6 +37,13 @@ function switchToBoard() {
 function switchToTable() {
   if (currentProjectId.value) {
     router.push({ name: 'task-table', params: { projectId: currentProjectId.value } })
+  }
+}
+
+/** 時間線ビューに切り替える */
+function switchToTimeline() {
+  if (currentProjectId.value) {
+    router.push({ name: 'task-timeline', params: { projectId: currentProjectId.value } })
   }
 }
 
@@ -74,6 +82,14 @@ const userInitials = computed(() => authStore.avatarLabel || '?')
         @click="switchToTable"
       >
         テーブル
+      </v-btn>
+      <v-btn
+        :variant="currentView === 'timeline' ? 'tonal' : 'text'"
+        prepend-icon="mdi-chart-gantt"
+        :color="currentView === 'timeline' ? 'primary' : undefined"
+        @click="switchToTimeline"
+      >
+        時間線
       </v-btn>
     </template>
 

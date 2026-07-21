@@ -118,6 +118,13 @@ function goToTable() {
   void router.push({ name: 'task-table', params: { projectId: id } })
 }
 
+function goToTimeline() {
+  const id = projectId.value
+  if (!id) return
+  modelValue.value = false
+  void router.push({ name: 'task-timeline', params: { projectId: id } })
+}
+
 const emit = defineEmits<{
   edit: [project: Project]
   delete: [project: Project]
@@ -292,6 +299,15 @@ function onDelete() {
           @click="goToTable"
         >
           テーブルを開く
+        </v-btn>
+        <v-btn
+          variant="tonal"
+          color="primary"
+          prepend-icon="mdi-chart-gantt"
+          :disabled="!projectId"
+          @click="goToTimeline"
+        >
+          時間線を開く
         </v-btn>
         <v-spacer />
         <v-btn

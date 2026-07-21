@@ -241,6 +241,39 @@ export function formatAssigneeSurnames(task: {
   return surnames.join('、')
 }
 
+/** 評価者全員の表示名 */
+export function resolveReviewerLabels(task: {
+  reviewers?: Array<{ userId?: string; displayName?: string }>
+}): string[] {
+  const list = task.reviewers ?? []
+  if (list.length === 0) return []
+
+  const names = useDisplayNamesStore()
+  const out: string[] = []
+  const seen = new Set<string>()
+
+  for (const a of list) {
+    const emailHint = isEmailLike(a.displayName) ? a.displayName : undefined
+    let label =
+      names.resolveKey(a.userId, a.displayName, emailHint) ||
+      resolveFromProjectMembers(a.userId, a.displayName, emailHint) ||
+      resolvePersonName(a.userId, a.displayName, emailHint)
+
+    if (!label?.trim()) continue
+    const key = label.trim().toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(label.trim())
+  }
+  return out
+}
+
+export function formatReviewerList(task: {
+  reviewers?: Array<{ userId?: string; displayName?: string }>
+}): string {
+  return resolveReviewerLabels(task).join('、')
+}
+
 /** コメント投稿者用の表示名 */
 export function resolveAuthorDisplayName(comment: {
   authorId?: string

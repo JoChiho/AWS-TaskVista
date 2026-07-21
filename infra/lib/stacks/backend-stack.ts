@@ -290,6 +290,7 @@ export class BackendStack extends cdk.NestedStack {
     // dashboard / me
     addRoutes([apigwv2.HttpMethod.GET], '/dashboard/summary', dashboard)
     addRoutes([apigwv2.HttpMethod.GET], '/dashboard/my-tasks', dashboard)
+    addRoutes([apigwv2.HttpMethod.GET], '/dashboard/review-tasks', dashboard)
     addRoutes([apigwv2.HttpMethod.GET, apigwv2.HttpMethod.PUT], '/me', dashboard)
     addRoutes([apigwv2.HttpMethod.POST], '/users/display-names', dashboard)
 

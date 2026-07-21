@@ -193,6 +193,12 @@ Resources:
             ApiId: !Ref TaskVistaHttpApi
             Path: /dashboard/my-tasks
             Method: GET
+        ReviewTasks:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref TaskVistaHttpApi
+            Path: /dashboard/review-tasks
+            Method: GET
         Me:
           Type: HttpApi
           Properties:

@@ -1,4 +1,5 @@
 import {
+  GetCommand,
   PutCommand,
   QueryCommand,
   UpdateCommand,
@@ -12,9 +13,13 @@ function taskKey(projectId: string, taskId: string) {
   return { projectId, taskId }
 }
 
-/** タスクを ID で取得する（TaskIdIndex GSI 経由） */
+/**
+ * タスクを ID で取得する
+ * TaskIdIndex で projectId を特定したあと、ベーステーブル GetItem で全属性を返す。
+ * （GSI の Projection が INCLUDE / KEYS_ONLY だと startDate 等の新属性が欠けるため）
+ */
 export async function getTaskById(taskId: string): Promise<Task | null> {
-  const result = await docClient.send(
+  const indexed = await docClient.send(
     new QueryCommand({
       TableName: TABLE(),
       IndexName: 'TaskIdIndex',
@@ -23,20 +28,45 @@ export async function getTaskById(taskId: string): Promise<Task | null> {
       Limit: 1,
     }),
   )
-  return (result.Items?.[0] as Task | undefined) ?? null
-}
+  const hint = indexed.Items?.[0] as Task | undefined
+  if (!hint?.projectId || !hint?.taskId) {
+    return null
+  }
 
-/** プロジェクト内のタスク一覧を GSI で取得する */
-export async function listTasksByProject(projectId: string): Promise<Task[]> {
-  const result = await docClient.send(
-    new QueryCommand({
+  const full = await docClient.send(
+    new GetCommand({
       TableName: TABLE(),
-      IndexName: 'ProjectStatusIndex',
-      KeyConditionExpression: 'projectId = :projectId',
-      ExpressionAttributeValues: { ':projectId': projectId },
+      Key: taskKey(hint.projectId, hint.taskId),
     }),
   )
-  return (result.Items as Task[] | undefined) ?? []
+  return (full.Item as Task | undefined) ?? hint
+}
+
+/**
+ * プロジェクト内のタスク一覧
+ * ベーステーブルを projectId で Query し、全属性（startDate 含む）を確実に返す。
+ * ※ 旧実装の ProjectStatusIndex は Projection 次第で新属性が欠落する
+ */
+export async function listTasksByProject(projectId: string): Promise<Task[]> {
+  const items: Task[] = []
+  let exclusiveStartKey: Record<string, unknown> | undefined
+
+  do {
+    const result = await docClient.send(
+      new QueryCommand({
+        TableName: TABLE(),
+        KeyConditionExpression: 'projectId = :projectId',
+        ExpressionAttributeValues: { ':projectId': projectId },
+        ExclusiveStartKey: exclusiveStartKey,
+      }),
+    )
+    for (const item of result.Items ?? []) {
+      items.push(item as Task)
+    }
+    exclusiveStartKey = result.LastEvaluatedKey as Record<string, unknown> | undefined
+  } while (exclusiveStartKey)
+
+  return items
 }
 
 /** 担当者の GSI でタスク一覧を取得する（主担当 assigneeId） */
@@ -77,17 +107,22 @@ export type TaskUpdateFields = Partial<
     | 'assigneeName'
     | 'assignees'
     | 'completionPercent'
-    | 'dueDate'
     | 'attachments'
   >
 > & {
   /** 予定工数（人日）。null で属性削除 */
   estimatedEffortDays?: number | null
+  /** 開始日。null で属性削除 */
+  startDate?: string | null
+  /** 締切日。null で属性削除 */
+  dueDate?: string | null
+  /** 評価者一覧。null で属性削除 */
+  reviewers?: Task['reviewers'] | null
   /** true のとき assigneeId / assigneeName を REMOVE（GSI から外す） */
   clearAssignees?: boolean
 }
 
-/** タスクを更新する */
+/** タスクを更新する（startDate / dueDate / estimatedEffortDays を含む） */
 export async function updateTask(
   taskId: string,
   updates: TaskUpdateFields,
@@ -97,35 +132,46 @@ export async function updateTask(
     throw new Error(`Task not found: ${taskId}`)
   }
 
-  const setExpressions: string[] = ['updatedAt = :updatedAt']
+  const setExpressions: string[] = ['#updatedAt = :updatedAt']
   const removeAttrs: string[] = []
   const values: Record<string, unknown> = { ':updatedAt': new Date().toISOString() }
-  const names: Record<string, string> = {}
+  const names: Record<string, string> = { '#updatedAt': 'updatedAt' }
 
+  // スカラー属性（null = REMOVE、undefined = 触らない）
   const fieldMap: Array<[keyof TaskUpdateFields, string]> = [
     ['title', 'title'],
     ['description', 'description'],
     ['status', 'status'],
     ['priority', 'priority'],
     ['requirement', 'requirement'],
+    ['startDate', 'startDate'],
     ['dueDate', 'dueDate'],
     ['attachments', 'attachments'],
     ['completionPercent', 'completionPercent'],
     ['estimatedEffortDays', 'estimatedEffortDays'],
     ['assignees', 'assignees'],
+    ['reviewers', 'reviewers'],
   ]
 
   for (const [key, attr] of fieldMap) {
     if (updates[key] !== undefined) {
-      // null は属性削除（予定工数のクリアなど）
+      // null は属性削除（開始日・締切日・予定工数のクリアなど）
       if (updates[key] === null) {
-        removeAttrs.push(attr)
+        // REMOVE はプレースホルダ不可の属性名を直接使う（予約語でなければ可）
+        // status 等は SET 側で #name を使う
+        if (attr === 'status' || attr === 'priority') {
+          names[`#${attr}`] = attr
+          removeAttrs.push(`#${attr}`)
+        } else {
+          removeAttrs.push(attr)
+        }
         continue
       }
-      const placeholder = `#${attr}`
-      names[placeholder] = attr
-      setExpressions.push(`${placeholder} = :${attr}`)
-      values[`:${attr}`] = updates[key]
+      const nameKey = `#${attr}`
+      const valueKey = `:${attr}`
+      names[nameKey] = attr
+      setExpressions.push(`${nameKey} = ${valueKey}`)
+      values[valueKey] = updates[key]
     }
   }
 

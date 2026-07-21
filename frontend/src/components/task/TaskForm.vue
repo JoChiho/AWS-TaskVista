@@ -34,6 +34,10 @@ const priority = ref<TaskPriority>('medium')
 const requirement = ref('')
 /** 担当者 userId の配列（複数） */
 const selectedAssigneeIds = ref<string[]>([])
+/** 評価者 userId の配列（レビュー待ち） */
+const selectedReviewerIds = ref<string[]>([])
+/** 開始日 YYYY-MM-DD */
+const startDate = ref('')
 const dueDate = ref('')
 /** 予定工数（人日）。空文字 = 未設定 */
 const estimatedEffortDays = ref<string>('')
@@ -52,6 +56,9 @@ const priorityOptions = Object.entries(PRIORITY_LABELS).map(([value, title]) => 
 
 const isEditMode = computed(() => !!props.task)
 
+/** レビュー待ちのとき評価者 UI を表示 */
+const showReviewers = computed(() => status.value === 'レビュー待ち')
+
 const assigneeOptions = computed(() => {
   const project =
     projectsStore.currentProject?.projectId === props.projectId
@@ -68,9 +75,9 @@ const assigneeOptions = computed(() => {
     }))
 })
 
-function buildAssigneesPayload(): TaskAssignee[] {
+function buildMemberPayload(ids: string[]): TaskAssignee[] {
   const result: TaskAssignee[] = []
-  for (const id of selectedAssigneeIds.value) {
+  for (const id of ids) {
     const opt = assigneeOptions.value.find((o) => o.value === id)
     if (!opt) continue
     result.push({ userId: id, displayName: opt.title })
@@ -78,10 +85,22 @@ function buildAssigneesPayload(): TaskAssignee[] {
   return result
 }
 
-function initAssigneeSelection(task: Task) {
+function buildAssigneesPayload(): TaskAssignee[] {
+  return buildMemberPayload(selectedAssigneeIds.value)
+}
+
+function buildReviewersPayload(): TaskAssignee[] {
+  return buildMemberPayload(selectedReviewerIds.value)
+}
+
+function initIdsFromPeople(
+  people?: Array<{ userId?: string; displayName?: string }>,
+  fallbackId?: string,
+  fallbackName?: string,
+): string[] {
   const ids: string[] = []
-  if (task.assignees && task.assignees.length > 0) {
-    for (const a of task.assignees) {
+  if (people && people.length > 0) {
+    for (const a of people) {
       if (a.userId) {
         ids.push(a.userId)
       } else if (a.displayName) {
@@ -89,13 +108,25 @@ function initAssigneeSelection(task: Task) {
         if (byName) ids.push(byName.value)
       }
     }
-  } else if (task.assigneeId) {
-    ids.push(task.assigneeId)
-  } else if (task.assigneeName) {
-    const byName = assigneeOptions.value.find((o) => o.title === task.assigneeName)
+  } else if (fallbackId) {
+    ids.push(fallbackId)
+  } else if (fallbackName) {
+    const byName = assigneeOptions.value.find((o) => o.title === fallbackName)
     if (byName) ids.push(byName.value)
   }
-  selectedAssigneeIds.value = [...new Set(ids)]
+  return [...new Set(ids)]
+}
+
+function initAssigneeSelection(task: Task) {
+  selectedAssigneeIds.value = initIdsFromPeople(
+    task.assignees,
+    task.assigneeId,
+    task.assigneeName,
+  )
+}
+
+function initReviewerSelection(task: Task) {
+  selectedReviewerIds.value = initIdsFromPeople(task.reviewers)
 }
 
 watch(modelValue, async (isOpen) => {
@@ -118,12 +149,14 @@ watch(modelValue, async (isOpen) => {
     status.value = props.task.status
     priority.value = props.task.priority
     requirement.value = props.task.requirement ?? ''
+    startDate.value = props.task.startDate ?? ''
     dueDate.value = props.task.dueDate ?? ''
     estimatedEffortDays.value =
       props.task.estimatedEffortDays != null
         ? String(props.task.estimatedEffortDays)
         : ''
     initAssigneeSelection(props.task)
+    initReviewerSelection(props.task)
   } else {
     title.value = ''
     description.value = ''
@@ -131,6 +164,8 @@ watch(modelValue, async (isOpen) => {
     priority.value = 'medium'
     requirement.value = ''
     selectedAssigneeIds.value = []
+    selectedReviewerIds.value = []
+    startDate.value = ''
     dueDate.value = ''
     estimatedEffortDays.value = ''
   }
@@ -153,6 +188,8 @@ async function handleSubmit() {
   const assignees = buildAssigneesPayload()
   const primary = assignees[0]
   const effort = parseEffortDays()
+  // 評価者: 選択中の ID を常に送信（完了へ変えても保持。UI はレビュー待ち時のみ表示）
+  const reviewers = buildReviewersPayload()
 
   // 完了度は詳細画面で調整。編集時は送らず既存値を保持。
   // 新規作成・ステータス変更時の 完了/未着手 は API 側で完了度を合わせる。
@@ -165,7 +202,17 @@ async function handleSubmit() {
     assignees,
     assigneeId: primary?.userId,
     assigneeName: primary?.displayName,
-    dueDate: dueDate.value || undefined,
+    // 新規かつ非レビュー待ちで未選択なら送らない（空でクリアしない）
+    ...(props.task || status.value === 'レビュー待ち' || reviewers.length > 0
+      ? { reviewers }
+      : {}),
+    // 編集時は空文字でクリア（null）、新規は未設定なら送らない
+    startDate: startDate.value
+      ? startDate.value
+      : props.task
+        ? null
+        : undefined,
+    dueDate: dueDate.value ? dueDate.value : props.task ? null : undefined,
     ...(effort !== undefined ? { estimatedEffortDays: effort } : {}),
   }
 
@@ -291,11 +338,11 @@ async function handleSubmit() {
             </div>
           </section>
 
-          <!-- ステータス / 優先度 / 締切日 / 予定工数 -->
+          <!-- ステータス / 優先度 / 開始日 / 締切日 / 予定工数 -->
           <section class="form-section mb-5">
             <div class="section-label">
               <v-icon size="18" class="mr-1">mdi-tune-variant</v-icon>
-              ステータス・優先度・締切日・工数
+              ステータス・優先度・スケジュール
             </div>
             <div class="meta-fields">
               <v-select
@@ -315,12 +362,24 @@ async function handleSubmit() {
                 density="comfortable"
               />
               <v-text-field
+                v-model="startDate"
+                label="開始日"
+                type="date"
+                hide-details="auto"
+                variant="outlined"
+                density="comfortable"
+                hint="時間線の基準日（必須・ステータス完了でも設定可）"
+                persistent-hint
+              />
+              <v-text-field
                 v-model="dueDate"
                 label="締切日"
                 type="date"
-                hide-details
+                hide-details="auto"
                 variant="outlined"
                 density="comfortable"
+                hint="参考用の期限。時間線の長さには使いません"
+                persistent-hint
               />
               <v-text-field
                 v-model="estimatedEffortDays"
@@ -329,16 +388,19 @@ async function handleSubmit() {
                 min="0"
                 step="0.5"
                 placeholder="例: 2.5"
-                hide-details
+                hide-details="auto"
                 variant="outlined"
                 density="comfortable"
                 suffix="人日"
+                hint="開始日からこの日数分を時間線に表示します（締切からの逆算なし）"
+                persistent-hint
+                class="effort-field"
               />
             </div>
           </section>
 
           <!-- 担当者 -->
-          <section class="form-section mb-2">
+          <section class="form-section mb-5">
             <div class="section-label">
               <v-icon size="18" class="mr-1">mdi-account-multiple-outline</v-icon>
               担当者（複数可）
@@ -371,6 +433,50 @@ async function handleSubmit() {
                   variant="tonal"
                 >
                   <v-avatar start size="20" color="primary">
+                    <span class="text-caption text-white" style="font-size: 9px">
+                      {{ avatarLabelFromName(String(item.title)) }}
+                    </span>
+                  </v-avatar>
+                  {{ item.title }}
+                </v-chip>
+              </template>
+            </v-select>
+          </section>
+
+          <!-- 評価者（レビュー待ちのとき） -->
+          <section v-if="showReviewers" class="form-section mb-2">
+            <div class="section-label">
+              <v-icon size="18" class="mr-1">mdi-account-check-outline</v-icon>
+              評価者（複数可）
+            </div>
+            <v-select
+              v-model="selectedReviewerIds"
+              :items="assigneeOptions"
+              item-title="title"
+              item-value="value"
+              placeholder="評価するメンバーを選択"
+              multiple
+              chips
+              closable-chips
+              clearable
+              hide-details="auto"
+              variant="outlined"
+              density="comfortable"
+              :hint="
+                assigneeOptions.length
+                  ? 'プロジェクトメンバーから評価者を選択できます'
+                  : 'メンバーがいません。先にプロジェクトへメンバーを追加してください'
+              "
+              persistent-hint
+            >
+              <template #chip="{ props: chipProps, item }">
+                <v-chip
+                  v-bind="chipProps"
+                  size="small"
+                  color="warning"
+                  variant="tonal"
+                >
+                  <v-avatar start size="20" color="warning">
                     <span class="text-caption text-white" style="font-size: 9px">
                       {{ avatarLabelFromName(String(item.title)) }}
                     </span>
@@ -496,9 +602,16 @@ async function handleSubmit() {
   gap: 12px;
 }
 
+.effort-field {
+  grid-column: 1 / -1;
+}
+
 @media (max-width: 640px) {
   .meta-fields {
     grid-template-columns: 1fr;
+  }
+  .effort-field {
+    grid-column: auto;
   }
 }
 

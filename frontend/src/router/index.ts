@@ -48,6 +48,13 @@ const router = createRouter({
       meta: { requiresAuth: true },
     },
     {
+      // 時間線（ガント / カレンダー）ビュー
+      path: '/projects/:projectId/timeline',
+      name: 'task-timeline',
+      component: () => import('@/views/TaskTimelineView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
       // 存在しないページへのフォールバック
       path: '/:pathMatch(.*)*',
       redirect: '/',

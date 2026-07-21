@@ -18,3 +18,12 @@ export async function fetchMyTasks(): Promise<Task[]> {
   const response = await apiClient.get<ApiResponse<Task[]>>('/dashboard/my-tasks')
   return response.data.data
 }
+
+/**
+ * 自分が評価者の「レビュー待ち」タスク一覧
+ * ダッシュボード「評価待ち」欄用
+ */
+export async function fetchMyReviewTasks(): Promise<Task[]> {
+  const response = await apiClient.get<ApiResponse<Task[]>>('/dashboard/review-tasks')
+  return response.data.data
+}

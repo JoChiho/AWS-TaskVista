@@ -96,6 +96,123 @@ describe('tasks/service', () => {
     expect(result.priority).toBe('medium')
   })
 
+  it('開始日・予定工数・締切日を作成時に保存する', async () => {
+    vi.mocked(repository.createTask).mockImplementation(async (t) => t)
+
+    const result = await service.createTask(PROJECT_ID, USER_ID, {
+      title: 'スケジュール付き',
+      startDate: '2026-08-01',
+      dueDate: '2026-08-10',
+      estimatedEffortDays: 3.5,
+    })
+
+    expect(result.startDate).toBe('2026-08-01')
+    expect(result.dueDate).toBe('2026-08-10')
+    expect(result.estimatedEffortDays).toBe(3.5)
+    expect(repository.createTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        startDate: '2026-08-01',
+        dueDate: '2026-08-10',
+        estimatedEffortDays: 3.5,
+      }),
+    )
+  })
+
+  it('開始日を更新・クリアできる', async () => {
+    const task = makeTask({ startDate: undefined, dueDate: '2026-07-15' })
+    vi.mocked(repository.getTaskById).mockResolvedValue(task)
+    vi.mocked(repository.updateTask).mockImplementation(async (_id, updates) => ({
+      ...task,
+      ...updates,
+      startDate:
+        updates.startDate === null ? undefined : (updates.startDate ?? task.startDate),
+    }))
+
+    const saved = await service.updateTask(TASK_ID, USER_ID, {
+      startDate: '2026-07-01',
+    })
+    expect(saved.startDate).toBe('2026-07-01')
+    expect(repository.updateTask).toHaveBeenCalledWith(
+      TASK_ID,
+      expect.objectContaining({ startDate: '2026-07-01' }),
+    )
+
+    const cleared = await service.updateTask(TASK_ID, USER_ID, { startDate: null })
+    expect(repository.updateTask).toHaveBeenCalledWith(
+      TASK_ID,
+      expect.objectContaining({ startDate: null }),
+    )
+    expect(cleared.startDate).toBeUndefined()
+  })
+
+  it('レビュー待ちで評価者を保存できる', async () => {
+    const project = makeProject({
+      memberIds: [USER_ID, OTHER_USER],
+      members: [
+        { userId: USER_ID, email: 'user@example.com', displayName: 'テストユーザー' },
+        { userId: OTHER_USER, email: 'other@example.com', displayName: '評価者A' },
+      ],
+    })
+    vi.mocked(projectRepository.getProjectById).mockResolvedValue(project)
+    vi.mocked(repository.createTask).mockImplementation(async (t) => t)
+
+    const result = await service.createTask(PROJECT_ID, USER_ID, {
+      title: 'レビュー依頼',
+      status: 'レビュー待ち',
+      reviewers: [{ userId: OTHER_USER, displayName: '評価者A' }],
+    })
+
+    expect(result.status).toBe('レビュー待ち')
+    expect(result.reviewers).toHaveLength(1)
+    expect(result.reviewers?.[0]?.userId).toBe(OTHER_USER)
+    expect(repository.createTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reviewers: [expect.objectContaining({ userId: OTHER_USER })],
+      }),
+    )
+  })
+
+  it('評価者を空配列でクリアできる', async () => {
+    const task = makeTask({
+      status: 'レビュー待ち',
+      reviewers: [{ userId: OTHER_USER, displayName: '評価者A' }],
+    })
+    vi.mocked(repository.getTaskById).mockResolvedValue(task)
+    vi.mocked(repository.updateTask).mockImplementation(async (_id, updates) => ({
+      ...task,
+      ...updates,
+      reviewers: updates.reviewers === null ? undefined : updates.reviewers,
+    }))
+
+    await service.updateTask(TASK_ID, USER_ID, { reviewers: [] })
+    expect(repository.updateTask).toHaveBeenCalledWith(
+      TASK_ID,
+      expect.objectContaining({ reviewers: null }),
+    )
+  })
+
+  it('完了ステータスでも開始日を更新できる', async () => {
+    const task = makeTask({
+      status: '完了',
+      completionPercent: 100,
+      dueDate: '2026-07-15',
+    })
+    vi.mocked(repository.getTaskById).mockResolvedValue(task)
+    vi.mocked(repository.updateTask).mockImplementation(async (_id, updates) => ({
+      ...task,
+      ...updates,
+    }))
+
+    const result = await service.updateTask(TASK_ID, USER_ID, {
+      startDate: '2026-07-10',
+      estimatedEffortDays: 2,
+      status: '完了',
+    })
+    expect(result.startDate).toBe('2026-07-10')
+    expect(result.estimatedEffortDays).toBe(2)
+    expect(result.status).toBe('完了')
+  })
+
   it('タイトル未入力は ValidationError', async () => {
     await expect(service.createTask(PROJECT_ID, USER_ID, { title: '' })).rejects.toThrow(
       ValidationError,

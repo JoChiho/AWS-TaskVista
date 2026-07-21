@@ -60,6 +60,9 @@ export interface TaskAssignee {
   displayName: string
 }
 
+/** 評価者（レビュー待ち向け・複数可） */
+export type TaskReviewer = TaskAssignee
+
 /** タスクエンティティ */
 export interface Task {
   taskId: string
@@ -74,10 +77,15 @@ export interface Task {
   assigneeName?: string
   /** 担当者一覧（1 人以上可） */
   assignees?: TaskAssignee[]
+  /** 評価者一覧（主に status=レビュー待ち） */
+  reviewers?: TaskReviewer[]
   /** 完了度 0〜100（%） */
   completionPercent?: number
   /** 予定工数（人日） */
   estimatedEffortDays?: number
+  /** 開始日（YYYY-MM-DD） */
+  startDate?: string
+  /** 締切日（YYYY-MM-DD） */
   dueDate?: string
   attachments: Attachment[]
   createdBy: string
@@ -97,9 +105,11 @@ export interface CreateTaskPayload {
   assigneeId?: string
   assigneeName?: string
   assignees?: TaskAssignee[]
+  reviewers?: TaskReviewer[]
   completionPercent?: number
   estimatedEffortDays?: number | null
-  dueDate?: string
+  startDate?: string | null
+  dueDate?: string | null
 }
 
 /** タスク更新リクエスト */
@@ -112,9 +122,11 @@ export interface UpdateTaskPayload {
   assigneeId?: string
   assigneeName?: string
   assignees?: TaskAssignee[]
+  reviewers?: TaskReviewer[]
   completionPercent?: number
   estimatedEffortDays?: number | null
-  dueDate?: string
+  startDate?: string | null
+  dueDate?: string | null
 }
 
 /** ステータスのみ更新するリクエスト（かんばんドラッグ専用） */
