@@ -144,7 +144,7 @@
     <h2><span class="num">1</span>システム概要</h2>
     <p class="lead">
       <strong>TaskVista</strong> は、5〜15 名規模のチーム向けタスク管理システムです。
-      プロジェクト単位でメンバーを共有し、かんばん・テーブル・ダッシュボードで進捗を可視化します。
+      プロジェクト単位でメンバーを共有し、かんばん・テーブル・時間線・ダッシュボードで進捗と日程を可視化します。
       フロントエンドは SPA、バックエンドは AWS Serverless で構成します。
     </p>
     <div class="grid2">
@@ -166,11 +166,36 @@
     <h3>主な画面</h3>
     <table>
       <tr><th>画面</th><th>内容</th></tr>
-      <tr><td>ダッシュボード</td><td>プロジェクト概要、自分の担当タスク</td></tr>
+      <tr>
+        <td>ダッシュボード</td>
+        <td>
+          プロジェクト概要、自分の担当タスク、
+          <strong>評価待ちタスク</strong>（自分が評価者のレビュー待ち）
+        </td>
+      </tr>
       <tr><td>プロジェクト一覧</td><td>作成・編集・詳細・メンバー管理</td></tr>
-      <tr><td>かんばん</td><td>ステータス列のドラッグ＆ドロップ</td></tr>
-      <tr><td>テーブル</td><td>ソート・フィルタ・一覧表示</td></tr>
-      <tr><td>タスク詳細</td><td>要望・説明・完了度・工数・コメント・添付</td></tr>
+      <tr>
+        <td>かんばん</td>
+        <td>
+          ステータス列のドラッグ＆ドロップ。
+          <strong>評価待ち（自分）</strong>フィルタでレビュー対象を強調
+        </td>
+      </tr>
+      <tr><td>テーブル</td><td>ソート・フィルタ・一覧（開始日・工数・評価者列含む）</td></tr>
+      <tr>
+        <td>時間線</td>
+        <td>
+          開始日 + 予定工数（人日）によるガント風カレンダー。
+          未設定タスクのドラッグ配置、全体/自分切替
+        </td>
+      </tr>
+      <tr>
+        <td>タスク詳細</td>
+        <td>
+          要望・説明・完了度・開始日・工数・締切・複数担当・
+          <strong>評価者</strong>・コメント・添付
+        </td>
+      </tr>
     </table>
   </section>
 
@@ -539,95 +564,134 @@
     <h2><span class="num">6</span>データモデル</h2>
     <p class="lead">主要エンティティと DynamoDB テーブルの対応です。</p>
     <figure class="fig">
-      <svg viewBox="0 0 980 420" width="100%" role="img" aria-label="データモデル">
+      <!--
+        配線ルール（直交・交差なし）:
+        · 上段 3 列: USER | PROJECT | TASK
+        · 下段 2 列: COMMENT（中央下）| S3（右下・TASK 直下）
+        · ① USER→PROJECT  y=100 水平
+        · ② PROJECT→TASK  y=100 水平
+        · ③ TASK→S3       x=770 垂直（短）
+        · ④ TASK→COMMENT  下→左  y=300 水平コリドー
+        · ⑤ USER→COMMENT  左端 x=50 下→右  y=380
+        · assigned/reviewer は曲線を描かず USER 内の注記で示す
+      -->
+      <svg viewBox="0 0 1000 470" width="100%" role="img" aria-label="データモデル">
         <defs>
           <style>
             .eb{rx:10;ry:10;stroke-width:1.5;fill:#fff;}
             .eh{font-size:13px;font-weight:700;fill:#fff;}
             .el{font-size:11px;fill:#1b2733;}
             .es{font-size:10px;fill:#5a6b7b;}
-            .er{stroke:#94a3b8;stroke-width:1.5;fill:none;marker-end:url(#arrD);}
-            .ert{font-size:11px;fill:#475569;font-weight:600;}
+            .er{stroke:#64748b;stroke-width:1.6;fill:none;marker-end:url(#arrD);}
+            .ert{font-size:11px;font-weight:700;fill:#334155;
+                 paint-order:stroke;stroke:#fff;stroke-width:3.5px;stroke-linejoin:round;}
           </style>
           <marker id="arrD" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
-            <path d="M0,0 L8,3 L0,6 Z" fill="#94a3b8"/>
+            <path d="M0,0 L8,3 L0,6 Z" fill="#64748b"/>
           </marker>
         </defs>
 
-        <!-- USER -->
-        <rect class="eb" x="40" y="40" width="220" height="160" stroke="#c2185b"/>
-        <rect x="40" y="40" width="220" height="32" rx="10" fill="#c2185b"/>
-        <rect x="40" y="58" width="220" height="14" fill="#c2185b"/>
-        <image href="aws-icons/dynamodb.svg" x="48" y="44" width="20" height="20"/>
-        <text class="eh" x="74" y="60">USER · Users</text>
-        <text class="el" x="54" y="92">userId (PK / Cognito sub)</text>
-        <text class="el" x="54" y="112">email</text>
-        <text class="el" x="54" y="132">familyName / givenName</text>
-        <text class="el" x="54" y="152">displayName（姓 名）</text>
-        <text class="es" x="54" y="178">アバター表示は姓のみ</text>
+        <!-- ===== 上段 ===== -->
+        <!-- USER · Users -->
+        <rect class="eb" x="30" y="30" width="210" height="200" stroke="#c2185b"/>
+        <rect x="30" y="30" width="210" height="32" rx="10" fill="#c2185b"/>
+        <rect x="30" y="48" width="210" height="14" fill="#c2185b"/>
+        <image href="aws-icons/dynamodb.svg" x="38" y="34" width="20" height="20"/>
+        <text class="eh" x="64" y="50">USER · Users</text>
+        <text class="el" x="44" y="82">userId (PK)</text>
+        <text class="el" x="44" y="100">email</text>
+        <text class="el" x="44" y="118">familyName / givenName</text>
+        <text class="el" x="44" y="136">displayName</text>
+        <text class="es" x="44" y="160">アバター表示は姓のみ</text>
+        <text class="es" x="44" y="182">→ Task.assignees</text>
+        <text class="es" x="44" y="198">→ Task.reviewers</text>
+        <text class="es" x="44" y="214">（userId 参照・線省略）</text>
 
-        <!-- PROJECT -->
-        <rect class="eb" x="360" y="40" width="240" height="180" stroke="#1565c0"/>
-        <rect x="360" y="40" width="240" height="32" rx="10" fill="#1565c0"/>
-        <rect x="360" y="58" width="240" height="14" fill="#1565c0"/>
-        <image href="aws-icons/dynamodb.svg" x="368" y="44" width="20" height="20"/>
-        <text class="eh" x="394" y="60">PROJECT · Projects</text>
-        <text class="el" x="374" y="92">projectId (PK)</text>
-        <text class="el" x="374" y="112">name / status / description</text>
-        <text class="el" x="374" y="132">createdBy</text>
-        <text class="el" x="374" y="152">memberIds[] / members[]</text>
-        <text class="el" x="374" y="172">createdAt / updatedAt</text>
-        <text class="es" x="374" y="198">isDeleted（論理削除）</text>
+        <!-- PROJECT · Projects -->
+        <rect class="eb" x="340" y="30" width="230" height="200" stroke="#1565c0"/>
+        <rect x="340" y="30" width="230" height="32" rx="10" fill="#1565c0"/>
+        <rect x="340" y="48" width="230" height="14" fill="#1565c0"/>
+        <image href="aws-icons/dynamodb.svg" x="348" y="34" width="20" height="20"/>
+        <text class="eh" x="374" y="50">PROJECT · Projects</text>
+        <text class="el" x="354" y="82">projectId (PK)</text>
+        <text class="el" x="354" y="100">name / status / description</text>
+        <text class="el" x="354" y="118">createdBy</text>
+        <text class="el" x="354" y="136">memberIds[] / members[]</text>
+        <text class="el" x="354" y="154">createdAt / updatedAt</text>
+        <text class="es" x="354" y="180">isDeleted（論理削除）</text>
+        <text class="es" x="354" y="200">GSI: CreatedByIndex</text>
 
-        <!-- TASK -->
-        <rect class="eb" x="700" y="40" width="250" height="220" stroke="#ed7100"/>
-        <rect x="700" y="40" width="250" height="32" rx="10" fill="#ed7100"/>
-        <rect x="700" y="58" width="250" height="14" fill="#ed7100"/>
-        <image href="aws-icons/dynamodb.svg" x="708" y="44" width="20" height="20"/>
-        <text class="eh" x="734" y="60">TASK · Tasks</text>
-        <text class="el" x="714" y="92">projectId + taskId</text>
-        <text class="el" x="714" y="112">title / status / priority</text>
-        <text class="el" x="714" y="132">completionPercent</text>
-        <text class="el" x="714" y="152">estimatedEffortDays</text>
-        <text class="el" x="714" y="172">assignees[] / dueDate</text>
-        <text class="el" x="714" y="192">requirement / description</text>
-        <text class="es" x="714" y="218">attachments[] メタ / isDeleted</text>
+        <!-- TASK · Tasks -->
+        <rect class="eb" x="670" y="30" width="300" height="240" stroke="#ed7100"/>
+        <rect x="670" y="30" width="300" height="32" rx="10" fill="#ed7100"/>
+        <rect x="670" y="48" width="300" height="14" fill="#ed7100"/>
+        <image href="aws-icons/dynamodb.svg" x="678" y="34" width="20" height="20"/>
+        <text class="eh" x="704" y="50">TASK · Tasks</text>
+        <text class="el" x="684" y="80">projectId + taskId (PK/SK)</text>
+        <text class="el" x="684" y="98">title / status / priority</text>
+        <text class="el" x="684" y="116">completionPercent</text>
+        <text class="el" x="684" y="134">startDate / dueDate</text>
+        <text class="el" x="684" y="152">estimatedEffortDays</text>
+        <text class="el" x="684" y="170">assignees[] / reviewers[]</text>
+        <text class="el" x="684" y="188">requirement / description</text>
+        <text class="es" x="684" y="212">attachments[] メタ · isDeleted</text>
+        <text class="es" x="684" y="230">GSI: TaskId / Assignee …</text>
+        <text class="es" x="684" y="252">※ 進捗ログ用テーブルなし</text>
 
+        <!-- ===== 下段 ===== -->
         <!-- COMMENT -->
-        <rect class="eb" x="360" y="280" width="240" height="120" stroke="#7b1fa2"/>
-        <rect x="360" y="280" width="240" height="32" rx="10" fill="#7b1fa2"/>
-        <rect x="360" y="298" width="240" height="14" fill="#7b1fa2"/>
-        <image href="aws-icons/dynamodb.svg" x="368" y="284" width="20" height="20"/>
-        <text class="eh" x="394" y="300">COMMENT · Comments</text>
-        <text class="el" x="374" y="332">commentId / taskId</text>
-        <text class="el" x="374" y="352">content / authorId</text>
-        <text class="el" x="374" y="372">createdAt / updatedAt</text>
+        <rect class="eb" x="340" y="340" width="230" height="110" stroke="#7b1fa2"/>
+        <rect x="340" y="340" width="230" height="32" rx="10" fill="#7b1fa2"/>
+        <rect x="340" y="358" width="230" height="14" fill="#7b1fa2"/>
+        <image href="aws-icons/dynamodb.svg" x="348" y="344" width="20" height="20"/>
+        <text class="eh" x="374" y="360">COMMENT · Comments</text>
+        <text class="el" x="354" y="390">taskId + commentId</text>
+        <text class="el" x="354" y="408">content / authorId</text>
+        <text class="el" x="354" y="426">createdAt / updatedAt</text>
 
-        <!-- ATTACH note -->
-        <rect class="eb" x="700" y="300" width="250" height="100" stroke="#569A31"/>
-        <rect x="700" y="300" width="250" height="32" rx="10" fill="#569A31"/>
-        <rect x="700" y="318" width="250" height="14" fill="#569A31"/>
-        <image href="aws-icons/s3.svg" x="708" y="304" width="20" height="20"/>
-        <text class="eh" x="734" y="320">ATTACHMENT · S3</text>
-        <text class="el" x="714" y="352">本体: taskvista-attachments</text>
-        <text class="es" x="714" y="372">メタ: タスク.attachments[]</text>
+        <!-- S3 -->
+        <rect class="eb" x="670" y="340" width="300" height="110" stroke="#569A31"/>
+        <rect x="670" y="340" width="300" height="32" rx="10" fill="#569A31"/>
+        <rect x="670" y="358" width="300" height="14" fill="#569A31"/>
+        <image href="aws-icons/s3.svg" x="678" y="344" width="20" height="20"/>
+        <text class="eh" x="704" y="360">ATTACHMENT · S3</text>
+        <text class="el" x="684" y="392">本体: taskvista-attachments</text>
+        <text class="es" x="684" y="414">メタは Task.attachments[]</text>
+        <text class="es" x="684" y="432">Presigned PUT/GET</text>
 
-        <!-- relations -->
-        <path class="er" d="M260,100 L358,100"/>
-        <text class="ert" x="280" y="92">member_of</text>
-        <path class="er" d="M600,120 L698,120"/>
-        <text class="ert" x="620" y="112">1 : N</text>
-        <path class="er" d="M820,260 L820,298"/>
-        <text class="ert" x="828" y="280">メタ</text>
-        <path class="er" d="M780,260 C700,280 620,280 520,280"/>
-        <text class="ert" x="620" y="268">1 : N comments</text>
-        <path class="er" d="M150,200 C150,320 300,340 358,340"/>
-        <text class="ert" x="160" y="280">author</text>
-        <path class="er" d="M150,160 C280,200 320,200 360,180"/>
-        <text class="ert" x="220" y="200">assigned</text>
+        <!-- ===== 配線（直交レーン） ===== -->
+
+        <!-- ① USER → PROJECT（y=100） -->
+        <path class="er" d="M240,100 L338,100"/>
+        <text class="ert" x="258" y="92">member_of</text>
+
+        <!-- ② PROJECT → TASK（y=100） -->
+        <path class="er" d="M570,100 L668,100"/>
+        <text class="ert" x="590" y="92">1 : N 所有</text>
+
+        <!-- ③ TASK → S3（真上の垂直・x=820） -->
+        <path class="er" d="M820,270 L820,338"/>
+        <text class="ert" x="828" y="308">メタ</text>
+
+        <!-- ④ TASK → COMMENT（TASK 下辺中央 → y=300 → COMMENT 上辺） -->
+        <path class="er" d="M760,270 L760,300 L455,300 L455,338"/>
+        <text class="ert" x="580" y="292">1 : N comments</text>
+
+        <!-- ⑤ USER → COMMENT（左端 x=50 下 → y=400 → COMMENT 左辺） -->
+        <path class="er" d="M50,230 L50,400 L338,400"/>
+        <text class="ert" x="58" y="320">author</text>
       </svg>
-      <figcaption>図5. データモデル（テーブル対応）</figcaption>
+      <figcaption>図5. データモデル（直交配線・交差なし）</figcaption>
     </figure>
+
+    <h3>DynamoDB キー / GSI（Tasks）</h3>
+    <table>
+      <tr><th>種別</th><th>キー</th><th>用途</th></tr>
+      <tr><td>PK / SK</td><td><code>projectId</code> / <code>taskId</code></td><td>プロジェクト内一覧（ベース Query）</td></tr>
+      <tr><td>GSI TaskIdIndex</td><td><code>taskId</code></td><td>単一タスク取得（その後 GetItem で全属性）</td></tr>
+      <tr><td>GSI ProjectStatusIndex</td><td><code>projectId</code> + <code>status</code></td><td>（参考・一覧はベーステーブル優先）</td></tr>
+      <tr><td>GSI AssigneeIndex</td><td><code>assigneeId</code> + <code>dueDate</code></td><td>担当タスク検索</td></tr>
+    </table>
 
     <h3>プロジェクト status</h3>
     <p><code>planning</code> / <code>active</code> / <code>on_hold</code> / <code>completed</code> / <code>archived</code>
@@ -641,26 +705,48 @@
       <tr><td>1〜99%</td><td>進行中</td></tr>
       <tr><td>100%</td><td>完了</td></tr>
     </table>
+    <h3>日程の解釈（時間線）</h3>
+    <table>
+      <tr><th>条件</th><th>時間線バー</th></tr>
+      <tr><td>開始日あり + 予定工数</td><td>開始日から工数分（人日）をカレンダー上に表示</td></tr>
+      <tr><td>開始日のみ</td><td>1 日分のバー</td></tr>
+      <tr><td>開始日なし</td><td>バーなし（締切からの逆算は行わない）</td></tr>
+      <tr><td>締切日</td><td>フラグ表示のみ（長さには使わない）</td></tr>
+    </table>
+    <h3>評価者（reviewers）</h3>
+    <p>
+      主に <strong>レビュー待ち</strong> でプロジェクトメンバーから複数指定。
+      <strong>完了</strong> 後も設定済みなら保持表示（未設定は「なし」）。
+      フィールドは <code>reviewers: { userId?, displayName }[]</code>。
+    </p>
   </section>
 
   <!-- 7 API -->
   <section id="api">
     <h2><span class="num">7</span>API 一覧</h2>
+    <p class="lead">JWT（Cognito ID Token）必須。ローカル <code>local:api</code> は同一パスを再現します。</p>
     <table>
       <tr><th>メソッド</th><th>パス</th><th>Lambda</th><th>説明</th></tr>
       <tr><td>GET/POST</td><td><code>/projects</code></td><td>projects</td><td>一覧・作成</td></tr>
       <tr><td>GET/PUT/DELETE</td><td><code>/projects/{id}</code></td><td>projects</td><td>詳細・更新・削除</td></tr>
       <tr><td>POST/DELETE</td><td><code>/projects/{id}/members…</code></td><td>projects</td><td>メンバー</td></tr>
       <tr><td>GET/POST</td><td><code>/projects/{id}/tasks</code></td><td>tasks</td><td>タスク一覧・作成</td></tr>
-      <tr><td>GET/PUT/DELETE</td><td><code>/tasks/{id}</code></td><td>tasks</td><td>タスク詳細・更新</td></tr>
+      <tr><td>GET/PUT/DELETE</td><td><code>/tasks/{id}</code></td><td>tasks</td><td>詳細・更新（開始日・評価者含む）</td></tr>
       <tr><td>PATCH</td><td><code>/tasks/{id}/status</code></td><td>tasks</td><td>かんばん用</td></tr>
       <tr><td>GET/POST/DELETE</td><td><code>/tasks/{id}/comments…</code></td><td>comments</td><td>コメント</td></tr>
       <tr><td>GET/POST/DELETE</td><td><code>/tasks/{id}/attachments…</code></td><td>attachments</td><td>添付・URL</td></tr>
       <tr><td>GET</td><td><code>/dashboard/summary</code></td><td>dashboard</td><td>概要統計</td></tr>
-      <tr><td>GET</td><td><code>/dashboard/my-tasks</code></td><td>dashboard</td><td>担当タスク</td></tr>
-      <tr><td>GET/PUT</td><td><code>/me</code></td><td>dashboard</td><td>プロフィール</td></tr>
-      <tr><td>POST</td><td><code>/users/display-names</code></td><td>dashboard</td><td>表示名一括</td></tr>
+      <tr><td>GET</td><td><code>/dashboard/my-tasks</code></td><td>dashboard</td><td>自分の担当タスク（未完了）</td></tr>
+      <tr><td>GET</td><td><code>/dashboard/review-tasks</code></td><td>dashboard</td><td>評価待ち（自分が評価者）</td></tr>
+      <tr><td>GET/PUT</td><td><code>/me</code></td><td>dashboard</td><td>プロフィール（姓・名）</td></tr>
+      <tr><td>POST</td><td><code>/users/display-names</code></td><td>dashboard</td><td>表示名一括解決</td></tr>
     </table>
+    <div class="callout">
+      新エンドポイントを追加した場合、Lambda 更新だけでは API Gateway にルートがありません。
+      <code>npm run deploy:backend</code>（ルート同期込み）または
+      <code>npm run deploy:routes</code> で不足ルートを追加してください。
+      ルート未登録時は 404 となり、ブラウザ上は CORS エラーに見えることがあります。
+    </div>
   </section>
 
   <!-- 8 Features -->
@@ -675,13 +761,105 @@
         </p>
       </div>
       <div class="card">
-        <h4>タスク</h4>
+        <h4>タスク（基本）</h4>
         <p style="margin:0;font-size:.9rem;color:var(--c-sub)">
-          かんばん / テーブル、複数担当、完了度、予定工数（人日）、
-          締切日、要望・説明、コメント、添付。
+          かんばん / テーブル / 時間線、複数担当、完了度連動、
+          予定工数（人日）、開始日・締切日、要望・説明、コメント、添付。
+        </p>
+      </div>
+      <div class="card">
+        <h4>時間線（ガント風カレンダー）</h4>
+        <p style="margin:0;font-size:.9rem;color:var(--c-sub)">
+          開始日を基準に工数分のバーを表示。全体 / 自分のタスク切替。
+          開始日未設定（保留以外）はドラッグで配置。
+          ドラッグ中は他タスクを隠し、配置用カレンダーのみ表示。
+        </p>
+      </div>
+      <div class="card">
+        <h4>評価者・レビュー</h4>
+        <p style="margin:0;font-size:.9rem;color:var(--c-sub)">
+          レビュー待ちでプロジェクトメンバーを評価者に複数指定。
+          完了後も保持表示。ダッシュボードに「評価待ち」欄、
+          かんばんに「評価待ち（自分）」フィルタとカード強調。
         </p>
       </div>
     </div>
+
+    <h3>画面ビュー切替（プロジェクト内）</h3>
+    <table>
+      <tr><th>ビュー</th><th>パス</th><th>用途</th></tr>
+      <tr><td>かんばん</td><td><code>/projects/:id/board</code></td><td>ステータス移動・評価待ち強調</td></tr>
+      <tr><td>テーブル</td><td><code>/projects/:id/table</code></td><td>一覧・ソート・フィルタ</td></tr>
+      <tr><td>時間線</td><td><code>/projects/:id/timeline</code></td><td>日程バー・開始日ドラッグ配置</td></tr>
+    </table>
+
+    <h3>ダッシュボード構成</h3>
+    <ol>
+      <li><strong>プロジェクト概要</strong> … ステータス別タスク数・メンバー数・最終更新</li>
+      <li><strong>自分の担当タスク</strong> … 未完了の担当タスク（締切昇順）</li>
+      <li><strong>評価待ちのタスク</strong> … レビュー待ちかつ自分が評価者（担当欄の下）</li>
+    </ol>
+
+    <figure class="fig">
+      <svg viewBox="0 0 960 320" width="100%" role="img" aria-label="評価・日程フロー">
+        <defs>
+          <marker id="arrF" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+            <path d="M0,0 L8,3 L0,6 Z" fill="#475569"/>
+          </marker>
+          <style>
+            .fb{rx:10;ry:10;stroke-width:1.5;}
+            .ft{font-size:12px;font-weight:600;fill:#1b2733;}
+            .fs{font-size:10px;fill:#5a6b7b;}
+            .fe{stroke:#475569;stroke-width:1.6;fill:none;marker-end:url(#arrF);}
+            .fl{font-size:11px;font-weight:700;fill:#1e293b;}
+          </style>
+        </defs>
+        <!-- 上段: レビュー -->
+        <text class="fl" x="40" y="28">レビュー（評価者）</text>
+        <rect class="fb" x="40" y="42" width="160" height="70" fill="#fffaf0" stroke="#ff9900"/>
+        <text class="ft" x="120" y="72" text-anchor="middle">タスク作成・更新</text>
+        <text class="fs" x="120" y="92" text-anchor="middle">status=レビュー待ち</text>
+
+        <rect class="fb" x="260" y="42" width="160" height="70" fill="#fff8e1" stroke="#f9a825"/>
+        <text class="ft" x="340" y="72" text-anchor="middle">評価者を選択</text>
+        <text class="fs" x="340" y="92" text-anchor="middle">reviewers[]</text>
+
+        <rect class="fb" x="480" y="42" width="180" height="70" fill="#e3f2fd" stroke="#1565c0"/>
+        <text class="ft" x="570" y="72" text-anchor="middle">ダッシュボード</text>
+        <text class="fs" x="570" y="92" text-anchor="middle">評価待ち一覧</text>
+
+        <rect class="fb" x="720" y="42" width="200" height="70" fill="#f3e5f5" stroke="#7b1fa2"/>
+        <text class="ft" x="820" y="72" text-anchor="middle">かんばん</text>
+        <text class="fs" x="820" y="92" text-anchor="middle">評価待ち（自分）</text>
+
+        <path class="fe" d="M200,77 L258,77"/>
+        <path class="fe" d="M420,77 L478,77"/>
+        <path class="fe" d="M660,77 L718,77"/>
+
+        <!-- 下段: 日程 -->
+        <text class="fl" x="40" y="160">日程（時間線）</text>
+        <rect class="fb" x="40" y="176" width="180" height="70" fill="#e8f5e9" stroke="#2e7d32"/>
+        <text class="ft" x="130" y="206" text-anchor="middle">開始日 + 工数</text>
+        <text class="fs" x="130" y="226" text-anchor="middle">またはドラッグ配置</text>
+
+        <rect class="fb" x="280" y="176" width="200" height="70" fill="#e0f7fa" stroke="#00838f"/>
+        <text class="ft" x="380" y="206" text-anchor="middle">時間線ビュー</text>
+        <text class="fs" x="380" y="226" text-anchor="middle">ガント風バー表示</text>
+
+        <rect class="fb" x="540" y="176" width="220" height="70" fill="#eef2ff" stroke="#6366f1"/>
+        <text class="ft" x="650" y="206" text-anchor="middle">配置モード</text>
+        <text class="fs" x="650" y="226" text-anchor="middle">ドラッグ中のみカレンダー</text>
+
+        <rect class="fb" x="820" y="176" width="100" height="70" fill="#fce4ec" stroke="#c2185b"/>
+        <text class="ft" x="870" y="206" text-anchor="middle">保存</text>
+        <text class="fs" x="870" y="226" text-anchor="middle">PUT task</text>
+
+        <path class="fe" d="M220,211 L278,211"/>
+        <path class="fe" d="M480,211 L538,211"/>
+        <path class="fe" d="M760,211 L818,211"/>
+      </svg>
+      <figcaption>図7. 評価フローと日程配置（概要）</figcaption>
+    </figure>
   </section>
 
   <!-- 9 Local -->
@@ -743,13 +921,21 @@ cd frontend &amp;&amp; npm run dev
   <section id="deploy">
     <h2><span class="num">10</span>デプロイ</h2>
     <p>本番反映はルートの <code>scripts/deploy.mjs</code> を使用します。</p>
-<pre><code>npm run deploy              # 全体
-npm run deploy:backend      # Lambda 等
-npm run deploy:frontend     # S3 + CloudFront 無効化</code></pre>
+<pre><code>npm run deploy              # 全体（Lambda + API ルート同期 + フロント）
+npm run deploy:backend      # Lambda 更新 + 不足 API ルート同期
+npm run deploy:frontend     # S3 sync + CloudFront 無効化
+npm run deploy:routes       # API Gateway ルート同期のみ</code></pre>
     <p style="font-size:.9rem;color:var(--c-sub)">
       設定は <code>deploy.config.json</code>。
       <code>template.yaml</code> は主に SAM ローカル向けです。
+      インフラを CDK で管理する場合は <code>infra/</code>（Auth / Storage / Backend / Frontend）。
     </p>
+    <div class="callout">
+      <strong>新 API パスを追加したあと:</strong>
+      Lambda だけ更新しても API Gateway にルートが無いと 404 になります。
+      <code>deploy:backend</code> または <code>deploy:routes</code> で
+      <code>API_ROUTES</code>（scripts/lib/config.mjs）と差分同期してください。
+    </div>
   </section>
 
   <!-- 11 Security -->
@@ -762,11 +948,12 @@ npm run deploy:frontend     # S3 + CloudFront 無効化</code></pre>
       <li>添付は時間制限付き Presigned URL</li>
       <li>Cognito Admin API はフロントから直接呼ばない</li>
       <li>相関 ID（X-Correlation-Id）でリクエスト追跡</li>
+      <li>表示名は Users テーブルに保持（Cognito クレームの生 username に依存しない）</li>
     </ul>
   </section>
 
   <footer>
-    TaskVista システム説明書 · 2026-07-17 ·
+    TaskVista システム説明書 · 2026-07-21 ·
     図は eg.html と同様の SVG 方式 ·
     アイコン:
     <a href="https://aws.amazon.com/architecture/icons/">AWS Architecture Icons</a>
