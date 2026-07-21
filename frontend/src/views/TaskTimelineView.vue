@@ -178,7 +178,7 @@ watch(projectId, () => {
           {{ projectsStore.currentProject?.name ?? '時間線' }}
         </h1>
         <p class="text-caption text-medium-emphasis mb-0 mt-1">
-          開始日を基準に予定工数分の期間を表示（締切からの逆算なし）
+          開始日を基準に予定工数分の期間を表示
         </p>
       </div>
       <v-progress-circular

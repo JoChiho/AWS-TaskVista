@@ -261,24 +261,34 @@ const draggingTask = computed(() => {
   return props.tasks.find((t) => t.taskId === draggingTaskId.value) ?? null
 })
 
+/**
+ * 重要: dragstart 直後に v-if で大量 DOM を消すと、ブラウザがドラッグをキャンセルする。
+ * そのため draggingTaskId の反映を次ティックに遅らせ、表示切替は CSS クラス中心にする。
+ */
 function onUnscheduledDragStart(e: DragEvent, task: Task) {
   if (!e.dataTransfer) return
   e.dataTransfer.setData(DND_MIME, task.taskId)
   e.dataTransfer.setData('text/plain', task.taskId)
   e.dataTransfer.effectAllowed = 'copyMove'
-  draggingTaskId.value = task.taskId
-  // カスタムドラッグイメージは省略（既定で十分）
+  e.dataTransfer.dropEffect = 'copy'
+  // 同期で ID を保持（ドロップ時 getData が空のブラウザ向け）
+  const id = task.taskId
+  window.setTimeout(() => {
+    draggingTaskId.value = id
+  }, 0)
 }
 
 function onUnscheduledDragEnd() {
   draggingTaskId.value = null
   hoverDayIndex.value = null
-  // drag 後に click が飛ぶブラウザ向け
   suppressClick.value = true
   window.setTimeout(() => {
     suppressClick.value = false
   }, 120)
 }
+
+/** ドラッグ中は他タスク行を CSS で隠し、配置用カレンダーだけ見せる */
+const isDragMode = computed(() => !!draggingTaskId.value)
 
 function onDayDragOver(e: DragEvent, dayIndex: number) {
   if (!draggingTaskId.value && !hasTaskDrag(e)) return
@@ -448,15 +458,26 @@ const cssVars = computed(() => ({
       </div>
     </div>
 
-    <!-- 凡例 -->
-    <div class="tl-legend">
+    <!-- 凡例（ドラッグ中は簡潔に） -->
+    <div v-if="!isDragMode" class="tl-legend">
       <span><i class="lg-swatch lg-bar" />期間 = 開始日 + 予定工数</span>
       <span><i class="lg-swatch lg-fill" />完了度</span>
       <span><i class="lg-line" />今日</span>
       <span><v-icon size="12" color="error">mdi-flag-variant</v-icon> 締切（参考）</span>
       <span class="lg-note">
         <v-icon size="12">mdi-cursor-move</v-icon>
-        開始日なし（保留以外）を上の欄から<strong>日付</strong>へドラッグ
+        未設定をドラッグすると配置用カレンダーが現れます
+      </span>
+    </div>
+    <div v-else class="tl-drag-banner">
+      <v-icon size="20" color="primary" class="mr-2">mdi-calendar-cursor</v-icon>
+      <span>
+        <strong>配置モード</strong>
+        — 他タスクは一時非表示。下の日付マスにドロップして開始日を設定
+        <template v-if="draggingTask && hoverDayIndex != null">
+          ：「{{ draggingTask.title }}」→
+          <strong>{{ hoverDayLabel(hoverDayIndex) }}</strong>
+        </template>
       </span>
     </div>
 
@@ -464,22 +485,14 @@ const cssVars = computed(() => ({
     <div
       v-if="unscheduled.length"
       class="tl-unscheduled"
-      :class="{ 'is-dragging': !!draggingTaskId }"
+      :class="{ 'is-dragging': isDragMode }"
     >
       <div class="unscheduled-title">
         <v-icon size="18" class="mr-1">mdi-drag</v-icon>
         日程未設定 · {{ unscheduled.length }} 件
         <span class="unscheduled-hint">
-          — 開始日なし（保留以外）。日付へドロップで開始日を設定
+          — ドラッグすると配置用カレンダーが表示されます
         </span>
-      </div>
-      <div
-        v-if="draggingTask && hoverDayIndex != null"
-        class="drop-hint-banner"
-      >
-        「{{ draggingTask.title }}」→
-        <strong>{{ hoverDayLabel(hoverDayIndex) }}</strong>
-        に開始日を設定
       </div>
       <div class="unscheduled-list">
         <button
@@ -517,13 +530,18 @@ const cssVars = computed(() => ({
       v-else
       ref="scrollerRef"
       class="tl-scroll"
-      :class="{ 'drop-active': !!draggingTaskId }"
+      :class="{ 'drop-active': isDragMode, 'is-drag-mode': isDragMode }"
     >
-      <!-- ===== 固定ヘッダー行 ===== -->
+      <!-- ===== 固定ヘッダー行（常時マウント） ===== -->
       <div class="tl-header">
         <div class="tl-corner">
-          <span class="corner-title">タスク</span>
-          <span class="corner-sub">{{ rows.length }} / {{ tasks.length }}</span>
+          <span class="corner-title">
+            {{ isDragMode ? '配置' : 'タスク' }}
+          </span>
+          <span class="corner-sub">
+            <template v-if="isDragMode">日付を選択</template>
+            <template v-else>{{ rows.length }} / {{ tasks.length }}</template>
+          </span>
         </div>
         <div class="tl-cal-head" :style="{ width: `${chartWidth}px` }">
           <div class="tl-months">
@@ -545,7 +563,7 @@ const cssVars = computed(() => ({
               :key="di"
               :class="[
                 dayHeaderClass(d, di),
-                { 'drop-target': hoverDayIndex === di && !!draggingTaskId },
+                { 'drop-target': hoverDayIndex === di && isDragMode },
               ]"
               :style="{ width: `${dayWidth}px`, minWidth: `${dayWidth}px` }"
               :title="
@@ -574,88 +592,130 @@ const cssVars = computed(() => ({
         </div>
       </div>
 
-      <!-- ===== 本体行 ===== -->
-      <div v-if="!rows.length" class="tl-body-empty">
-        開始日を設定すると、ここに時間線が表示されます。
-        上部の未設定タスクを、カレンダーの日付へドラッグしてください。
-      </div>
-
+      <!--
+        配置用カレンダー: 常時 DOM に残すが、非ドラッグ時は完全に畳む。
+        （v-if で消すとドラッグがキャンセルされるため CSS で隠す）
+        ドラッグ中だけ大きく表示する。
+      -->
       <div
-        v-for="row in rows"
-        :key="row.task.taskId"
-        class="tl-row"
-        @click="openTask(row.task)"
+        class="tl-place-row"
+        :class="{ 'is-drag-mode': isDragMode, 'is-idle-hidden': !isDragMode }"
       >
-        <div class="tl-label" :title="row.task.title">
-          <div class="label-title">{{ row.task.title }}</div>
-          <div class="label-meta">
-            <span
-              class="status-dot"
-              :class="`dot-${STATUS_COLORS[row.task.status]}`"
-            />
-            <span class="status-text">{{ row.task.status }}</span>
-            <span v-if="row.task.estimatedEffortDays != null" class="effort">
-              {{ row.task.estimatedEffortDays }}人日
-            </span>
-          </div>
+        <div class="tl-place-label">
+          <v-icon size="18" class="mr-1" color="primary">
+            mdi-calendar-plus
+          </v-icon>
+          ここにドロップ
         </div>
-
         <div
-          class="tl-track"
+          class="tl-place-track"
           :style="{ width: `${chartWidth}px`, minWidth: `${chartWidth}px` }"
           @dragover="onTrackDragOver"
           @dragleave="onTrackDragLeave"
           @drop="onDropTrack"
         >
           <div
-            v-for="di in weekendIndices"
-            :key="'w' + di"
-            class="weekend-col"
-            :style="{ left: `${di * dayWidth}px`, width: `${dayWidth}px` }"
-          />
-          <div
-            v-if="todayIndex != null"
-            class="today-col"
-            :style="{ left: `${todayIndex * dayWidth}px`, width: `${dayWidth}px` }"
-          />
-          <div
-            v-if="hoverDayIndex != null && draggingTaskId"
-            class="hover-day-col"
-            :style="{
-              left: `${hoverDayIndex * dayWidth}px`,
-              width: `${dayWidth}px`,
-            }"
-          />
-
-          <div
-            :class="barClass(row.task)"
-            :style="{ left: `${row.leftPx}px`, width: `${row.widthPx}px` }"
-            :title="`${row.task.title}\n${row.rangeLabel}\n完了 ${row.progress}%\n${row.assignees}`"
+            v-for="(d, di) in days"
+            :key="'p' + di"
+            class="place-day"
+            :class="[
+              dayHeaderClass(d, di),
+              { 'is-hover': hoverDayIndex === di && isDragMode },
+            ]"
+            :style="{ width: `${dayWidth}px`, minWidth: `${dayWidth}px` }"
+            @dragover="onDayDragOver($event, di)"
+            @dragleave="onDayDragLeave(di)"
+            @drop="onDropDay($event, di)"
           >
-            <div class="bar-progress" :style="{ width: `${row.progress}%` }" />
-            <span v-if="row.widthPx >= 48" class="bar-text">
-              {{ row.rangeLabel }}
-              <template v-if="row.progress > 0"> · {{ row.progress }}%</template>
-            </span>
-            <span v-else-if="row.widthPx >= 28" class="bar-text">
-              {{ row.progress }}%
-            </span>
+            <span class="place-day-num">{{ d.getDate() }}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== 本体行: 常時マウント、ドラッグ中は CSS で非表示 ===== -->
+      <div class="tl-task-body">
+        <div
+          v-if="!rows.length && unscheduled.length === 0"
+          class="tl-body-empty"
+        >
+          開始日を設定すると、ここに時間線が表示されます。
+        </div>
+        <div
+          v-else-if="!rows.length && unscheduled.length > 0"
+          class="tl-body-empty tl-body-empty--soft"
+        >
+          まだ時間線上のタスクはありません。上の未設定をドラッグして日付を指定してください。
+        </div>
+
+        <div
+          v-for="row in rows"
+          :key="row.task.taskId"
+          class="tl-row"
+          @click="openTask(row.task)"
+        >
+          <div class="tl-label" :title="row.task.title">
+            <div class="label-title">{{ row.task.title }}</div>
+            <div class="label-meta">
+              <span
+                class="status-dot"
+                :class="`dot-${STATUS_COLORS[row.task.status]}`"
+              />
+              <span class="status-text">{{ row.task.status }}</span>
+              <span v-if="row.task.estimatedEffortDays != null" class="effort">
+                {{ row.task.estimatedEffortDays }}人日
+              </span>
+            </div>
           </div>
 
           <div
-            v-if="row.dueLeftPx != null"
-            class="due-flag"
-            :style="{ left: `${row.dueLeftPx}px` }"
-            title="締切日"
+            class="tl-track"
+            :style="{ width: `${chartWidth}px`, minWidth: `${chartWidth}px` }"
+            @dragover="onTrackDragOver"
+            @dragleave="onTrackDragLeave"
+            @drop="onDropTrack"
           >
-            <v-icon size="13" color="error">mdi-flag-variant</v-icon>
-          </div>
+            <div
+              v-for="di in weekendIndices"
+              :key="'w' + di"
+              class="weekend-col"
+              :style="{ left: `${di * dayWidth}px`, width: `${dayWidth}px` }"
+            />
+            <div
+              v-if="todayIndex != null"
+              class="today-col"
+              :style="{ left: `${todayIndex * dayWidth}px`, width: `${dayWidth}px` }"
+            />
 
-          <div
-            v-if="todayOffsetPx != null"
-            class="today-line"
-            :style="{ left: `${todayOffsetPx}px` }"
-          />
+            <div
+              :class="barClass(row.task)"
+              :style="{ left: `${row.leftPx}px`, width: `${row.widthPx}px` }"
+              :title="`${row.task.title}\n${row.rangeLabel}\n完了 ${row.progress}%\n${row.assignees}`"
+            >
+              <div class="bar-progress" :style="{ width: `${row.progress}%` }" />
+              <span v-if="row.widthPx >= 48" class="bar-text">
+                {{ row.rangeLabel }}
+                <template v-if="row.progress > 0"> · {{ row.progress }}%</template>
+              </span>
+              <span v-else-if="row.widthPx >= 28" class="bar-text">
+                {{ row.progress }}%
+              </span>
+            </div>
+
+            <div
+              v-if="row.dueLeftPx != null"
+              class="due-flag"
+              :style="{ left: `${row.dueLeftPx}px` }"
+              title="締切日"
+            >
+              <v-icon size="13" color="error">mdi-flag-variant</v-icon>
+            </div>
+
+            <div
+              v-if="todayOffsetPx != null"
+              class="today-line"
+              :style="{ left: `${todayOffsetPx}px` }"
+            />
+          </div>
         </div>
       </div>
     </div>
@@ -791,20 +851,120 @@ const cssVars = computed(() => ({
   outline: 2px solid rgba(var(--v-theme-primary), 0.45);
   outline-offset: 1px;
 }
-
-.hover-day-col {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  background: rgba(var(--v-theme-primary), 0.18);
-  border-left: 1px solid rgb(var(--v-theme-primary));
-  border-right: 1px solid rgb(var(--v-theme-primary));
-  pointer-events: none;
-  z-index: 1;
+.tl-scroll.is-drag-mode {
+  min-height: 160px;
 }
+
+.tl-drag-banner {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgba(var(--v-theme-primary), 0.1);
+  border: 1px solid rgba(var(--v-theme-primary), 0.35);
+  font-size: 0.85rem;
+  color: rgba(var(--v-theme-on-surface), 0.85);
+}
+
 .day-h.drop-target {
   background: rgba(var(--v-theme-primary), 0.22) !important;
   box-shadow: inset 0 0 0 2px rgb(var(--v-theme-primary));
+}
+
+/* 配置用カレンダー（DOM は常時・非ドラッグ時は完全非表示） */
+.tl-place-row {
+  display: flex;
+  min-width: fit-content;
+  min-height: 0;
+  height: 0;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  border: none;
+  background: transparent;
+}
+.tl-place-row.is-idle-hidden {
+  /* 明示用（!isDragMode と併用） */
+  min-height: 0;
+  height: 0;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+/* ドラッグ中だけ表示（DOM を消さないのでドラッグは切れない） */
+.tl-scroll.is-drag-mode .tl-place-row,
+.tl-place-row.is-drag-mode {
+  min-height: 96px;
+  height: auto;
+  overflow: visible;
+  opacity: 1;
+  pointer-events: auto;
+  background: rgba(var(--v-theme-primary), 0.08);
+  border-bottom: 2px solid rgba(var(--v-theme-primary), 0.4);
+}
+.tl-place-label {
+  position: sticky;
+  left: 0;
+  z-index: 10;
+  flex: 0 0 var(--label-w);
+  width: var(--label-w);
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: rgb(var(--v-theme-primary));
+  background: rgba(var(--v-theme-primary), 0.08);
+  border-right: 1px solid var(--border);
+  box-sizing: border-box;
+}
+.tl-place-track {
+  position: relative;
+  display: flex;
+  flex: 0 0 auto;
+  min-height: inherit;
+  align-items: stretch;
+  z-index: 5;
+}
+.place-day {
+  box-sizing: border-box;
+  flex-shrink: 0;
+  border-right: 1px solid rgba(var(--v-border-color), 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 96px;
+  position: relative;
+  z-index: 2;
+  cursor: copy;
+}
+.place-day.is-hover {
+  background: rgba(var(--v-theme-primary), 0.28) !important;
+  box-shadow: inset 0 0 0 2px rgb(var(--v-theme-primary));
+}
+.place-day-num {
+  font-size: 0.9rem;
+  font-weight: 800;
+  color: rgba(var(--v-theme-on-surface), 0.75);
+  pointer-events: none;
+}
+.place-day.is-hover .place-day-num {
+  color: rgb(var(--v-theme-primary));
+}
+
+/* ドラッグ中はタスク行を CSS で隠す（DOM は残す） */
+.tl-task-body {
+  display: block;
+}
+.tl-scroll.is-drag-mode .tl-task-body {
+  display: none;
+}
+.tl-body-empty--soft {
+  opacity: 0.85;
+  font-size: 0.82rem;
 }
 
 /* ── Header (sticky top) ── */
