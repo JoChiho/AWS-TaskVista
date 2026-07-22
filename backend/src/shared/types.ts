@@ -111,11 +111,67 @@ export interface Task {
    * @deprecated
    */
   startDate?: string
+  /**
+   * WBS: 親タスク ID。未設定 = プロジェクト直下のルート
+   */
+  parentTaskId?: string
+  /** WBS 番号（例: "1", "1.2"） */
+  wbsCode?: string
+  /** 同一親内の並び順（0 始まり） */
+  sortOrder?: number
+  /**
+   * ノード種別
+   * - summary: 集計向け
+   * - work_package: 実行単位（既定）
+   * - milestone: マイルストーン
+   */
+  nodeType?: TaskNodeType
+  /**
+   * 読取時のみ: 直接の子の数（論理削除除く）
+   */
+  childCount?: number
+  /**
+   * 読取時のみ: 子孫から集計した値（子があるとき）
+   */
+  rollup?: TaskRollup
   attachments: AttachmentMeta[]
   createdBy: string
   createdAt: string
   updatedAt: string
   isDeleted: boolean
+}
+
+/** WBS ノード種別 */
+export type TaskNodeType = 'summary' | 'work_package' | 'milestone'
+
+/**
+ * 親ステータスの制約モード
+ * - forced_progress: 子に「進行中」あり → 親は必ず進行中
+ * - all_done_choice: 子がすべて完了 → 親は完了 / レビュー待ちを手動選択可
+ * - idle_choice: 進行中の子なし（かつ全完了でない）→ 未着手 / 保留を手動選択可
+ */
+export type ParentStatusMode =
+  | 'forced_progress'
+  | 'all_done_choice'
+  | 'idle_choice'
+
+/** 親ノード向け集計（API 応答） */
+export interface TaskRollup {
+  childCount: number
+  estimatedEffortDaysSum: number
+  actualEffortDaysSum: number
+  completionPercent: number
+  plannedStartDate?: string
+  plannedDueDate?: string
+  actualStartDate?: string
+  actualDueDate?: string
+  /** 表示用の有効ステータス（強制時は進行中） */
+  status: TaskStatus
+  statusMode: ParentStatusMode
+  /** 親が手動で選べるステータス */
+  allowedStatuses: TaskStatus[]
+  /** 子孫の担当者の和集合 */
+  assignees: TaskAssignee[]
 }
 
 /** コメントエンティティ */

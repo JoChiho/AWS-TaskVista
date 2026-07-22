@@ -13,6 +13,8 @@ import {
   completionColor,
   getPlannedStartDate,
   getPlannedDueDate,
+  isPlannedDueOverdue,
+  isPlannedDueSoon,
 } from '@/types/task'
 import {
   resolveAssigneeLabels,
@@ -73,16 +75,11 @@ function formatDueDate(dueDate: string): string {
 }
 
 function isOverdue(dueDate?: string): boolean {
-  if (!dueDate) return false
-  return new Date(dueDate) < new Date()
+  return isPlannedDueOverdue(dueDate, props.task.status)
 }
 
 function isDueSoon(dueDate?: string): boolean {
-  if (!dueDate) return false
-  const due = new Date(dueDate)
-  const now = new Date()
-  const diff = (due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
-  return diff >= 0 && diff <= 3
+  return isPlannedDueSoon(dueDate, props.task.status)
 }
 
 function progress(task: Task): number {

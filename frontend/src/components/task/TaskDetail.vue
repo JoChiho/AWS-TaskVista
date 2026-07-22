@@ -13,6 +13,7 @@ import {
   resolveStatusAfterCompletionChange,
   getPlannedDueDate,
   getPlannedStartDate,
+  isPlannedDueOverdue,
 } from '@/types/task'
 import CommentThread from '@/components/comment/CommentThread.vue'
 import TaskForm from './TaskForm.vue'
@@ -25,6 +26,12 @@ import {
   resolveReviewerLabels,
   avatarLabelFromName,
 } from '@/utils/displayName'
+import {
+  breadcrumbPath,
+  childrenOf,
+  displaySchedule,
+  isParentTask,
+} from '@/utils/wbs'
 
 const props = defineProps<{
   projectId: string
@@ -52,11 +59,38 @@ const reviewerLabels = computed(() =>
   task.value ? resolveReviewerLabels(task.value) : [],
 )
 
-const plannedStart = computed(() =>
-  task.value ? getPlannedStartDate(task.value) : undefined,
+const schedule = computed(() =>
+  task.value
+    ? displaySchedule(task.value)
+    : {
+        completionPercent: 0,
+        isRollup: false,
+      },
 )
-const plannedDue = computed(() =>
-  task.value ? getPlannedDueDate(task.value) : undefined,
+
+const plannedStart = computed(
+  () =>
+    schedule.value.plannedStartDate ??
+    (task.value ? getPlannedStartDate(task.value) : undefined),
+)
+const plannedDue = computed(
+  () =>
+    schedule.value.plannedDueDate ??
+    (task.value ? getPlannedDueDate(task.value) : undefined),
+)
+
+const crumbs = computed(() => {
+  if (!task.value) return []
+  return breadcrumbPath(task.value, tasksStore.activeTasks)
+})
+
+const childTasks = computed(() => {
+  if (!task.value) return []
+  return childrenOf(tasksStore.activeTasks, task.value.taskId)
+})
+
+const isParent = computed(
+  () => !!(task.value && isParentTask(task.value, tasksStore.activeTasks)),
 )
 
 /**
@@ -97,15 +131,15 @@ function actualToneClass(tone: ActualVsPlanTone): string {
 }
 
 const actualStartTone = computed((): ActualVsPlanTone =>
-  compareDateVsPlan(task.value?.actualStartDate, plannedStart.value),
+  compareDateVsPlan(schedule.value.actualStartDate, plannedStart.value),
 )
 const actualEndTone = computed((): ActualVsPlanTone =>
-  compareDateVsPlan(task.value?.actualDueDate, plannedDue.value),
+  compareDateVsPlan(schedule.value.actualDueDate, plannedDue.value),
 )
 const actualEffortTone = computed((): ActualVsPlanTone =>
   compareEffortVsPlan(
-    task.value?.actualEffortDays,
-    task.value?.estimatedEffortDays,
+    schedule.value.actualEffortDays,
+    schedule.value.estimatedEffortDays,
   ),
 )
 
@@ -129,12 +163,19 @@ watch(modelValue, (isOpen) => {
   }
 })
 
-// タスク切替・再取得時にローカル完了度を同期
+// タスク切替・再取得時にローカル完了度を同期（親は rollup）
 watch(
-  () => [task.value?.taskId, task.value?.completionPercent, modelValue.value] as const,
+  () =>
+    [
+      task.value?.taskId,
+      task.value?.completionPercent,
+      task.value?.rollup?.completionPercent,
+      task.value?.childCount,
+      modelValue.value,
+    ] as const,
   () => {
     if (task.value && modelValue.value) {
-      localCompletion.value = normalizeCompletion(task.value.completionPercent)
+      localCompletion.value = displaySchedule(task.value).completionPercent
     }
   },
   { immediate: true },
@@ -160,10 +201,12 @@ function formatDateTime(dateStr: string): string {
 }
 
 function isOverdue(dueDate?: string): boolean {
-  if (!dueDate) return false
-  const d = new Date(dueDate)
-  d.setHours(23, 59, 59, 999)
-  return d < new Date()
+  // 有効ステータス（親は rollup）を見て超過ハイライト
+  const st =
+    task.value?.rollup && (task.value.childCount ?? 0) > 0
+      ? task.value.rollup.status
+      : task.value?.status
+  return isPlannedDueOverdue(dueDate, st)
 }
 
 async function handleDelete() {
@@ -174,7 +217,7 @@ async function handleDelete() {
 }
 
 async function commitCompletion(value: number) {
-  if (!task.value) return
+  if (!task.value || isParentTask(task.value, tasksStore.activeTasks)) return
   const next = normalizeCompletion(value)
   localCompletion.value = next
   if (next === normalizeCompletion(task.value.completionPercent)) return
@@ -255,6 +298,19 @@ function close() {
   modelValue.value = false
 }
 
+/** パンくず / 子一覧から別タスクを開く */
+async function openSibling(t: { taskId: string }) {
+  const full = tasksStore.activeTasks.find((x) => x.taskId === t.taskId)
+  if (full) {
+    tasksStore.currentTask = full
+  }
+  try {
+    await tasksStore.fetchTask(t.taskId)
+  } catch {
+    // 既にキャッシュを表示済みならそのまま
+  }
+}
+
 /** アバターは姓のみ */
 function initials(name: string): string {
   return avatarLabelFromName(name)
@@ -278,7 +334,29 @@ function initials(name: string): string {
           <div class="flex-grow-1 min-w-0">
             <p class="text-caption text-medium-emphasis mb-0 detail-kicker">
               タスク詳細
+              <template v-if="task.wbsCode">
+                · WBS {{ task.wbsCode }}
+              </template>
             </p>
+            <div
+              v-if="crumbs.length > 1"
+              class="detail-breadcrumb text-caption text-medium-emphasis mt-1"
+            >
+              <template v-for="(c, i) in crumbs" :key="c.taskId">
+                <span v-if="i > 0" class="mx-1">/</span>
+                <button
+                  v-if="i < crumbs.length - 1"
+                  type="button"
+                  class="crumb-link"
+                  @click="openSibling(c)"
+                >
+                  {{ c.wbsCode ? c.wbsCode + ' ' : '' }}{{ c.title }}
+                </button>
+                <span v-else class="font-weight-medium text-high-emphasis">
+                  {{ c.wbsCode ? c.wbsCode + ' ' : '' }}{{ c.title }}
+                </span>
+              </template>
+            </div>
           </div>
           <div class="detail-timestamps flex-shrink-0 text-right">
             <div class="detail-ts-line">
@@ -377,12 +455,13 @@ function initials(name: string): string {
           </div>
         </section>
 
-        <!-- 進捗 -->
+        <!-- 進捗（親は集計・編集不可） -->
         <section class="detail-section completion-section mx-5 mb-4">
           <div class="completion-row">
             <div class="section-label completion-label mb-0">
               <v-icon size="16" class="mr-1" color="primary">mdi-progress-check</v-icon>
               進捗
+              <span v-if="isParent" class="text-caption font-weight-regular ml-1">（集計）</span>
             </div>
             <v-slider
               v-model="localCompletion"
@@ -390,7 +469,7 @@ function initials(name: string): string {
               :max="100"
               :step="5"
               :color="completionColor(localCompletion)"
-              :disabled="isSavingProgress"
+              :disabled="isSavingProgress || isParent"
               density="compact"
               hide-details
               class="completion-slider"
@@ -407,10 +486,11 @@ function initials(name: string): string {
               hide-spin-buttons
               class="completion-input"
               suffix="%"
-              :disabled="isSavingProgress"
+              :disabled="isSavingProgress || isParent"
               @change="commitCompletion(localCompletion)"
             />
             <v-btn
+              v-if="!isParent"
               size="small"
               variant="tonal"
               color="primary"
@@ -423,11 +503,14 @@ function initials(name: string): string {
           </div>
         </section>
 
-        <!-- 担当者 -->
+        <!-- 担当者（親は子孫の和集合） -->
         <section class="detail-section mx-5 mb-4">
           <div class="section-label">
             <v-icon size="18" class="mr-1">mdi-account-multiple-outline</v-icon>
             担当者
+            <span v-if="isParent" class="text-caption font-weight-regular ml-1">
+              （子の和集合）
+            </span>
           </div>
           <div v-if="assigneeLabels.length" class="d-flex flex-wrap ga-2">
             <v-chip
@@ -480,8 +563,12 @@ function initials(name: string): string {
           スケジュール（3 列 × 2 行・上下対応）:
           予定: 開始 | 終了 | 工数
           実績: 開始 | 終了 | 工数
+          親は rollup 値を表示
         -->
         <section class="schedule-block mx-5 mb-5">
+          <p v-if="schedule.isRollup" class="schedule-rollup-note mb-2">
+            子タスクから集計した値です（直接編集はできません）
+          </p>
           <div class="schedule-row schedule-row--planned">
             <div class="schedule-row-label">予定</div>
             <div class="schedule-cells">
@@ -501,15 +588,21 @@ function initials(name: string): string {
               <div class="meta-item">
                 <span class="meta-key">工数（人日）</span>
                 <span class="meta-val">
-                  <template v-if="task.estimatedEffortDays != null">
-                    {{ task.estimatedEffortDays }} 人日
+                  <template v-if="schedule.estimatedEffortDays != null">
+                    {{ schedule.estimatedEffortDays }} 人日
                   </template>
                   <template v-else>未設定</template>
                 </span>
               </div>
             </div>
           </div>
-          <div class="schedule-row schedule-row--actual">
+          <div
+            class="schedule-row schedule-row--actual"
+            :class="{
+              'schedule-row--actual-ok': actualEndTone === 'ok',
+              'schedule-row--actual-late': actualEndTone === 'late',
+            }"
+          >
             <div class="schedule-row-label">実績</div>
             <div class="schedule-cells">
               <div
@@ -524,7 +617,7 @@ function initials(name: string): string {
                 "
               >
                 <span class="meta-key">開始日</span>
-                <span class="meta-val">{{ formatDate(task.actualStartDate) }}</span>
+                <span class="meta-val">{{ formatDate(schedule.actualStartDate) }}</span>
               </div>
               <div
                 class="meta-item"
@@ -538,7 +631,7 @@ function initials(name: string): string {
                 "
               >
                 <span class="meta-key">終了日</span>
-                <span class="meta-val">{{ formatDate(task.actualDueDate) }}</span>
+                <span class="meta-val">{{ formatDate(schedule.actualDueDate) }}</span>
               </div>
               <div
                 class="meta-item"
@@ -553,13 +646,41 @@ function initials(name: string): string {
               >
                 <span class="meta-key">工数（人日）</span>
                 <span class="meta-val">
-                  <template v-if="task.actualEffortDays != null">
-                    {{ task.actualEffortDays }} 人日
+                  <template v-if="schedule.actualEffortDays != null">
+                    {{ schedule.actualEffortDays }} 人日
                   </template>
                   <template v-else>未設定</template>
                 </span>
               </div>
             </div>
+          </div>
+        </section>
+
+        <!-- 子タスク一覧 -->
+        <section v-if="isParent" class="detail-section mx-5 mb-5">
+          <div class="section-label">
+            <v-icon size="18" class="mr-1">mdi-file-tree-outline</v-icon>
+            子タスク（{{ childTasks.length }}）
+          </div>
+          <div class="child-list">
+            <button
+              v-for="c in childTasks"
+              :key="c.taskId"
+              type="button"
+              class="child-row"
+              @click="openSibling(c)"
+            >
+              <span class="child-wbs">{{ c.wbsCode || '—' }}</span>
+              <span class="child-title">{{ c.title }}</span>
+              <v-chip
+                size="x-small"
+                label
+                :color="STATUS_COLORS[c.status]"
+                variant="tonal"
+              >
+                {{ c.status }}
+              </v-chip>
+            </button>
           </div>
         </section>
 
@@ -725,6 +846,78 @@ function initials(name: string): string {
   font-weight: 500;
   color: rgba(var(--v-theme-on-surface), 0.55);
   font-variant-numeric: tabular-nums;
+}
+
+.detail-breadcrumb {
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.crumb-link {
+  border: none;
+  background: none;
+  padding: 0;
+  color: rgb(var(--v-theme-primary));
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.crumb-link:hover {
+  text-decoration: underline;
+}
+
+.schedule-rollup-note {
+  font-size: 0.75rem;
+  color: rgba(var(--v-theme-on-surface), 0.5);
+}
+
+.child-list {
+  border-radius: 12px;
+  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  overflow: hidden;
+}
+
+.child-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  border-bottom: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+}
+
+.child-row:last-child {
+  border-bottom: none;
+}
+
+.child-row:hover {
+  background: rgba(var(--v-theme-primary), 0.06);
+}
+
+.child-wbs {
+  flex: 0 0 auto;
+  min-width: 2.5rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: rgba(var(--v-theme-on-surface), 0.45);
+  font-variant-numeric: tabular-nums;
+}
+
+.child-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .detail-title {
@@ -912,6 +1105,17 @@ function initials(name: string): string {
 .schedule-row--actual .schedule-row-label {
   color: rgba(var(--v-theme-on-surface), 0.7);
   background: rgba(var(--v-theme-on-surface), 0.06);
+}
+
+/* 実績ラベルは終了日の判定に合わせる */
+.schedule-row--actual-ok .schedule-row-label {
+  color: #1b5e20;
+  background: rgba(46, 125, 50, 0.16);
+}
+
+.schedule-row--actual-late .schedule-row-label {
+  color: #b71c1c;
+  background: rgba(198, 40, 40, 0.14);
 }
 
 .schedule-cells {

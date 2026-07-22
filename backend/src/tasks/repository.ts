@@ -129,6 +129,11 @@ export type TaskUpdateFields = Partial<
   dueDate?: string | null
   /** 旧 startDate の削除用 */
   startDate?: string | null
+  /** WBS 親。null で属性削除（ルートへ） */
+  parentTaskId?: string | null
+  wbsCode?: string | null
+  sortOrder?: number | null
+  nodeType?: Task['nodeType'] | null
   /** 評価者一覧。null で属性削除 */
   reviewers?: Task['reviewers'] | null
   /** true のとき assigneeId / assigneeName を REMOVE（GSI から外す） */
@@ -167,6 +172,10 @@ export async function updateTask(
     ['completionPercent', 'completionPercent'],
     ['estimatedEffortDays', 'estimatedEffortDays'],
     ['actualEffortDays', 'actualEffortDays'],
+    ['parentTaskId', 'parentTaskId'],
+    ['wbsCode', 'wbsCode'],
+    ['sortOrder', 'sortOrder'],
+    ['nodeType', 'nodeType'],
     ['assignees', 'assignees'],
     ['reviewers', 'reviewers'],
   ]

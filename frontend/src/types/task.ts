@@ -100,12 +100,46 @@ export interface Task {
   startDate?: string
   /** @deprecated 互換用。表示は plannedDueDate を使う */
   dueDate?: string
+  /** WBS: 親タスク ID（未設定 = ルート） */
+  parentTaskId?: string
+  /** WBS 番号（例: 1.2） */
+  wbsCode?: string
+  /** 同一親内の並び */
+  sortOrder?: number
+  /** ノード種別 */
+  nodeType?: TaskNodeType
+  /** 直接の子の数（API 集計） */
+  childCount?: number
+  /** 子から集計した値（親ノード） */
+  rollup?: TaskRollup
   attachments: Attachment[]
   createdBy: string
   createdAt: string
   updatedAt: string
   isDeleted: boolean
   commentCount?: number
+}
+
+export type TaskNodeType = 'summary' | 'work_package' | 'milestone'
+
+export type ParentStatusMode =
+  | 'forced_progress'
+  | 'all_done_choice'
+  | 'idle_choice'
+
+export interface TaskRollup {
+  childCount: number
+  estimatedEffortDaysSum: number
+  actualEffortDaysSum: number
+  completionPercent: number
+  plannedStartDate?: string
+  plannedDueDate?: string
+  actualStartDate?: string
+  actualDueDate?: string
+  status: TaskStatus
+  statusMode: ParentStatusMode
+  allowedStatuses: TaskStatus[]
+  assignees: TaskAssignee[]
 }
 
 /** タスク作成リクエスト */
@@ -126,6 +160,10 @@ export interface CreateTaskPayload {
   plannedDueDate?: string | null
   actualStartDate?: string | null
   actualDueDate?: string | null
+  parentTaskId?: string | null
+  wbsCode?: string | null
+  sortOrder?: number | null
+  nodeType?: TaskNodeType | null
 }
 
 /** タスク更新リクエスト */
@@ -146,6 +184,10 @@ export interface UpdateTaskPayload {
   plannedDueDate?: string | null
   actualStartDate?: string | null
   actualDueDate?: string | null
+  parentTaskId?: string | null
+  wbsCode?: string | null
+  sortOrder?: number | null
+  nodeType?: TaskNodeType | null
 }
 
 /** 予定開始日（旧 startDate フォールバック） */
@@ -156,6 +198,44 @@ export function getPlannedStartDate(task: Pick<Task, 'plannedStartDate' | 'start
 /** 予定終了日（旧 dueDate フォールバック） */
 export function getPlannedDueDate(task: Pick<Task, 'plannedDueDate' | 'dueDate'>): string | undefined {
   return task.plannedDueDate || task.dueDate || undefined
+}
+
+/**
+ * 予定終了の超過ハイライトを出すか
+ * 完了 / レビュー待ち / 保留 は期限超過を強調しない
+ */
+export function shouldHighlightPlannedDue(
+  status?: TaskStatus | null,
+): boolean {
+  if (!status) return true
+  return status !== '完了' && status !== 'レビュー待ち' && status !== '保留'
+}
+
+/** 予定終了日が超過しているか（対象外ステータスは false） */
+export function isPlannedDueOverdue(
+  dueDate?: string | null,
+  status?: TaskStatus | null,
+): boolean {
+  if (!shouldHighlightPlannedDue(status)) return false
+  if (!dueDate) return false
+  const d = new Date(dueDate)
+  if (Number.isNaN(d.getTime())) return false
+  d.setHours(23, 59, 59, 999)
+  return d < new Date()
+}
+
+/** 予定終了が近い（3日以内・超過ハイライト対象のみ） */
+export function isPlannedDueSoon(
+  dueDate?: string | null,
+  status?: TaskStatus | null,
+): boolean {
+  if (!shouldHighlightPlannedDue(status)) return false
+  if (!dueDate) return false
+  const due = new Date(dueDate)
+  if (Number.isNaN(due.getTime())) return false
+  const now = new Date()
+  const diff = (due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
+  return diff >= 0 && diff <= 3
 }
 
 /** ステータスのみ更新するリクエスト（かんばんドラッグ専用） */

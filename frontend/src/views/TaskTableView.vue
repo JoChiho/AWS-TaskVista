@@ -5,13 +5,15 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useTasksStore } from '@/stores/tasks'
 import { useProjectsStore } from '@/stores/projects'
-import type { Task } from '@/types/task'
+import type { Task, TaskPriority, TaskStatus } from '@/types/task'
 import {
   STATUS_COLORS,
   PRIORITY_LABELS,
   PRIORITY_COLORS,
+  TASK_STATUSES,
   normalizeCompletion,
   completionColor,
+  isPlannedDueOverdue,
 } from '@/types/task'
 import TaskDetail from '@/components/task/TaskDetail.vue'
 import TaskFilters from '@/components/task/TaskFilters.vue'
@@ -22,6 +24,34 @@ import {
   formatReviewerList,
   resolveAssigneeLabels,
 } from '@/utils/displayName'
+import {
+  compareWbsCode,
+  depthOfTask,
+  displaySchedule,
+  flattenVisibleTree,
+  hasChildren,
+  type WbsSortOrder,
+} from '@/utils/wbs'
+
+type TableSortKey =
+  | 'wbsCode'
+  | 'status'
+  | 'priority'
+  | 'plannedStartDate'
+  | 'plannedDueDate'
+  | 'actualStartDate'
+  | 'actualDueDate'
+
+const PRIORITY_RANK: Record<TaskPriority, number> = {
+  low: 1,
+  medium: 2,
+  high: 3,
+  urgent: 4,
+}
+
+const STATUS_RANK: Record<TaskStatus, number> = Object.fromEntries(
+  TASK_STATUSES.map((s, i) => [s, i]),
+) as Record<TaskStatus, number>
 
 const route = useRoute()
 const tasksStore = useTasksStore()
@@ -34,6 +64,51 @@ const projectId = computed(() => route.params.projectId as string)
 const showDetail = ref(false)
 // タスク作成ダイアログの表示状態
 const showCreateForm = ref(false)
+/** テーブル + から作成するときの親タスク ID */
+const createParentTaskId = ref<string | null>(null)
+
+/** 第1・第2層のみ子を追加可能（深さ 0 / 1 → 最大3層） */
+function canAddChild(task: Task): boolean {
+  return depthOfTask(task, tasksStore.activeTasks) <= 1
+}
+
+function openCreateRoot() {
+  createParentTaskId.value = null
+  showCreateForm.value = true
+}
+
+function openCreateChild(parent: Task, e?: Event) {
+  e?.stopPropagation()
+  e?.preventDefault()
+  createParentTaskId.value = parent.taskId
+  // ツリー表示中は親を展開しておく
+  if (isWbsTreeSort.value && !expandedIds.value.has(parent.taskId)) {
+    const next = new Set(expandedIds.value)
+    next.add(parent.taskId)
+    expandedIds.value = next
+  }
+  showCreateForm.value = true
+}
+
+function onCreateFormSaved() {
+  // 親の下に作った場合は展開を維持
+  if (createParentTaskId.value) {
+    const next = new Set(expandedIds.value)
+    next.add(createParentTaskId.value)
+    expandedIds.value = next
+  }
+  createParentTaskId.value = null
+}
+
+watch(showCreateForm, (open) => {
+  if (!open) {
+    // キャンセル時も親指定をクリア（次回「タスクを追加」に残さない）
+    // saved 後は onCreateFormSaved で既に null
+    queueMicrotask(() => {
+      if (!showCreateForm.value) createParentTaskId.value = null
+    })
+  }
+})
 
 // フィルター条件
 const filterAssignee = ref<string | null>(null)
@@ -47,6 +122,55 @@ const debouncedSearch = ref('')
 // デバウンスタイマー
 let debounceTimer: ReturnType<typeof setTimeout>
 
+/** ツリー展開中の親 taskId */
+const expandedIds = ref<Set<string>>(new Set())
+
+/**
+ * ソート: 既定は WBS 昇順（ツリー表示）
+ * 他列ソート時はフラット一覧（親子展開は WBS 時のみ）
+ */
+const sortKey = ref<TableSortKey>('wbsCode')
+const sortOrder = ref<'asc' | 'desc'>('asc')
+
+/** Vuetify sort-by と同期 */
+const sortBy = computed({
+  get: () => [{ key: sortKey.value, order: sortOrder.value }],
+  set: (v: Array<{ key: string; order?: 'asc' | 'desc' }>) => {
+    const first = v?.[0]
+    if (!first?.key) return
+    const key = first.key as TableSortKey
+    const allowed: TableSortKey[] = [
+      'wbsCode',
+      'status',
+      'priority',
+      'plannedStartDate',
+      'plannedDueDate',
+      'actualStartDate',
+      'actualDueDate',
+    ]
+    if (!allowed.includes(key)) return
+    sortKey.value = key
+    sortOrder.value = first.order === 'desc' ? 'desc' : 'asc'
+    tablePage.value = 1
+  },
+})
+
+const isWbsTreeSort = computed(() => sortKey.value === 'wbsCode')
+
+/**
+ * 実ソートは filteredTasks 側で実施。
+ * Vuetify 内部ソートを無効化しつつヘッダーの昇降アイコンは sort-by で表示する。
+ */
+const preserveOrderSort: Record<string, (a: unknown, b: unknown) => number> = {
+  wbsCode: () => 0,
+  status: () => 0,
+  priority: () => 0,
+  plannedStartDate: () => 0,
+  plannedDueDate: () => 0,
+  actualStartDate: () => 0,
+  actualDueDate: () => 0,
+}
+
 // 検索入力に 300ms のデバウンスを適用する
 watch(searchText, (val) => {
   clearTimeout(debounceTimer)
@@ -55,22 +179,31 @@ watch(searchText, (val) => {
   }, 300)
 })
 
-// ページネーション設定
-const itemsPerPage = ref(20)
-const itemsPerPageOptions = [
-  { value: 10, title: '10 件' },
-  { value: 20, title: '20 件' },
-  { value: 50, title: '50 件' },
-]
+/** 親子展開があるため 1 ページは固定 10 件（見やすさ優先） */
+const itemsPerPage = 10
+/** フッターの件数セレクトは出さず、ページ番号のみ */
+const tablePage = ref(1)
 
 /**
  * テーブルのカラム定義
- * - ステータス（例: レビュー待ち）は chip が収まる幅を確保
- * - 優先度も chip が隣列と重ならないよう余裕を持たせる
+ * 要件列は日付閲覧時に邪魔になるため非表示。タスク名は広め。
+ * ソート可能: WBS / ステータス / 優先度 / 予定・実績の開始・終了
  */
 const headers = [
-  { title: 'タスク名', key: 'title', sortable: true, minWidth: '180px' },
-  { title: '要件', key: 'requirement', sortable: false, minWidth: '160px' },
+  {
+    title: 'WBS',
+    key: 'wbsCode',
+    sortable: true,
+    minWidth: '48px',
+    width: '52px',
+  },
+  {
+    title: 'タスク名',
+    key: 'title',
+    sortable: false,
+    minWidth: '280px',
+    width: '320px',
+  },
   {
     title: 'ステータス',
     key: 'status',
@@ -83,14 +216,14 @@ const headers = [
   {
     title: '進捗',
     key: 'completionPercent',
-    sortable: true,
+    sortable: false,
     minWidth: '100px',
     width: '110px',
   },
   {
     title: '担当者',
     key: 'assigneeName',
-    sortable: true,
+    sortable: false,
     minWidth: '120px',
     width: '140px',
   },
@@ -114,81 +247,217 @@ const headers = [
     title: '予定開始',
     key: 'plannedStartDate',
     sortable: true,
-    minWidth: '100px',
-    width: '100px',
+    minWidth: '118px',
+    width: '118px',
+    cellProps: { class: 'col-date' },
+    headerProps: { class: 'col-date' },
   },
   {
     title: '予定終了',
     key: 'plannedDueDate',
     sortable: true,
-    minWidth: '100px',
-    width: '100px',
+    minWidth: '118px',
+    width: '118px',
+    cellProps: { class: 'col-date' },
+    headerProps: { class: 'col-date' },
   },
   {
     title: '実績開始',
     key: 'actualStartDate',
     sortable: true,
-    minWidth: '100px',
-    width: '100px',
+    minWidth: '118px',
+    width: '118px',
+    cellProps: { class: 'col-date' },
+    headerProps: { class: 'col-date' },
   },
   {
     title: '実績終了',
     key: 'actualDueDate',
     sortable: true,
-    minWidth: '100px',
-    width: '100px',
+    minWidth: '118px',
+    width: '118px',
+    cellProps: { class: 'col-date' },
+    headerProps: { class: 'col-date' },
   },
   {
     title: '予定工数',
     key: 'estimatedEffortDays',
-    sortable: true,
+    sortable: false,
     minWidth: '90px',
     width: '90px',
   },
   {
     title: '実績工数',
     key: 'actualEffortDays',
-    sortable: true,
+    sortable: false,
     minWidth: '90px',
     width: '90px',
   },
-  {
-    title: '作成日',
-    key: 'createdAt',
-    sortable: true,
-    minWidth: '100px',
-    width: '100px',
-  },
 ]
 
+function matchesFilters(task: Task): boolean {
+  if (filterStatus.value && task.status !== filterStatus.value) return false
+  if (
+    filterAssignee.value &&
+    !resolveAssigneeLabels(task).includes(filterAssignee.value)
+  ) {
+    return false
+  }
+  if (filterPriority.value && task.priority !== filterPriority.value) return false
+  if (
+    debouncedSearch.value &&
+    !task.title.toLowerCase().includes(debouncedSearch.value.toLowerCase())
+  ) {
+    return false
+  }
+  return true
+}
+
 /**
- * フィルターと検索を適用したタスク一覧を返す計算プロパティ
- * クライアントサイドで処理する（API への再問い合わせなし）
+ * フィルター適用後の全タスク
+ * 検索・フィルタ中はツリーをフラット表示（該当行を見落とさない）
+ */
+const matchedTasks = computed(() =>
+  tasksStore.activeTasks.filter((t) => matchesFilters(t)),
+)
+
+const isFilterActive = computed(
+  () =>
+    !!filterStatus.value ||
+    !!filterAssignee.value ||
+    !!filterPriority.value ||
+    !!debouncedSearch.value.trim(),
+)
+
+function compareDateField(a?: string | null, b?: string | null): number {
+  const aa = a?.slice(0, 10) || ''
+  const bb = b?.slice(0, 10) || ''
+  if (!aa && !bb) return 0
+  if (!aa) return 1 // 未設定は末尾
+  if (!bb) return -1
+  return aa.localeCompare(bb)
+}
+
+function compareTasksByKey(a: Task, b: Task, key: TableSortKey): number {
+  const sa = displaySchedule(a)
+  const sb = displaySchedule(b)
+  switch (key) {
+    case 'wbsCode':
+      return compareWbsCode(a.wbsCode, b.wbsCode)
+    case 'status': {
+      const statusA =
+        sa.isRollup && a.rollup?.status ? a.rollup.status : a.status
+      const statusB =
+        sb.isRollup && b.rollup?.status ? b.rollup.status : b.status
+      return (STATUS_RANK[statusA] ?? 99) - (STATUS_RANK[statusB] ?? 99)
+    }
+    case 'priority':
+      return (PRIORITY_RANK[a.priority] ?? 0) - (PRIORITY_RANK[b.priority] ?? 0)
+    case 'plannedStartDate':
+      return compareDateField(sa.plannedStartDate, sb.plannedStartDate)
+    case 'plannedDueDate':
+      return compareDateField(sa.plannedDueDate, sb.plannedDueDate)
+    case 'actualStartDate':
+      return compareDateField(sa.actualStartDate, sb.actualStartDate)
+    case 'actualDueDate':
+      return compareDateField(sa.actualDueDate, sb.actualDueDate)
+    default:
+      return 0
+  }
+}
+
+/**
+ * 表示行:
+ * - WBS ソート: ルート + 展開子のツリー（兄弟は WBS 順）
+ * - 他列ソート: フラット一覧（フィルタ対象）をその列で並べ替え
  */
 const filteredTasks = computed<Task[]>(() => {
-  return tasksStore.activeTasks.filter((task) => {
-    // ステータスフィルター
-    if (filterStatus.value && task.status !== filterStatus.value) return false
-    // 担当者フィルター（複数担当のいずれかが一致すれば表示）
-    if (
-      filterAssignee.value &&
-      !resolveAssigneeLabels(task).includes(filterAssignee.value)
-    ) {
-      return false
+  const all = tasksStore.activeTasks
+  const order = sortOrder.value
+  const key = sortKey.value
+  const wbsOrder: WbsSortOrder = order
+
+  if (key === 'wbsCode') {
+    if (isFilterActive.value) {
+      const need = new Set(matchedTasks.value.map((t) => t.taskId))
+      for (const t of matchedTasks.value) {
+        let p = t.parentTaskId
+        const byId = new Map(all.map((x) => [x.taskId, x]))
+        while (p) {
+          need.add(p)
+          p = byId.get(p)?.parentTaskId
+        }
+      }
+      const expandAll = new Set(
+        [...need].filter((id) => {
+          const t = all.find((x) => x.taskId === id)
+          return t && hasChildren(t, all)
+        }),
+      )
+      return flattenVisibleTree(
+        all.filter((t) => need.has(t.taskId)),
+        expandAll,
+        wbsOrder,
+      )
     }
-    // 優先度フィルター
-    if (filterPriority.value && task.priority !== filterPriority.value) return false
-    // タスク名あいまい検索（大文字小文字を区別しない）
-    if (
-      debouncedSearch.value &&
-      !task.title.toLowerCase().includes(debouncedSearch.value.toLowerCase())
-    )
-      return false
-    return true
+    return flattenVisibleTree(all, expandedIds.value, wbsOrder)
+  }
+
+  // 非 WBS: フラット + 列ソート
+  const base = isFilterActive.value ? matchedTasks.value : all
+  const sorted = [...base].sort((a, b) => {
+    const c = compareTasksByKey(a, b, key)
+    return order === 'asc' ? c : -c
   })
+  return sorted
 })
 
-/** 行クリックでタスク詳細を開く */
+const tablePageCount = computed(() =>
+  Math.max(1, Math.ceil(filteredTasks.value.length / itemsPerPage)),
+)
+
+// フィルタ変更時は 1 ページ目へ
+watch(
+  () => [
+    filterStatus.value,
+    filterAssignee.value,
+    filterPriority.value,
+    debouncedSearch.value,
+  ],
+  () => {
+    tablePage.value = 1
+  },
+)
+
+function toggleExpand(taskId: string, e?: Event) {
+  e?.stopPropagation()
+  e?.preventDefault()
+  const next = new Set(expandedIds.value)
+  if (next.has(taskId)) next.delete(taskId)
+  else next.add(taskId)
+  expandedIds.value = next
+}
+
+function isExpanded(taskId: string): boolean {
+  return expandedIds.value.has(taskId)
+}
+
+function rowHasChildren(task: Task): boolean {
+  return hasChildren(task, tasksStore.activeTasks)
+}
+
+function sched(task: Task) {
+  return displaySchedule(task)
+}
+
+function isPlannedDueOverdueRow(task: Task): boolean {
+  const s = sched(task)
+  const status =
+    s.isRollup && task.rollup?.status ? task.rollup.status : task.status
+  return isPlannedDueOverdue(s.plannedDueDate, status)
+}
+
+/** 行クリックでタスク詳細を開く（展開ボタンは stop 済み） */
 function onRowClick(_event: Event, row: { item: Task }) {
   tasksStore.currentTask = row.item
   showDetail.value = true
@@ -264,15 +533,14 @@ watch(projectId, () => {
         color="primary"
         prepend-icon="mdi-plus"
         size="small"
-        @click="showCreateForm = true"
+        @click="openCreateRoot"
       >
         タスクを追加
       </v-btn>
     </div>
 
     <!-- 検索とフィルターエリア -->
-    <v-row class="mb-4" dense>
-      <!-- タスク名検索ボックス -->
+    <v-row class="mb-4" dense align="center">
       <v-col cols="12" md="4">
         <v-text-field
           v-model="searchText"
@@ -283,7 +551,6 @@ watch(projectId, () => {
           density="compact"
         />
       </v-col>
-      <!-- ステータスフィルター -->
       <v-col cols="12" md="8">
         <TaskFilters
           v-model:assignee="filterAssignee"
@@ -295,6 +562,15 @@ watch(projectId, () => {
         />
       </v-col>
     </v-row>
+    <p class="text-caption text-medium-emphasis mb-2">
+      列見出しをクリックで並び替え（既定: WBS 昇順）。
+      <template v-if="isWbsTreeSort">
+        WBS 順のとき親子ツリーを展開表示します。
+      </template>
+      <template v-else>
+        他列ソート時はフラット一覧です。
+      </template>
+    </p>
 
     <!-- 初回のみスケルトン（再入場時はキャッシュを即表示） -->
     <v-skeleton-loader v-if="showInitialSkeleton" type="table" />
@@ -302,41 +578,94 @@ watch(projectId, () => {
     <!-- タスクテーブル -->
     <v-data-table
       v-else
+      v-model:page="tablePage"
+      v-model:sort-by="sortBy"
       :headers="headers"
       :items="filteredTasks"
       :items-per-page="itemsPerPage"
-      :items-per-page-options="itemsPerPageOptions"
+      :custom-key-sort="preserveOrderSort"
+      must-sort
+      hide-default-footer
       hover
       density="comfortable"
       class="elevation-1 rounded-lg task-table"
       no-data-text="タスクが見つかりません"
       @click:row="onRowClick"
     >
-      <!-- タスク名（広め・折り返し可） -->
+      <!-- WBS 番号 -->
+      <template #[`item.wbsCode`]="{ item }">
+        <span class="text-caption font-weight-bold text-medium-emphasis cell-wbs">
+          {{ item.wbsCode || '—' }}
+        </span>
+      </template>
+
+      <!-- タスク名：左=展開 / 中央=名前 / 右端=子追加（1・2層のみ） -->
       <template #[`item.title`]="{ item }">
-        <span class="text-body-2 font-weight-medium cell-main">
-          {{ item.title }}
-        </span>
+        <div
+          class="title-cell"
+          :style="{
+            paddingLeft: isWbsTreeSort
+              ? `${depthOfTask(item, tasksStore.activeTasks) * 16}px`
+              : '0',
+          }"
+        >
+          <div class="title-cell-main">
+            <template v-if="isWbsTreeSort">
+              <button
+                v-if="rowHasChildren(item)"
+                type="button"
+                class="expand-btn"
+                :title="isExpanded(item.taskId) ? '折りたたむ' : '子タスクを表示'"
+                :aria-expanded="isExpanded(item.taskId)"
+                @click="toggleExpand(item.taskId, $event)"
+              >
+                <v-icon size="18">
+                  {{
+                    isExpanded(item.taskId)
+                      ? 'mdi-chevron-down'
+                      : 'mdi-chevron-right'
+                  }}
+                </v-icon>
+              </button>
+              <span v-else class="expand-spacer" aria-hidden="true" />
+            </template>
+            <span class="text-body-2 font-weight-medium cell-main title-text">
+              {{ item.title }}
+            </span>
+          </div>
+          <button
+            v-if="canAddChild(item)"
+            type="button"
+            class="add-child-btn"
+            title="このタスクの下に子タスクを追加"
+            @click="openCreateChild(item, $event)"
+          >
+            <v-icon size="18">mdi-plus</v-icon>
+          </button>
+        </div>
       </template>
 
-      <!-- 要件 -->
-      <template #[`item.requirement`]="{ item }">
-        <span class="text-body-2 cell-main">
-          {{ item.requirement || '—' }}
-        </span>
-      </template>
-
-      <!-- ステータスカラム（折り返し・隣列との重なり防止） -->
+      <!-- ステータス（親は集計ステータス） -->
       <template #[`item.status`]="{ item }">
         <div class="cell-chip">
           <v-chip
-            :color="STATUS_COLORS[item.status]"
+            :color="
+              STATUS_COLORS[
+                sched(item).isRollup && item.rollup?.status
+                  ? item.rollup.status
+                  : item.status
+              ]
+            "
             size="small"
             label
             variant="tonal"
             class="chip-fixed"
           >
-            {{ item.status }}
+            {{
+              sched(item).isRollup && item.rollup?.status
+                ? item.rollup.status
+                : item.status
+            }}
           </v-chip>
         </div>
       </template>
@@ -356,38 +685,36 @@ watch(projectId, () => {
         </div>
       </template>
 
-      <!-- 予定開始日 -->
+      <!-- 予定開始日（親は集計） -->
       <template #[`item.plannedStartDate`]="{ item }">
         <span class="text-body-2 cell-date">
-          {{ formatTableDate(item.plannedStartDate ?? item.startDate) }}
+          {{ formatTableDate(sched(item).plannedStartDate) }}
         </span>
       </template>
 
-      <!-- 予定終了日 -->
+      <!-- 予定終了日（完了・レビュー待ち・保留は超過ハイライトなし） -->
       <template #[`item.plannedDueDate`]="{ item }">
         <span
           class="text-body-2 cell-date"
           :class="{
-            'text-error':
-              (item.plannedDueDate || item.dueDate) &&
-              new Date(item.plannedDueDate || item.dueDate!) < new Date(),
+            'text-error': isPlannedDueOverdueRow(item),
           }"
         >
-          {{ formatTableDate(item.plannedDueDate ?? item.dueDate) }}
+          {{ formatTableDate(sched(item).plannedDueDate) }}
         </span>
       </template>
 
       <!-- 実績開始日 -->
       <template #[`item.actualStartDate`]="{ item }">
         <span class="text-body-2 cell-date">
-          {{ formatTableDate(item.actualStartDate) }}
+          {{ formatTableDate(sched(item).actualStartDate) }}
         </span>
       </template>
 
       <!-- 実績終了日 -->
       <template #[`item.actualDueDate`]="{ item }">
         <span class="text-body-2 cell-date">
-          {{ formatTableDate(item.actualDueDate) }}
+          {{ formatTableDate(sched(item).actualDueDate) }}
         </span>
       </template>
 
@@ -395,8 +722,8 @@ watch(projectId, () => {
       <template #[`item.estimatedEffortDays`]="{ item }">
         <span class="text-body-2 cell-date">
           {{
-            item.estimatedEffortDays != null
-              ? `${item.estimatedEffortDays} 人日`
+            sched(item).estimatedEffortDays != null
+              ? `${sched(item).estimatedEffortDays} 人日`
               : '—'
           }}
         </span>
@@ -406,32 +733,27 @@ watch(projectId, () => {
       <template #[`item.actualEffortDays`]="{ item }">
         <span class="text-body-2 cell-date">
           {{
-            item.actualEffortDays != null
-              ? `${item.actualEffortDays} 人日`
+            sched(item).actualEffortDays != null
+              ? `${sched(item).actualEffortDays} 人日`
               : '—'
           }}
         </span>
       </template>
 
-      <!-- 作成日（短い日付・1行固定） -->
-      <template #[`item.createdAt`]="{ item }">
-        <span class="text-body-2 cell-date">
-          {{ formatTableDate(item.createdAt) }}
-        </span>
-      </template>
-
-      <!-- 進捗 -->
+      <!-- 進捗（親は子から集計） -->
       <template #[`item.completionPercent`]="{ item }">
         <div class="d-flex align-center ga-1" style="min-width: 88px">
           <v-progress-linear
-            :model-value="normalizeCompletion(item.completionPercent)"
-            :color="completionColor(normalizeCompletion(item.completionPercent))"
+            :model-value="normalizeCompletion(sched(item).completionPercent)"
+            :color="
+              completionColor(normalizeCompletion(sched(item).completionPercent))
+            "
             height="6"
             rounded
             style="flex: 1; min-width: 40px"
           />
           <span class="text-caption font-weight-medium" style="width: 32px">
-            {{ normalizeCompletion(item.completionPercent) }}%
+            {{ normalizeCompletion(sched(item).completionPercent) }}%
           </span>
         </div>
       </template>
@@ -461,27 +783,66 @@ watch(projectId, () => {
       </template>
     </v-data-table>
 
+    <!-- 件数セレクト無し・ページ送りのみ（10 件固定・1 ページ時も表示） -->
+    <div
+      v-if="!showInitialSkeleton"
+      class="table-pagination d-flex align-center justify-center ga-3 py-3"
+    >
+      <span class="text-caption text-medium-emphasis">
+        {{ tablePage }} / {{ tablePageCount }} ページ
+      </span>
+      <v-pagination
+        v-model="tablePage"
+        :length="tablePageCount"
+        density="comfortable"
+        total-visible="7"
+        rounded
+      />
+    </div>
+
     <!-- タスク詳細サイドドロワー -->
     <TaskDetail
       v-model="showDetail"
       :project-id="projectId"
     />
 
-    <!-- タスク作成ダイアログ -->
+    <!-- タスク作成ダイアログ（+ からは親を自動設定） -->
     <TaskForm
       v-model="showCreateForm"
       :project-id="projectId"
+      :default-parent-task-id="createParentTaskId"
+      @saved="onCreateFormSaved"
     />
   </v-container>
 </template>
 
 <style scoped>
-/* 本文列: タスク名・要件を読みやすく */
+/* 本文列: タスク名・要件を読みやすく（横スクロール前提で幅を確保） */
 .task-table :deep(th),
 .task-table :deep(td) {
   vertical-align: middle;
   padding-left: 12px !important;
   padding-right: 12px !important;
+}
+
+.task-table :deep(th:nth-child(1)),
+.task-table :deep(td:nth-child(1)) {
+  min-width: 48px;
+  max-width: 56px;
+  width: 52px;
+  padding-left: 6px !important;
+  padding-right: 4px !important;
+}
+
+.task-table :deep(th:nth-child(1) .v-data-table-header__content) {
+  flex-wrap: nowrap;
+  gap: 0;
+}
+
+.task-table :deep(th:nth-child(2)),
+.task-table :deep(td:nth-child(2)) {
+  min-width: 280px;
+  max-width: 360px;
 }
 
 /* ステータス / 優先度: chip が隣セルに食い込まない */
@@ -490,6 +851,25 @@ watch(projectId, () => {
   white-space: nowrap !important;
   overflow: hidden;
   box-sizing: border-box;
+}
+
+/* 日付列ヘッダー: ソートアイコン込みで 1 行に収める */
+.task-table :deep(th.col-date),
+.task-table :deep(td.col-date) {
+  white-space: nowrap !important;
+  box-sizing: border-box;
+  padding-left: 8px !important;
+  padding-right: 8px !important;
+}
+
+.task-table :deep(th.col-date .v-data-table-header__content) {
+  flex-wrap: nowrap;
+  white-space: nowrap;
+  gap: 2px;
+}
+
+.task-table :deep(th.col-date .v-data-table-header__content span) {
+  white-space: nowrap;
 }
 
 .cell-chip {
@@ -514,13 +894,89 @@ watch(projectId, () => {
   max-width: 7.5rem;
 }
 
+.cell-wbs {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.title-cell {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  width: 100%;
+}
+
+.title-cell-main {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.add-child-btn {
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(var(--v-theme-primary), 0.85);
+  cursor: pointer;
+  padding: 0;
+}
+
+.add-child-btn:hover {
+  background: rgba(var(--v-theme-primary), 0.12);
+  color: rgb(var(--v-theme-primary));
+}
+
+.expand-btn {
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(var(--v-theme-on-surface), 0.55);
+  cursor: pointer;
+  padding: 0;
+}
+
+.expand-btn:hover {
+  background: rgba(var(--v-theme-primary), 0.1);
+  color: rgb(var(--v-theme-primary));
+}
+
+.expand-spacer {
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+}
+
+.title-text {
+  min-width: 0;
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.4;
+}
+
 .cell-main {
   display: -webkit-box;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
   overflow: hidden;
-  line-height: 1.4;
+  white-space: normal;
   word-break: break-word;
+  line-height: 1.4;
 }
 
 /* 日付列: 折り返さず 2026.07.15 を1行で */

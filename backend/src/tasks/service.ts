@@ -12,6 +12,25 @@ import {
 import * as usersService from '../users/service.js'
 import * as commentRepository from '../comments/repository.js'
 import * as repository from './repository.js'
+import {
+  buildById,
+  childrenOf,
+  collectDescendantIds,
+  deriveParentStatusPolicy,
+  enrichWithWbs,
+  exceedsMaxDepth,
+  isParentStatusAllowed,
+  isTaskNodeType,
+  nextSortOrder,
+  nextWbsCode,
+  planMissingWbsCodes,
+  renumberSubtreeCodes,
+  resolveParentStatus,
+  touchesParentLockedFields,
+  wouldCreateCycle,
+  WBS_MAX_DEPTH,
+} from './wbs.js'
+import type { TaskStatus as SharedTaskStatus } from '../shared/types.js'
 
 const statusSchema = z.enum(['未着手', '進行中', 'レビュー待ち', '完了', '保留'])
 const prioritySchema = z.enum(['low', 'medium', 'high', 'urgent'])
@@ -101,6 +120,16 @@ const createTaskSchema = z.object({
       z.null(),
     ])
     .optional(),
+  /** WBS: 親タスク ID（空 / null = ルート） */
+  parentTaskId: z
+    .union([z.string().min(1).max(128), z.literal(''), z.null()])
+    .optional(),
+  /** WBS 番号 */
+  wbsCode: z.string().min(1).max(64).optional().nullable(),
+  /** 同一親内の並び */
+  sortOrder: z.number().int().min(0).max(100000).optional().nullable(),
+  /** ノード種別 */
+  nodeType: z.enum(['summary', 'work_package', 'milestone']).optional().nullable(),
 })
 
 /** 日付フィールド: 空 / null → 削除、YYYY-MM-DD → 保存、undefined → 触らない */
@@ -476,27 +505,64 @@ async function enrichTaskAssignees(
   })
 }
 
-/** プロジェクト内のタスク一覧を取得する */
+/**
+ * 欠落 WBS 番号を補完して DB に書き戻す（一覧・詳細の前処理）
+ * 後から親を付けたタスクや導入前データ向け
+ */
+async function ensureWbsCodesPersisted(_projectId: string, tasks: Task[]): Promise<Task[]> {
+  const patches = planMissingWbsCodes(tasks)
+  if (patches.length === 0) return tasks
+
+  const byId = new Map(tasks.map((t) => [t.taskId, t]))
+  for (const p of patches) {
+    const cur = byId.get(p.taskId)
+    if (!cur) continue
+    try {
+      const updated = await repository.updateTask(p.taskId, { wbsCode: p.wbsCode })
+      // モックが undefined を返す場合もパッチを反映
+      byId.set(
+        p.taskId,
+        updated && updated.taskId
+          ? updated
+          : { ...cur, wbsCode: p.wbsCode },
+      )
+    } catch {
+      byId.set(p.taskId, { ...cur, wbsCode: p.wbsCode })
+    }
+  }
+  // 元の並びを保つ
+  return tasks.map((t) => byId.get(t.taskId) ?? t)
+}
+
+/** プロジェクト内のタスク一覧を取得する（WBS childCount / rollup 付き） */
 export async function listTasksByProject(
   projectId: string,
   userId: string,
   email?: string,
 ): Promise<Task[]> {
   await assertProjectAccess(projectId, userId, email)
-  const tasks = (await repository.listTasksByProject(projectId)).filter((t) => !t.isDeleted)
-  return enrichTaskAssignees(tasks, projectId)
+  let tasks = (await repository.listTasksByProject(projectId)).filter((t) => !t.isDeleted)
+  tasks = await ensureWbsCodesPersisted(projectId, tasks)
+  const enriched = await enrichTaskAssignees(tasks, projectId)
+  return enrichWithWbs(enriched)
 }
 
-/** タスク詳細を取得する（コメント数を含む） */
+/** タスク詳細を取得する（コメント数・WBS 集計を含む） */
 export async function getTask(
   taskId: string,
   userId: string,
   email?: string,
 ): Promise<Task & { commentCount: number }> {
   const task = await getAccessibleTask(taskId, userId, email)
-  const [enriched] = await enrichTaskAssignees([task], task.projectId)
+  let projectTasks = (await repository.listTasksByProject(task.projectId)).filter(
+    (t) => !t.isDeleted,
+  )
+  projectTasks = await ensureWbsCodesPersisted(task.projectId, projectTasks)
+  const enrichedAll = await enrichTaskAssignees(projectTasks, task.projectId)
+  const withWbs = enrichWithWbs(enrichedAll)
+  const self = withWbs.find((t) => t.taskId === taskId) ?? withWbs[0]
   const comments = await commentRepository.listCommentsByTask(taskId)
-  return { ...enriched, commentCount: comments.length }
+  return { ...self, commentCount: comments.length }
 }
 
 /** タスクを新規作成する */
@@ -552,6 +618,44 @@ export async function createTask(
     completion = 0
   }
 
+  // WBS: 親・番号・並び
+  const projectTasks = (await repository.listTasksByProject(projectId)).filter(
+    (t) => !t.isDeleted,
+  )
+  let parentTaskId: string | undefined
+  const rawParent = parsed.data.parentTaskId
+  if (rawParent && rawParent !== '') {
+    const parent = projectTasks.find((t) => t.taskId === rawParent)
+    if (!parent) {
+      throw new ValidationError('親タスクが見つかりません', {
+        parentTaskId: '同一プロジェクト内のタスクを指定してください',
+      })
+    }
+    const byId = buildById(projectTasks)
+    if (exceedsMaxDepth(rawParent, byId, WBS_MAX_DEPTH)) {
+      throw new ValidationError(
+        `WBS の深さは ${WBS_MAX_DEPTH} 階層までです`,
+        { parentTaskId: `最大 ${WBS_MAX_DEPTH} 階層` },
+      )
+    }
+    parentTaskId = rawParent
+  }
+  const parent = parentTaskId
+    ? projectTasks.find((t) => t.taskId === parentTaskId)
+    : undefined
+  const sortOrder =
+    parsed.data.sortOrder != null && parsed.data.sortOrder !== undefined
+      ? parsed.data.sortOrder
+      : nextSortOrder(projectTasks, parentTaskId)
+  const wbsCode =
+    parsed.data.wbsCode && parsed.data.wbsCode.trim()
+      ? parsed.data.wbsCode.trim()
+      : nextWbsCode(projectTasks, parent)
+  const nodeType =
+    parsed.data.nodeType && isTaskNodeType(parsed.data.nodeType)
+      ? parsed.data.nodeType
+      : 'work_package'
+
   const task: Task = {
     taskId: uuidv4(),
     projectId,
@@ -569,6 +673,12 @@ export async function createTask(
     createdAt: now,
     updatedAt: now,
     isDeleted: false,
+    sortOrder,
+    wbsCode,
+    nodeType,
+  }
+  if (parentTaskId) {
+    task.parentTaskId = parentTaskId
   }
 
   // オプション属性は値があるときだけ載せる（DynamoDB に確実に書き込む）
@@ -603,8 +713,13 @@ export async function createTask(
   }
 
   const created = await repository.createTask(task)
-  const [enriched] = await enrichTaskAssignees([created], projectId)
-  return enriched
+  if (created.parentTaskId) {
+    await syncAncestorStatuses(projectId, created)
+  }
+  const all = (await repository.listTasksByProject(projectId)).filter((t) => !t.isDeleted)
+  const enrichedAll = await enrichTaskAssignees(all, projectId)
+  const withWbs = enrichWithWbs(enrichedAll)
+  return withWbs.find((t) => t.taskId === created.taskId) ?? created
 }
 
 /** タスク情報を更新する */
@@ -626,6 +741,36 @@ export async function updateTask(
   }
 
   const project = await projectRepository.getProjectById(existing.projectId)
+  const projectTasks = (await repository.listTasksByProject(existing.projectId)).filter(
+    (t) => !t.isDeleted,
+  )
+  const byId = buildById(projectTasks)
+  const directChildren = projectTasks.filter((t) => t.parentTaskId === existing.taskId)
+  const isParentNode = directChildren.length > 0
+
+  // 親（子あり）: 進捗・予定/実績・担当は手入力不可。優先度・レビュアーは可。
+  // ステータスは子の状態に応じた候補のみ可。
+  if (isParentNode) {
+    const locked = touchesParentLockedFields(parsed.data as Record<string, unknown>)
+    if (locked.length > 0) {
+      throw new ValidationError(
+        '子タスクがある親では進捗・予定/実績・担当者を直接変更できません',
+        Object.fromEntries(
+          locked.map((k) => [k, '子から集計されます。子タスクを編集してください']),
+        ),
+      )
+    }
+    if (parsed.data.status !== undefined) {
+      const childStatuses = directChildren.map((c) => c.status)
+      if (!isParentStatusAllowed(parsed.data.status as SharedTaskStatus, childStatuses)) {
+        const policy = deriveParentStatusPolicy(childStatuses)
+        throw new ValidationError(
+          `現在の子タスク状態ではステータスは次のいずれかです: ${policy.allowedStatuses.join('、')}`,
+          { status: `許可: ${policy.allowedStatuses.join(', ')}` },
+        )
+      }
+    }
+  }
 
   // 明示的に更新フィールドを組み立て（スプレッドだと意図しないキーが混ざるのを避ける）
   const updates: Parameters<typeof repository.updateTask>[1] = {}
@@ -662,6 +807,124 @@ export async function updateTask(
   if (actualStart !== undefined) updates.actualStartDate = actualStart
   const actualDue = optionalDateUpdate(parsed.data.actualDueDate)
   if (actualDue !== undefined) updates.actualDueDate = actualDue
+
+  // WBS フィールド
+  if (parsed.data.wbsCode !== undefined) {
+    updates.wbsCode =
+      parsed.data.wbsCode === null || parsed.data.wbsCode === ''
+        ? null
+        : parsed.data.wbsCode
+  }
+  if (parsed.data.sortOrder !== undefined) {
+    updates.sortOrder =
+      parsed.data.sortOrder === null ? null : parsed.data.sortOrder
+  }
+  if (parsed.data.nodeType !== undefined) {
+    updates.nodeType =
+      parsed.data.nodeType === null ? null : parsed.data.nodeType
+  }
+  /** 親変更時に子孫の WBS も振り直すための新コード */
+  let reparentNewWbsCode: string | null = null
+  let reparentSimulatedTasks: Task[] | null = null
+
+  if (parsed.data.parentTaskId !== undefined) {
+    const nextParent =
+      parsed.data.parentTaskId === '' || parsed.data.parentTaskId === null
+        ? null
+        : parsed.data.parentTaskId
+    const prevParent = existing.parentTaskId || null
+    if (nextParent) {
+      if (!byId.has(nextParent)) {
+        throw new ValidationError('親タスクが見つかりません', {
+          parentTaskId: '同一プロジェクト内のタスクを指定してください',
+        })
+      }
+      if (wouldCreateCycle(existing.taskId, nextParent, byId)) {
+        throw new ValidationError('親タスクに自分の子孫は指定できません', {
+          parentTaskId: '循環参照になります',
+        })
+      }
+      if (exceedsMaxDepth(nextParent, byId, WBS_MAX_DEPTH)) {
+        throw new ValidationError(
+          `WBS の深さは ${WBS_MAX_DEPTH} 階層までです`,
+          { parentTaskId: `最大 ${WBS_MAX_DEPTH} 階層` },
+        )
+      }
+      // 自分の子孫を連れて深い階層へ移す場合の簡易チェック
+      const selfDepthAfter = depthOfAfterMove(nextParent, byId)
+      const subtreeHeight = maxDescendantDepth(existing.taskId, projectTasks)
+      if (selfDepthAfter + subtreeHeight - 1 > WBS_MAX_DEPTH) {
+        throw new ValidationError(
+          `移動後の深さが ${WBS_MAX_DEPTH} 階層を超えます`,
+          { parentTaskId: '子孫を含めると深すぎます' },
+        )
+      }
+    }
+    updates.parentTaskId = nextParent
+
+    // 親が変わった（または初めて親を付けた）→ WBS を新親配下で採番し直す
+    const parentChanged = (nextParent || null) !== (prevParent || null)
+    if (parentChanged || !existing.wbsCode) {
+      // 移動後の親子をシミュレートして番号を決める
+      const simulated = projectTasks.map((t) =>
+        t.taskId === existing.taskId
+          ? {
+              ...t,
+              parentTaskId: nextParent ?? undefined,
+            }
+          : t,
+      )
+      // 親側に wbs が無ければ一覧補完と同様に仮採番（ensure 済み想定だが保険）
+      let parentEntity = nextParent
+        ? simulated.find((t) => t.taskId === nextParent)
+        : null
+      if (parentEntity && !parentEntity.wbsCode?.trim()) {
+        const parentPatches = planMissingWbsCodes(simulated)
+        for (const p of parentPatches) {
+          const idx = simulated.findIndex((t) => t.taskId === p.taskId)
+          if (idx >= 0) simulated[idx] = { ...simulated[idx]!, wbsCode: p.wbsCode }
+        }
+        parentEntity = nextParent
+          ? simulated.find((t) => t.taskId === nextParent) ?? null
+          : null
+      }
+
+      const explicitWbs =
+        parsed.data.wbsCode !== undefined &&
+        parsed.data.wbsCode !== null &&
+        parsed.data.wbsCode !== ''
+          ? parsed.data.wbsCode.trim()
+          : null
+
+      const newCode =
+        explicitWbs ??
+        nextWbsCode(simulated, parentEntity ?? null, existing.taskId)
+
+      updates.wbsCode = newCode
+      if (parsed.data.sortOrder === undefined) {
+        updates.sortOrder = nextSortOrder(simulated, nextParent, existing.taskId)
+      }
+      reparentNewWbsCode = newCode
+      reparentSimulatedTasks = simulated.map((t) =>
+        t.taskId === existing.taskId ? { ...t, wbsCode: newCode } : t,
+      )
+    }
+  } else if (
+    // 親は触らないが WBS が空のまま → 現在の親配下で採番
+    (parsed.data.wbsCode === undefined ||
+      parsed.data.wbsCode === null ||
+      parsed.data.wbsCode === '') &&
+    !existing.wbsCode
+  ) {
+    const parentEntity = existing.parentTaskId
+      ? byId.get(existing.parentTaskId)
+      : null
+    updates.wbsCode = nextWbsCode(
+      projectTasks,
+      parentEntity ?? null,
+      existing.taskId,
+    )
+  }
 
   // 評価者
   if (parsed.data.reviewers !== undefined) {
@@ -760,18 +1023,126 @@ export async function updateTask(
   }
 
   const updated = await repository.updateTask(taskId, updates)
-  const [enriched] = await enrichTaskAssignees([updated], existing.projectId)
-  return enriched
+
+  // 子のステータス変更などで祖先の親ステータスを同期
+  await syncAncestorStatuses(existing.projectId, updated)
+
+  // 親変更後: 子孫の WBS を新しい番号体系に合わせて振り直し
+  if (reparentNewWbsCode && reparentSimulatedTasks) {
+    const renumbers = renumberSubtreeCodes(
+      existing.taskId,
+      reparentNewWbsCode,
+      reparentSimulatedTasks,
+    )
+    for (const r of renumbers) {
+      if (r.taskId === existing.taskId) continue
+      try {
+        await repository.updateTask(r.taskId, { wbsCode: r.wbsCode })
+      } catch {
+        // 続行
+      }
+    }
+  }
+
+  const listed = (await repository.listTasksByProject(existing.projectId)).filter(
+    (t) => !t.isDeleted,
+  )
+  // 一覧モックが古い場合でも、今回更新した行を優先
+  let refreshed = [
+    ...listed.filter((t) => t.taskId !== updated.taskId),
+    updated,
+  ]
+  refreshed = await ensureWbsCodesPersisted(existing.projectId, refreshed)
+  const enrichedAll = await enrichTaskAssignees(refreshed, existing.projectId)
+  const withWbs = enrichWithWbs(enrichedAll)
+  return withWbs.find((t) => t.taskId === taskId) ?? presentTask(updated)
 }
 
-/** タスクのステータスのみを更新する（かんばんドラッグ専用） */
+/**
+ * タスク更新後、祖先の status を子集合に合わせて DB 同期
+ * - 子に進行中あり → 親は進行中
+ * - 全完了 / 進行中なし → 親が許容外ならデフォルトへ寄せる
+ */
+async function syncAncestorStatuses(
+  projectId: string,
+  changed: Task,
+): Promise<void> {
+  let parentId = changed.parentTaskId
+  if (!parentId) return
+
+  const all = (await repository.listTasksByProject(projectId)).filter((t) => !t.isDeleted)
+  // 変更後の自分を反映
+  const merged = all.map((t) => (t.taskId === changed.taskId ? changed : t))
+
+  while (parentId) {
+    const parent = merged.find((t) => t.taskId === parentId)
+    if (!parent) break
+    const kids = childrenOf(merged, parent.taskId)
+    const childStatuses = kids.map((k) => {
+      // 子が親なら既に同期済みの status を使う
+      return k.status
+    })
+    const resolved = resolveParentStatus(parent.status, childStatuses)
+    if (resolved.status !== parent.status) {
+      await repository.updateTask(parent.taskId, { status: resolved.status })
+      parent.status = resolved.status
+    }
+    // 担当者和集合も永続化
+    const withRollup = enrichWithWbs(merged)
+    const parentEnriched = withRollup.find((t) => t.taskId === parent.taskId)
+    if (parentEnriched?.rollup?.assignees) {
+      const assignees = parentEnriched.rollup.assignees
+      const primary = assignees[0]
+      await repository.updateTask(parent.taskId, {
+        assignees,
+        assigneeId: primary?.userId,
+        assigneeName: primary?.displayName,
+        clearAssignees: assignees.length === 0 || !primary?.userId,
+      })
+    }
+    parentId = parent.parentTaskId
+  }
+}
+
+function depthOfAfterMove(
+  newParentId: string,
+  byId: Map<string, Task>,
+): number {
+  // 親の depth + 1
+  let depth = 1
+  let cur = byId.get(newParentId)
+  const seen = new Set<string>()
+  while (cur) {
+    if (seen.has(cur.taskId)) break
+    seen.add(cur.taskId)
+    depth += 1
+    if (!cur.parentTaskId) break
+    cur = byId.get(cur.parentTaskId)
+  }
+  return depth
+}
+
+function maxDescendantDepth(rootId: string, tasks: Task[]): number {
+  // 自身を 1 とした部分木の高さ
+  const kids = tasks.filter((t) => !t.isDeleted && t.parentTaskId === rootId)
+  if (!kids.length) return 1
+  return 1 + Math.max(...kids.map((k) => maxDescendantDepth(k.taskId, tasks)))
+}
+
+/** タスクのステータスのみを更新する（かんばんドラッグ専用・リーフのみ） */
 export async function updateTaskStatus(
   taskId: string,
   userId: string,
   body: unknown,
   email?: string,
 ): Promise<Task> {
-  await getAccessibleTask(taskId, userId, email)
+  const existing = await getAccessibleTask(taskId, userId, email)
+
+  const projectTasks = (await repository.listTasksByProject(existing.projectId)).filter(
+    (t) => !t.isDeleted,
+  )
+  const directChildren = projectTasks.filter((t) => t.parentTaskId === taskId)
+  const hasChildren = directChildren.length > 0
 
   const parsed = updateStatusSchema.safeParse(body)
   if (!parsed.success) {
@@ -782,24 +1153,54 @@ export async function updateTaskStatus(
   }
 
   const status = parsed.data.status as TaskStatus
-  // かんばん: 完了→100% / 未着手→0%。レビュー待ち・保留は完了度を触らない
+
+  // 親: かんばんからの変更は許容ステータスのみ（強制進行中は不可）
+  if (hasChildren) {
+    const childStatuses = directChildren.map((c) => c.status)
+    if (!isParentStatusAllowed(status, childStatuses)) {
+      const policy = deriveParentStatusPolicy(childStatuses)
+      throw new ValidationError(
+        `親タスクのステータスは次のいずれかです: ${policy.allowedStatuses.join('、')}`,
+        { status: `許可: ${policy.allowedStatuses.join(', ')}` },
+      )
+    }
+  }
+
+  // かんばん: 完了→100% / 未着手→0%。レビュー待ち・保留は完了度を触らない（親は完了度連動しない）
   let updated: Task
-  if (status === '完了') {
+  if (!hasChildren && status === '完了') {
     updated = await repository.updateTask(taskId, { status, completionPercent: 100 })
-  } else if (status === '未着手') {
+  } else if (!hasChildren && status === '未着手') {
     updated = await repository.updateTask(taskId, { status, completionPercent: 0 })
   } else {
     updated = await repository.updateTask(taskId, { status })
   }
-  return presentTask(updated)
+
+  await syncAncestorStatuses(existing.projectId, updated)
+
+  const refreshed = (await repository.listTasksByProject(existing.projectId)).filter(
+    (t) => !t.isDeleted,
+  )
+  const enrichedAll = await enrichTaskAssignees(
+    refreshed.map((t) => (t.taskId === updated.taskId ? updated : t)),
+    existing.projectId,
+  )
+  const withWbs = enrichWithWbs(enrichedAll)
+  return withWbs.find((t) => t.taskId === taskId) ?? presentTask(updated)
 }
 
-/** タスクを論理削除する */
+/** タスクを論理削除する（子孫も連鎖論理削除） */
 export async function deleteTask(
   taskId: string,
   userId: string,
   email?: string,
 ): Promise<Task> {
-  await getAccessibleTask(taskId, userId, email)
+  const existing = await getAccessibleTask(taskId, userId, email)
+  const projectTasks = await repository.listTasksByProject(existing.projectId)
+  const descendantIds = collectDescendantIds(taskId, projectTasks)
+  // 子孫を先に削除し、最後に自身
+  for (const id of descendantIds) {
+    await repository.softDeleteTask(id)
+  }
   return repository.softDeleteTask(taskId)
 }

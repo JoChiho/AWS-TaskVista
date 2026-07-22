@@ -37,7 +37,10 @@ function taskDueDate(task: { plannedDueDate?: string; dueDate?: string }): strin
   return task.plannedDueDate || task.dueDate || undefined
 }
 
-function isDueSoon(dueDate?: string): boolean {
+function isDueSoon(dueDate?: string, status?: string): boolean {
+  if (status === '完了' || status === 'レビュー待ち' || status === '保留') {
+    return false
+  }
   if (!dueDate) return false
   const due = new Date(dueDate)
   const now = new Date()
@@ -45,8 +48,11 @@ function isDueSoon(dueDate?: string): boolean {
   return diffDays >= 0 && diffDays <= 3
 }
 
-/** 締切日が過ぎているかを判定する */
-function isOverdue(dueDate?: string): boolean {
+/** 締切日が過ぎているかを判定する（完了・レビュー待ち・保留はハイライトしない） */
+function isOverdue(dueDate?: string, status?: string): boolean {
+  if (status === '完了' || status === 'レビュー待ち' || status === '保留') {
+    return false
+  }
   if (!dueDate) return false
   return new Date(dueDate) < new Date()
 }
@@ -340,13 +346,17 @@ onMounted(() => {
               <div
                 class="d-flex align-center justify-end"
                 :class="{
-                  'text-error font-weight-bold': isOverdue(taskDueDate(task)),
+                  'text-error font-weight-bold': isOverdue(
+                    taskDueDate(task),
+                    task.status,
+                  ),
                   'text-warning font-weight-medium':
-                    isDueSoon(taskDueDate(task)) && !isOverdue(taskDueDate(task)),
+                    isDueSoon(taskDueDate(task), task.status) &&
+                    !isOverdue(taskDueDate(task), task.status),
                 }"
               >
                 <v-icon
-                  v-if="isOverdue(taskDueDate(task))"
+                  v-if="isOverdue(taskDueDate(task), task.status)"
                   size="16"
                   color="error"
                   class="mr-1"
@@ -463,9 +473,13 @@ onMounted(() => {
               <div
                 class="d-flex align-center justify-end"
                 :class="{
-                  'text-error font-weight-bold': isOverdue(taskDueDate(task)),
+                  'text-error font-weight-bold': isOverdue(
+                    taskDueDate(task),
+                    task.status,
+                  ),
                   'text-warning font-weight-medium':
-                    isDueSoon(taskDueDate(task)) && !isOverdue(taskDueDate(task)),
+                    isDueSoon(taskDueDate(task), task.status) &&
+                    !isOverdue(taskDueDate(task), task.status),
                 }"
               >
                 <v-icon size="14" class="mr-1 text-medium-emphasis">mdi-calendar</v-icon>

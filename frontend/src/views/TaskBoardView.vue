@@ -16,6 +16,7 @@ import TaskForm from '@/components/task/TaskForm.vue'
 import TaskFilters from '@/components/task/TaskFilters.vue'
 import { resolveAssigneeDisplayName, resolveAssigneeLabels } from '@/utils/displayName'
 import { prepareTaskForDetail } from '@/utils/kanbanOpen'
+import { isLeafTask } from '@/utils/wbs'
 
 const route = useRoute()
 const router = useRouter()
@@ -53,6 +54,8 @@ const filteredTasksByStatus = computed(() => {
   for (const status of TASK_STATUSES) {
     result[status] = tasksStore.tasks.filter((task) => {
       if (task.isDeleted || task.status !== status) return false
+      // WBS: 親ノード（子あり）はかんばんに出さない
+      if (!isLeafTask(task, tasksStore.tasks)) return false
       if (filterMyReview.value && !isMyReviewTask(task)) return false
       if (
         filterAssignee.value &&

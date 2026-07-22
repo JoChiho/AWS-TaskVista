@@ -12,11 +12,14 @@ import {
 import { useTasksStore } from '@/stores/tasks'
 import { useProjectsStore } from '@/stores/projects'
 import { resolveMemberDisplayName, avatarLabelFromName } from '@/utils/displayName'
+import { isParentTask, parentOptions } from '@/utils/wbs'
 
 const props = defineProps<{
   projectId: string
   task?: Task
   defaultStatus?: TaskStatus
+  /** 新規作成時の既定親タスク（テーブルの + から渡す） */
+  defaultParentTaskId?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -45,6 +48,29 @@ const actualDueDate = ref('')
 const estimatedEffortDays = ref<string>('')
 /** 実績工数（人日）。空文字 = 未設定 */
 const actualEffortDays = ref<string>('')
+/** WBS 親タスク（空 = ルート） */
+const parentTaskId = ref<string | null>(null)
+
+/** 編集中かつ子がある親 → 予定/実績・担当は集計（手入力不可） */
+const scheduleLocked = computed(
+  () => !!(props.task && isParentTask(props.task, tasksStore.activeTasks)),
+)
+
+/** 親のステータス: 強制進行中のみ編集不可。それ以外は候補内で選択可 */
+const statusLocked = computed(
+  () => scheduleLocked.value && props.task?.rollup?.statusMode === 'forced_progress',
+)
+
+const statusSelectItems = computed(() => {
+  if (scheduleLocked.value && props.task?.rollup?.allowedStatuses?.length) {
+    return props.task.rollup.allowedStatuses.map((s) => ({ title: s, value: s }))
+  }
+  return statusOptions
+})
+
+const parentSelectOptions = computed(() =>
+  parentOptions(tasksStore.activeTasks, props.task?.taskId),
+)
 
 const titleRules = [
   (v: string) => !!v || 'タスク名は必須項目です',
@@ -164,6 +190,11 @@ watch(modelValue, async (isOpen) => {
         : ''
     actualEffortDays.value =
       props.task.actualEffortDays != null ? String(props.task.actualEffortDays) : ''
+    parentTaskId.value = props.task.parentTaskId ?? null
+    // 親は rollup 済み status / 担当を表示
+    if (props.task.rollup && (props.task.childCount ?? 0) > 0) {
+      status.value = props.task.rollup.status
+    }
     initAssigneeSelection(props.task)
     initReviewerSelection(props.task)
   } else {
@@ -180,6 +211,7 @@ watch(modelValue, async (isOpen) => {
     actualDueDate.value = ''
     estimatedEffortDays.value = ''
     actualEffortDays.value = ''
+    parentTaskId.value = props.defaultParentTaskId ?? null
   }
 })
 
@@ -214,23 +246,41 @@ async function handleSubmit() {
   const payload = {
     title: title.value.trim(),
     description: description.value.trim() || undefined,
-    status: status.value,
+    // 親の強制進行中以外は status を送る（許容候補内）
+    ...(!statusLocked.value ? { status: status.value } : {}),
     priority: priority.value,
     requirement: requirement.value.trim() || undefined,
-    assignees,
-    assigneeId: primary?.userId,
-    assigneeName: primary?.displayName,
+    // 親の担当は子孫の和集合（手入力しない）
+    ...(scheduleLocked.value
+      ? {}
+      : {
+          assignees,
+          assigneeId: primary?.userId,
+          assigneeName: primary?.displayName,
+        }),
     // 新規かつ非レビュー待ちで未選択なら送らない（空でクリアしない）
     ...(props.task || status.value === 'レビュー待ち' || reviewers.length > 0
       ? { reviewers }
       : {}),
-    // 編集時は空文字でクリア（null）、新規は未設定なら送らない
-    plannedStartDate: optionalDatePayload(plannedStartDate.value),
-    plannedDueDate: optionalDatePayload(plannedDueDate.value),
-    actualStartDate: optionalDatePayload(actualStartDate.value),
-    actualDueDate: optionalDatePayload(actualDueDate.value),
-    ...(plannedEffort !== undefined ? { estimatedEffortDays: plannedEffort } : {}),
-    ...(actualEffort !== undefined ? { actualEffortDays: actualEffort } : {}),
+    // 親ノードは予定/実績を送らない（サーバー側でも拒否）
+    ...(scheduleLocked.value
+      ? {}
+      : {
+          plannedStartDate: optionalDatePayload(plannedStartDate.value),
+          plannedDueDate: optionalDatePayload(plannedDueDate.value),
+          actualStartDate: optionalDatePayload(actualStartDate.value),
+          actualDueDate: optionalDatePayload(actualDueDate.value),
+          ...(plannedEffort !== undefined
+            ? { estimatedEffortDays: plannedEffort }
+            : {}),
+          ...(actualEffort !== undefined ? { actualEffortDays: actualEffort } : {}),
+        }),
+    // 親: 空文字クリア / 新規: 未選択なら送らない
+    parentTaskId: parentTaskId.value
+      ? parentTaskId.value
+      : props.task
+        ? null
+        : undefined,
   }
 
   let saved: Task
@@ -364,11 +414,20 @@ async function handleSubmit() {
             <div class="meta-fields">
               <v-select
                 v-model="status"
-                :items="statusOptions"
+                :items="statusSelectItems"
                 label="ステータス"
                 hide-details
                 variant="outlined"
                 density="comfortable"
+                :disabled="statusLocked"
+                :hint="
+                  statusLocked
+                    ? '子に「進行中」があるため親は進行中固定'
+                    : scheduleLocked
+                      ? '子の状態に応じて選択可能な値のみ'
+                      : undefined
+                "
+                :persistent-hint="scheduleLocked"
               />
               <v-select
                 v-model="priority"
@@ -378,82 +437,111 @@ async function handleSubmit() {
                 variant="outlined"
                 density="comfortable"
               />
-            </div>
-            <p class="schedule-form-caption mt-4 mb-2">予定（開始 · 終了 · 工数）</p>
-            <div class="schedule-fields">
-              <v-text-field
-                v-model="plannedStartDate"
-                label="予定開始日"
-                type="date"
+              <v-select
+                v-model="parentTaskId"
+                :items="parentSelectOptions"
+                item-title="title"
+                item-value="value"
+                label="親タスク（WBS）"
+                placeholder="なし（ルート）"
+                clearable
                 hide-details="auto"
                 variant="outlined"
                 density="comfortable"
-                hint="タイムラインの基準日"
-                persistent-hint
-              />
-              <v-text-field
-                v-model="plannedDueDate"
-                label="予定終了日"
-                type="date"
-                hide-details="auto"
-                variant="outlined"
-                density="comfortable"
-                hint="予定上の終了日"
-                persistent-hint
-              />
-              <v-text-field
-                v-model="estimatedEffortDays"
-                label="予定工数（人日）"
-                type="number"
-                min="0"
-                step="0.5"
-                placeholder="例: 2.5"
-                hide-details="auto"
-                variant="outlined"
-                density="comfortable"
-                suffix="人日"
-                hint="タイムライン表示に使用"
+                class="parent-select"
+                hint="未選択 = プロジェクト直下。深さは最大 3 階層"
                 persistent-hint
               />
             </div>
-            <p class="schedule-form-caption mt-4 mb-2">実績（開始 · 終了 · 工数）</p>
-            <div class="schedule-fields">
-              <v-text-field
-                v-model="actualStartDate"
-                label="実績開始日"
-                type="date"
-                hide-details
-                variant="outlined"
-                density="comfortable"
-              />
-              <v-text-field
-                v-model="actualDueDate"
-                label="実績終了日"
-                type="date"
-                hide-details
-                variant="outlined"
-                density="comfortable"
-              />
-              <v-text-field
-                v-model="actualEffortDays"
-                label="実績工数（人日）"
-                type="number"
-                min="0"
-                step="0.5"
-                placeholder="例: 3"
-                hide-details
-                variant="outlined"
-                density="comfortable"
-                suffix="人日"
-              />
-            </div>
+            <v-alert
+              v-if="scheduleLocked"
+              type="info"
+              variant="tonal"
+              density="compact"
+              class="mt-4 mb-0"
+            >
+              子がある親タスク: 予定/実績・進捗・担当は子から集計。優先度・レビュアーは個別設定。ステータスは子の状態に応じた候補から選択（進行中の子があれば固定）。
+            </v-alert>
+            <template v-else>
+              <p class="schedule-form-caption mt-4 mb-2">予定（開始 · 終了 · 工数）</p>
+              <div class="schedule-fields">
+                <v-text-field
+                  v-model="plannedStartDate"
+                  label="予定開始日"
+                  type="date"
+                  hide-details="auto"
+                  variant="outlined"
+                  density="comfortable"
+                  hint="タイムラインの基準日"
+                  persistent-hint
+                />
+                <v-text-field
+                  v-model="plannedDueDate"
+                  label="予定終了日"
+                  type="date"
+                  hide-details="auto"
+                  variant="outlined"
+                  density="comfortable"
+                  hint="予定上の終了日"
+                  persistent-hint
+                />
+                <v-text-field
+                  v-model="estimatedEffortDays"
+                  label="予定工数（人日）"
+                  type="number"
+                  min="0"
+                  step="0.5"
+                  placeholder="例: 2.5"
+                  hide-details="auto"
+                  variant="outlined"
+                  density="comfortable"
+                  suffix="人日"
+                  hint="タイムライン表示に使用"
+                  persistent-hint
+                />
+              </div>
+              <p class="schedule-form-caption mt-4 mb-2">実績（開始 · 終了 · 工数）</p>
+              <div class="schedule-fields">
+                <v-text-field
+                  v-model="actualStartDate"
+                  label="実績開始日"
+                  type="date"
+                  hide-details
+                  variant="outlined"
+                  density="comfortable"
+                />
+                <v-text-field
+                  v-model="actualDueDate"
+                  label="実績終了日"
+                  type="date"
+                  hide-details
+                  variant="outlined"
+                  density="comfortable"
+                />
+                <v-text-field
+                  v-model="actualEffortDays"
+                  label="実績工数（人日）"
+                  type="number"
+                  min="0"
+                  step="0.5"
+                  placeholder="例: 3"
+                  hide-details
+                  variant="outlined"
+                  density="comfortable"
+                  suffix="人日"
+                />
+              </div>
+            </template>
           </section>
 
-          <!-- 担当者 -->
+          <!-- 担当者（親は子孫の和集合・編集不可） -->
           <section class="form-section mb-5">
             <div class="section-label">
               <v-icon size="18" class="mr-1">mdi-account-multiple-outline</v-icon>
               担当者（複数可）
+              <span v-if="scheduleLocked" class="text-caption font-weight-regular ml-1">
+                （子の和集合）
+              </span>
             </div>
             <v-select
               v-model="selectedAssigneeIds"
@@ -465,6 +553,7 @@ async function handleSubmit() {
               chips
               closable-chips
               clearable
+              :disabled="scheduleLocked"
               hide-details="auto"
               variant="outlined"
               density="comfortable"
@@ -650,6 +739,10 @@ async function handleSubmit() {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
+}
+
+.parent-select {
+  grid-column: 1 / -1;
 }
 
 .schedule-form-caption {

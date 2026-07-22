@@ -2,6 +2,7 @@
 // かんばんの楽観的更新・ロールバック + プロジェクト単位キャッシュ（SWR）
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import { enrichWithWbs } from '@/utils/wbs'
 import type {
   Task,
   TaskStatus,
@@ -44,6 +45,10 @@ export function tasksFingerprint(list: Task[]): string {
           t.estimatedEffortDays ?? '',
           t.actualEffortDays ?? '',
           t.completionPercent ?? '',
+          t.parentTaskId ?? '',
+          t.wbsCode ?? '',
+          t.sortOrder ?? '',
+          t.childCount ?? '',
           t.isDeleted ? '1' : '0',
         ].join(':'),
     )
@@ -88,6 +93,19 @@ export const useTasksStore = defineStore('tasks', () => {
     return cacheByProject.has(currentProjectId.value)
   })
 
+  /** 親子の childCount / rollup をクライアントで即時再計算 */
+  function recomputeWbs(): void {
+    tasks.value = enrichWithWbs(tasks.value)
+    if (currentTask.value) {
+      const refreshed = tasks.value.find((t) => t.taskId === currentTask.value?.taskId)
+      if (refreshed) currentTask.value = refreshed
+    }
+  }
+
+  function setTasks(list: Task[]): void {
+    tasks.value = enrichWithWbs(list)
+  }
+
   function saveCache(projectId: string): void {
     cacheByProject.set(projectId, {
       tasks: tasks.value.map((t) => ({ ...t })),
@@ -99,7 +117,7 @@ export const useTasksStore = defineStore('tasks', () => {
   function restoreCache(projectId: string): boolean {
     const cached = cacheByProject.get(projectId)
     if (!cached) return false
-    tasks.value = cached.tasks.map((t) => ({ ...t }))
+    setTasks(cached.tasks.map((t) => ({ ...t })))
     currentProjectId.value = projectId
     lastFetchedAt.value = cached.fetchedAt
     return true
@@ -130,8 +148,11 @@ export const useTasksStore = defineStore('tasks', () => {
     lastFetchedAt.value = Date.now()
 
     if (prevFp !== nextFp) {
-      tasks.value = data
+      setTasks(data)
       await applyDisplayNames(tasks.value)
+    } else {
+      // 指紋が同じでも rollup を最新化
+      recomputeWbs()
     }
 
     saveCache(projectId)
@@ -230,7 +251,8 @@ export const useTasksStore = defineStore('tasks', () => {
     try {
       const newTask = await tasksApi.createTask(projectId, payload)
       if (currentProjectId.value === projectId) {
-        tasks.value.push(newTask)
+        tasks.value = [...tasks.value, newTask]
+        recomputeWbs()
         lastFetchedAt.value = Date.now()
         saveCache(projectId)
       }
@@ -277,6 +299,7 @@ export const useTasksStore = defineStore('tasks', () => {
       }
     } catch (error: unknown) {
       _updateTaskStatusInList(taskId, previousStatus)
+      recomputeWbs()
       uiStore.showError('ステータスの更新に失敗しました。元に戻します')
       console.error('タスクステータス更新エラー:', error)
     }
@@ -285,8 +308,21 @@ export const useTasksStore = defineStore('tasks', () => {
   async function deleteTask(taskId: string): Promise<void> {
     try {
       await tasksApi.deleteTask(taskId)
-      tasks.value = tasks.value.filter((t) => t.taskId !== taskId)
-      if (currentTask.value?.taskId === taskId) {
+      // カスケード削除: 子孫も一覧から落とす
+      const removeIds = new Set<string>([taskId])
+      let changed = true
+      while (changed) {
+        changed = false
+        for (const t of tasks.value) {
+          if (t.parentTaskId && removeIds.has(t.parentTaskId) && !removeIds.has(t.taskId)) {
+            removeIds.add(t.taskId)
+            changed = true
+          }
+        }
+      }
+      tasks.value = tasks.value.filter((t) => !removeIds.has(t.taskId))
+      recomputeWbs()
+      if (currentTask.value && removeIds.has(currentTask.value.taskId)) {
         currentTask.value = null
       }
       if (currentProjectId.value) {
@@ -304,20 +340,27 @@ export const useTasksStore = defineStore('tasks', () => {
   function _replaceTaskInList(updatedTask: Task): void {
     const index = tasks.value.findIndex((t) => t.taskId === updatedTask.taskId)
     if (index !== -1) {
-      tasks.value[index] = updatedTask
+      const next = [...tasks.value]
+      next[index] = updatedTask
+      tasks.value = next
+    } else {
+      tasks.value = [...tasks.value, updatedTask]
     }
-    if (currentTask.value?.taskId === updatedTask.taskId) {
-      currentTask.value = updatedTask
-    }
+    recomputeWbs()
     useDisplayNamesStore().ingestTasks([updatedTask])
   }
 
   function _updateTaskStatusInList(taskId: string, status: TaskStatus): void {
-    const task = tasks.value.find((t) => t.taskId === taskId)
-    if (task) {
-      task.status = status
-      task.updatedAt = new Date().toISOString()
+    const index = tasks.value.findIndex((t) => t.taskId === taskId)
+    if (index === -1) return
+    const next = [...tasks.value]
+    next[index] = {
+      ...next[index]!,
+      status,
+      updatedAt: new Date().toISOString(),
     }
+    tasks.value = next
+    recomputeWbs()
   }
 
   /** キャッシュを無効化（他画面から強制更新したいとき） */
