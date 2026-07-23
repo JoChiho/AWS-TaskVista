@@ -32,7 +32,7 @@ const projectNameById = computed(() => {
   return map
 })
 
-/** 締切日が近いタスクかどうかを判定する（3 日以内） */
+/** 予定終了日が近いタスクかどうかを判定する（3 日以内） */
 function taskDueDate(task: { plannedDueDate?: string; dueDate?: string }): string | undefined {
   return task.plannedDueDate || task.dueDate || undefined
 }
@@ -48,7 +48,7 @@ function isDueSoon(dueDate?: string, status?: string): boolean {
   return diffDays >= 0 && diffDays <= 3
 }
 
-/** 締切日が過ぎているかを判定する（完了・レビュー待ち・保留はハイライトしない） */
+/** 予定終了日が過ぎているかを判定する（完了・レビュー待ち・保留はハイライトしない） */
 function isOverdue(dueDate?: string, status?: string): boolean {
   if (status === '完了' || status === 'レビュー待ち' || status === '保留') {
     return false

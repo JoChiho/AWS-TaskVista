@@ -185,14 +185,14 @@
       <tr>
         <td>タイムライン</td>
         <td>
-          開始日 + 予定工数（人日）によるガント風カレンダー。
-          未設定タスクのドラッグで開始日設定、全体/自分切替
+          予定開始日 + 予定工数（人日）によるガント風カレンダー。
+          未設定タスクのドラッグで予定開始日設定、全体/自分切替
         </td>
       </tr>
       <tr>
         <td>タスク詳細</td>
         <td>
-          要件・説明・進捗・開始日・工数・締切・複数担当・
+          要件・説明・進捗・予定/実績日程・工数・WBS 親子・複数担当・
           <strong>レビュアー</strong>・コメント・添付
         </td>
       </tr>
@@ -622,21 +622,23 @@
         <text class="es" x="354" y="200">GSI: CreatedByIndex</text>
 
         <!-- TASK · Tasks -->
-        <rect class="eb" x="670" y="30" width="300" height="240" stroke="#ed7100"/>
+        <rect class="eb" x="670" y="30" width="300" height="260" stroke="#ed7100"/>
         <rect x="670" y="30" width="300" height="32" rx="10" fill="#ed7100"/>
         <rect x="670" y="48" width="300" height="14" fill="#ed7100"/>
         <image href="aws-icons/dynamodb.svg" x="678" y="34" width="20" height="20"/>
         <text class="eh" x="704" y="50">TASK · Tasks</text>
-        <text class="el" x="684" y="80">projectId + taskId (PK/SK)</text>
-        <text class="el" x="684" y="98">title / status / priority</text>
-        <text class="el" x="684" y="116">completionPercent</text>
-        <text class="el" x="684" y="134">startDate / dueDate</text>
-        <text class="el" x="684" y="152">estimatedEffortDays</text>
-        <text class="el" x="684" y="170">assignees[] / reviewers[]</text>
-        <text class="el" x="684" y="188">requirement / description</text>
-        <text class="es" x="684" y="212">attachments[] メタ · isDeleted</text>
-        <text class="es" x="684" y="230">GSI: TaskId / Assignee …</text>
-        <text class="es" x="684" y="252">※ 進捗ログ用テーブルなし</text>
+        <text class="el" x="684" y="78">projectId + taskId (PK/SK)</text>
+        <text class="el" x="684" y="94">title / status / priority</text>
+        <text class="el" x="684" y="110">planned* / actual* 日付・工数</text>
+        <text class="el" x="684" y="126">completionPercent</text>
+        <text class="el" x="684" y="142">assignees[] / reviewers[]</text>
+        <text class="el" x="684" y="158">parentTaskId / wbsCode</text>
+        <text class="el" x="684" y="174">sortOrder / nodeType</text>
+        <text class="es" x="684" y="196">rollup は読取時計算</text>
+        <text class="es" x="684" y="214">dueDate = plannedDue の GSI ミラー</text>
+        <text class="es" x="684" y="232">GSI: TaskId / Assignee …</text>
+        <text class="es" x="684" y="250">attachments[] · isDeleted</text>
+        <text class="es" x="684" y="272">※ 進捗ログ用テーブルなし</text>
 
         <!-- ===== 下段 ===== -->
         <!-- COMMENT -->
@@ -670,12 +672,12 @@
         <text class="ert" x="590" y="92">1 : N 所有</text>
 
         <!-- ③ TASK → S3（真上の垂直・x=820） -->
-        <path class="er" d="M820,270 L820,338"/>
-        <text class="ert" x="828" y="308">メタ</text>
+        <path class="er" d="M820,290 L820,338"/>
+        <text class="ert" x="828" y="318">メタ</text>
 
         <!-- ④ TASK → COMMENT（TASK 下辺中央 → y=300 → COMMENT 上辺） -->
-        <path class="er" d="M760,270 L760,300 L455,300 L455,338"/>
-        <text class="ert" x="580" y="292">1 : N comments</text>
+        <path class="er" d="M760,290 L760,310 L455,310 L455,338"/>
+        <text class="ert" x="580" y="302">1 : N comments</text>
 
         <!-- ⑤ USER → COMMENT（左端 x=50 下 → y=400 → COMMENT 左辺） -->
         <path class="er" d="M50,230 L50,400 L338,400"/>
@@ -690,15 +692,42 @@
       <tr><td>PK / SK</td><td><code>projectId</code> / <code>taskId</code></td><td>プロジェクト内一覧（ベース Query）</td></tr>
       <tr><td>GSI TaskIdIndex</td><td><code>taskId</code></td><td>単一タスク取得（その後 GetItem で全属性）</td></tr>
       <tr><td>GSI ProjectStatusIndex</td><td><code>projectId</code> + <code>status</code></td><td>（参考・一覧はベーステーブル優先）</td></tr>
-      <tr><td>GSI AssigneeIndex</td><td><code>assigneeId</code> + <code>dueDate</code></td><td>担当タスク検索</td></tr>
+      <tr><td>GSI AssigneeIndex</td><td><code>assigneeId</code> + <code>dueDate</code></td><td>担当タスク検索（<code>dueDate</code> は <code>plannedDueDate</code> のミラー）</td></tr>
     </table>
+
+    <h3>タスク日程・工数フィールド（予定 / 実績）</h3>
+    <table>
+      <tr><th>フィールド</th><th>UI 用語</th><th>備考</th></tr>
+      <tr><td><code>plannedStartDate</code></td><td>予定開始日</td><td>タイムラインバーの基準</td></tr>
+      <tr><td><code>plannedDueDate</code></td><td>予定終了日</td><td>旗標・超過判定。業務上「終了日」（締切日とは呼ばない）</td></tr>
+      <tr><td><code>actualStartDate</code> / <code>actualDueDate</code></td><td>実績開始日 / 実績終了日</td><td>詳細 3×2 日程で予定と比較着色</td></tr>
+      <tr><td><code>estimatedEffortDays</code> / <code>actualEffortDays</code></td><td>予定工数 / 実績工数（人日）</td><td>小数 1 位</td></tr>
+      <tr><td><code>dueDate</code></td><td>（GSI 用）</td><td><code>plannedDueDate</code> と同期。旧データ互換</td></tr>
+    </table>
+
+    <h3>WBS（親子 · Phase 1）</h3>
+    <table>
+      <tr><th>フィールド</th><th>意味</th></tr>
+      <tr><td><code>parentTaskId</code></td><td>同一プロジェクト内の親。未設定 = ルート</td></tr>
+      <tr><td><code>wbsCode</code></td><td>人読番号（例 <code>1</code> / <code>1.2</code>）。欠落時は自動採番</td></tr>
+      <tr><td><code>sortOrder</code></td><td>同一親内の並び</td></tr>
+      <tr><td><code>nodeType</code></td><td><code>summary</code> / <code>work_package</code> / <code>milestone</code>（省略時 WP）</td></tr>
+      <tr><td><code>rollup</code></td><td>子からの集計（読取時計算。工数合計・進捗加重・日付 min/max 等）</td></tr>
+    </table>
+    <ul>
+      <li>深さ上限 <strong>3</strong>（L1〜L3）。循環参照禁止。親変更時は子孫の深さと WBS 番号を再検証・再採番。</li>
+      <li>子がある親：進捗・予定/実績・担当は API で手入力不可（子から集計）。</li>
+      <li>親削除：子孫も連鎖論理削除。</li>
+      <li><code>PATCH /tasks/{id}/status</code>（かんばん）は<strong>リーフのみ</strong>。親の status は詳細更新＋子連動ポリシー。</li>
+      <li>専用 <code>/move</code> · <code>/wbs/renumber</code> REST は Phase 2 予定（現状は update 内で対応）。</li>
+    </ul>
 
     <h3>プロジェクト status</h3>
     <p><code>planning</code> / <code>active</code> / <code>on_hold</code> / <code>completed</code> / <code>archived</code>
     （表示: 計画中 · 進行中 · 保留 · 完了 · アーカイブ）</p>
     <h3>タスク status（日本語固定）</h3>
     <p>未着手 / 進行中 / レビュー待ち / 完了 / 保留</p>
-    <h3>進捗とステータス連動</h3>
+    <h3>進捗とステータス連動（リーフ）</h3>
     <table>
       <tr><th>進捗</th><th>自動ステータス</th><th>例外</th></tr>
       <tr><td>0%</td><td>未着手</td><td rowspan="3">レビュー待ち・保留は連動しない<br/>（任意の進捗で維持可能）</td></tr>
@@ -708,10 +737,10 @@
     <h3>日程の解釈（タイムライン）</h3>
     <table>
       <tr><th>条件</th><th>タイムラインバー</th></tr>
-      <tr><td>開始日あり + 予定工数</td><td>開始日から工数分（人日）をカレンダー上に表示</td></tr>
-      <tr><td>開始日のみ</td><td>1 日分のバー</td></tr>
-      <tr><td>開始日なし</td><td>バーなし（締切からの逆算は行わない）</td></tr>
-      <tr><td>締切日</td><td>フラグ表示のみ（長さには使わない）</td></tr>
+      <tr><td>予定開始日あり + 予定工数</td><td>予定開始日から工数分（人日）をカレンダー上に表示</td></tr>
+      <tr><td>予定開始日のみ</td><td>1 日分のバー</td></tr>
+      <tr><td>予定開始日なし</td><td>バーなし（予定終了日からの逆算は行わない）</td></tr>
+      <tr><td>予定終了日</td><td>フラグ表示のみ（長さには使わない）</td></tr>
     </table>
     <h3>レビュアー（reviewers）</h3>
     <p>
@@ -730,9 +759,9 @@
       <tr><td>GET/POST</td><td><code>/projects</code></td><td>projects</td><td>一覧・作成</td></tr>
       <tr><td>GET/PUT/DELETE</td><td><code>/projects/{id}</code></td><td>projects</td><td>詳細・更新・削除</td></tr>
       <tr><td>POST/DELETE</td><td><code>/projects/{id}/members…</code></td><td>projects</td><td>メンバー</td></tr>
-      <tr><td>GET/POST</td><td><code>/projects/{id}/tasks</code></td><td>tasks</td><td>タスク一覧・作成</td></tr>
-      <tr><td>GET/PUT/DELETE</td><td><code>/tasks/{id}</code></td><td>tasks</td><td>詳細・更新（開始日・レビュアー含む）</td></tr>
-      <tr><td>PATCH</td><td><code>/tasks/{id}/status</code></td><td>tasks</td><td>かんばん用</td></tr>
+      <tr><td>GET/POST</td><td><code>/projects/{id}/tasks</code></td><td>tasks</td><td>一覧・作成（body に <code>parentTaskId</code> 等可。一覧は WBS rollup 付き flat）</td></tr>
+      <tr><td>GET/PUT/DELETE</td><td><code>/tasks/{id}</code></td><td>tasks</td><td>詳細・更新（予定/実績・WBS・レビュアー）。親は進捗/日程/工数ロック</td></tr>
+      <tr><td>PATCH</td><td><code>/tasks/{id}/status</code></td><td>tasks</td><td>かんばん用（<strong>リーフのみ</strong>）</td></tr>
       <tr><td>GET/POST/DELETE</td><td><code>/tasks/{id}/comments…</code></td><td>comments</td><td>コメント</td></tr>
       <tr><td>GET/POST/DELETE</td><td><code>/tasks/{id}/attachments…</code></td><td>attachments</td><td>添付・URL</td></tr>
       <tr><td>GET</td><td><code>/dashboard/summary</code></td><td>dashboard</td><td>概要統計</td></tr>
@@ -761,17 +790,18 @@
         </p>
       </div>
       <div class="card">
-        <h4>タスク（基本）</h4>
+        <h4>タスク（基本 + WBS）</h4>
         <p style="margin:0;font-size:.9rem;color:var(--c-sub)">
           かんばん / テーブル / タイムライン、複数担当、進捗連動、
-          予定工数（人日）、開始日・締切日、要件・説明、コメント、添付。
+          予定·実績の日付と工数、親子（最大 3 層）・WBS 番号・親集計、
+          要件・説明、コメント、添付。
         </p>
       </div>
       <div class="card">
         <h4>タイムライン（ガント風カレンダー）</h4>
         <p style="margin:0;font-size:.9rem;color:var(--c-sub)">
-          開始日を基準に工数分のバーを表示。全体 / 自分のタスク切替。
-          開始日未設定（保留以外）は日付へドラッグして設定。
+          予定開始日を基準に予定工数分のバーを表示。全体 / 自分のタスク切替。
+          予定開始日未設定（保留以外）は日付へドラッグして設定。
           ドラッグ中は他タスクを隠し、日付カレンダーのみ表示。
         </p>
       </div>
@@ -788,15 +818,15 @@
     <h3>画面ビュー切替（プロジェクト内）</h3>
     <table>
       <tr><th>ビュー</th><th>パス</th><th>用途</th></tr>
-      <tr><td>かんばん</td><td><code>/projects/:id/board</code></td><td>ステータス移動・要レビュー強調</td></tr>
-      <tr><td>テーブル</td><td><code>/projects/:id/table</code></td><td>一覧・ソート・フィルタ</td></tr>
-      <tr><td>タイムライン</td><td><code>/projects/:id/timeline</code></td><td>日程バー・ドラッグで開始日設定</td></tr>
+      <tr><td>かんばん</td><td><code>/projects/:id/board</code></td><td>ステータス移動（リーフ）· 表示範囲 · 要レビュー</td></tr>
+      <tr><td>テーブル</td><td><code>/projects/:id/table</code></td><td>WBS ツリー · 一覧 · ソート · 親選択作成</td></tr>
+      <tr><td>タイムライン</td><td><code>/projects/:id/timeline</code></td><td>日程バー · ドラッグで予定開始日設定</td></tr>
     </table>
 
     <h3>ダッシュボード構成</h3>
     <ol>
       <li><strong>プロジェクト概要</strong> … ステータス別タスク数・メンバー数・最終更新</li>
-      <li><strong>自分の担当タスク</strong> … 未完了の担当タスク（締切昇順）</li>
+      <li><strong>自分の担当タスク</strong> … 未完了の担当タスク（予定終了日昇順）</li>
       <li><strong>レビュー待ちのタスク</strong> … レビュー待ちかつ自分がレビュアー（担当欄の下）</li>
     </ol>
 
@@ -953,10 +983,11 @@ npm run deploy:routes       # API Gateway ルート同期のみ</code></pre>
   </section>
 
   <footer>
-    TaskVista システム説明書 · 2026-07-21 ·
+    TaskVista システム説明書 · 2026-07-23（Phase 1 WBS 同期） ·
     図は eg.html と同様の SVG 方式 ·
     アイコン:
     <a href="https://aws.amazon.com/architecture/icons/">AWS Architecture Icons</a>
+    · 設計詳細: <code>docs/WBSタスク管理-修正方案.md</code> v1.0
   </footer>
 </div>
 </body>

@@ -1154,23 +1154,19 @@ export async function updateTaskStatus(
 
   const status = parsed.data.status as TaskStatus
 
-  // 親: かんばんからの変更は許容ステータスのみ（強制進行中は不可）
+  // かんばん専用: 子がある親は status 変更不可（詳細 update のポリシーで変更）
   if (hasChildren) {
-    const childStatuses = directChildren.map((c) => c.status)
-    if (!isParentStatusAllowed(status, childStatuses)) {
-      const policy = deriveParentStatusPolicy(childStatuses)
-      throw new ValidationError(
-        `親タスクのステータスは次のいずれかです: ${policy.allowedStatuses.join('、')}`,
-        { status: `許可: ${policy.allowedStatuses.join(', ')}` },
-      )
-    }
+    throw new ValidationError(
+      '子タスクがある親は、かんばんからステータスを変更できません',
+      { status: '子から集計されます。子タスクを編集するか、詳細から許可された候補を選んでください' },
+    )
   }
 
-  // かんばん: 完了→100% / 未着手→0%。レビュー待ち・保留は完了度を触らない（親は完了度連動しない）
+  // かんばん: 完了→100% / 未着手→0%。レビュー待ち・保留は完了度を触らない
   let updated: Task
-  if (!hasChildren && status === '完了') {
+  if (status === '完了') {
     updated = await repository.updateTask(taskId, { status, completionPercent: 100 })
-  } else if (!hasChildren && status === '未着手') {
+  } else if (status === '未着手') {
     updated = await repository.updateTask(taskId, { status, completionPercent: 0 })
   } else {
     updated = await repository.updateTask(taskId, { status })

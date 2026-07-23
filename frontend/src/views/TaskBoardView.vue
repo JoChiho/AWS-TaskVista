@@ -17,9 +17,11 @@ import TaskFilters from '@/components/task/TaskFilters.vue'
 import { resolveAssigneeDisplayName, resolveAssigneeLabels } from '@/utils/displayName'
 import { prepareTaskForDetail } from '@/utils/kanbanOpen'
 import {
+  hasChildren,
   matchesKanbanScope,
   type KanbanScopeMode,
 } from '@/utils/wbs'
+import { useUiStore } from '@/stores/ui'
 
 const route = useRoute()
 const router = useRouter()
@@ -27,6 +29,7 @@ const tasksStore = useTasksStore()
 const projectsStore = useProjectsStore()
 const displayNamesStore = useDisplayNamesStore()
 const authStore = useAuthStore()
+const uiStore = useUiStore()
 
 const projectId = computed(() => route.params.projectId as string)
 
@@ -157,6 +160,7 @@ function onDragEnd() {
  * 他列へ追加されたときだけ status を更新。
  * 列内の並べ替え（moved）は現状永続化しない。
  * 先頭以外（カードの間・末尾）へのドロップでも added が発火する。
+ * 親（子あり）は集計対象のためかんばんからの status 変更を拒否する。
  */
 async function handleDragChange(
   event: {
@@ -169,6 +173,17 @@ async function handleDragChange(
   if (!event.added) return
   const task = event.added.element
   if (task.status === targetStatus) return
+
+  // 親タスク: ドロップを取り消し（列リストをストアから再同期）
+  if (hasChildren(task, tasksStore.tasks)) {
+    uiStore.showWarning(
+      '子タスクがある親は、かんばんからステータスを変更できません（子から集計されます）',
+    )
+    isDragging.value = false
+    syncColumnListsFromStore()
+    return
+  }
+
   // 楽観的に element の status も揃えておく（直後の再描画で列をまたがない）
   task.status = targetStatus
   await tasksStore.updateTaskStatus(task.taskId, targetStatus)

@@ -345,4 +345,71 @@ describe('tasks/service', () => {
     vi.mocked(repository.getTaskById).mockResolvedValue(null)
     await expect(service.getTask('missing', USER_ID)).rejects.toThrow(NotFoundError)
   })
+
+  it('子がある親の進捗・予定工数更新は ValidationError', async () => {
+    const parent = makeTask({ taskId: 'parent-1', title: '親' })
+    const child = makeTask({
+      taskId: 'child-1',
+      parentTaskId: 'parent-1',
+      title: '子',
+      estimatedEffortDays: 2,
+    })
+    vi.mocked(repository.getTaskById).mockResolvedValue(parent)
+    vi.mocked(repository.listTasksByProject).mockResolvedValue([parent, child])
+
+    await expect(
+      service.updateTask('parent-1', USER_ID, { completionPercent: 50 }),
+    ).rejects.toThrow(ValidationError)
+
+    await expect(
+      service.updateTask('parent-1', USER_ID, { estimatedEffortDays: 5 }),
+    ).rejects.toThrow(ValidationError)
+
+    expect(repository.updateTask).not.toHaveBeenCalled()
+  })
+
+  it('WBS 深さ 4 になる親指定は ValidationError', async () => {
+    const l1 = makeTask({ taskId: 'l1', title: 'L1', wbsCode: '1' })
+    const l2 = makeTask({
+      taskId: 'l2',
+      parentTaskId: 'l1',
+      title: 'L2',
+      wbsCode: '1.1',
+    })
+    const l3 = makeTask({
+      taskId: 'l3',
+      parentTaskId: 'l2',
+      title: 'L3',
+      wbsCode: '1.1.1',
+    })
+    vi.mocked(repository.listTasksByProject).mockResolvedValue([l1, l2, l3])
+    vi.mocked(repository.createTask).mockImplementation(async (t) => t)
+
+    await expect(
+      service.createTask(PROJECT_ID, USER_ID, {
+        title: 'L4 は不可',
+        parentTaskId: 'l3',
+      }),
+    ).rejects.toThrow(ValidationError)
+
+    expect(repository.createTask).not.toHaveBeenCalled()
+  })
+
+  it('子がある親のかんばん status 更新は ValidationError', async () => {
+    const parent = makeTask({ taskId: 'parent-1', title: '親', status: '進行中' })
+    const child = makeTask({
+      taskId: 'child-1',
+      parentTaskId: 'parent-1',
+      title: '子',
+      status: '進行中',
+    })
+    vi.mocked(repository.getTaskById).mockResolvedValue(parent)
+    vi.mocked(repository.listTasksByProject).mockResolvedValue([parent, child])
+
+    await expect(
+      service.updateTaskStatus('parent-1', USER_ID, { status: '完了' }),
+    ).rejects.toThrow(ValidationError)
+
+    expect(repository.updateTask).not.toHaveBeenCalled()
+  })
 })

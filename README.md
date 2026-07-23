@@ -8,6 +8,7 @@
 AWS-TaskVista/
 ├── frontend/          # Vue 3 前端（Vite 本地热更新）
 ├── backend/           # Lambda 后端 TypeScript + Vitest + dist/
+├── docs/              # 系统说明 · 机能介绍 · WBS 方案
 ├── scripts/           # 部署 + 本地 API / SAM 脚本
 ├── template.yaml      # AWS SAM 模板（sam local）
 ├── env/local.json     # SAM / 本地 Lambda 环境变量
@@ -15,6 +16,17 @@ AWS-TaskVista/
 ├── deploy.config.json # 生产部署配置
 └── README.md
 ```
+
+## 文档索引
+
+| 文档 | 对象 | 说明 |
+|------|------|------|
+| [`docs/TaskVista-機能紹介.html`](docs/TaskVista-機能紹介.html) | 利用者 | 功能说明（予定/実績 · WBS 親子 · 三画面） |
+| [`docs/TaskVista-システム説明.html`](docs/TaskVista-システム説明.html) | 开发/运维 | 架构 · 数据模型 · API |
+| [`docs/WBSタスク管理-修正方案.md`](docs/WBSタスク管理-修正方案.md) | 设计 | WBS 修正方案 **v1.0（Phase 1 已关门）** |
+
+**Phase 1（已交付）**：Task 自引用父子、`wbsCode`、读时 rollup、表树 / 看板叶子 / 详情面包屑。  
+**Phase 2（下一步）**：WBS 专用构成画面、同级排序持久化、重编号 UI、时间线父条。
 
 ---
 

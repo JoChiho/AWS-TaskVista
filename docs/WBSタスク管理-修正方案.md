@@ -2,13 +2,13 @@
 
 | 项目 | 内容 |
 |------|------|
-| 版本 | **0.2**（同步任务字段改版 · 准备正式开发） |
-| 日期 | 2026-07-22 |
+| 版本 | **1.0**（Phase 1 已实现 · 已关门） |
+| 日期 | 2026-07-23 |
 | 对象 | 项目内的任务（Work Package）管理 |
 | 前提 | 不破坏现行 DynamoDB / API / 画面，分阶段引入 |
-| 状态 | **§12.1 已确认 · 可按 Phase 1 开工** |
-| 相对 0.1 | 对齐「予定 / 実績」日期与工数模型；补充详情 UI 与汇总规则；增加正式开发准备清单 |
-| 确认日 | 2026-07-22 |
+| 状态 | **Phase 1 已交付 · 下一步 Phase 2（WBS 专用视图）** |
+| 相对 0.2 | 字段/汇总/最小 UI 已落地；见 §15 实现纪要 |
+| 确认日 | 2026-07-22（§12.1）· 关门日 2026-07-23 |
 
 ---
 
@@ -109,10 +109,12 @@ Project (1) ──owns──> Task (N) ──has──> Comment / Attachment
 | `reviewers` | レビュアー | 质量门禁（建议仅叶子） |
 | `priority` | 优先级 | 执行优先（与 WBS 编号无关） |
 | `createdAt` / `updatedAt` | 系统时间 | 详情右上角展示（不进日程网格） |
-| — | **父子 / 层级** | **未实现（本方案核心）** |
+| `parentTaskId` | 父任务 ID | **已实现（Phase 1）** · 自引用；空=根 |
+| `wbsCode` | WBS 编号 | **已实现（Phase 1）** · 自动生成，可改 |
+| `sortOrder` | 同级排序 | **已实现（Phase 1）** · 字段具备；同级拖拽持久化属 Phase 2 |
+| `nodeType` | 节点类型 | **字段已实现** · `milestone` 产品行为属 Phase 3 |
+| `rollup` | 子汇总缓存/读时结果 | **已实现（Phase 1 · 读时计算）** |
 | — | **依赖关系** | **未实现（Phase 3）** |
-| — | **WBS 编码** | **未实现** |
-| — | **要素类型** | **未实现** |
 
 ### 2.3 任务详情 UI（现行约定 · WBS 须兼容）
 
@@ -405,35 +407,35 @@ interface Task {
 
 ## 7. 分阶段路线图（正式开发）
 
-### Phase 0：确认与定稿（当前）
+### Phase 0：确认与定稿 — **Done**
 
 - 确认 §12  
 - 冻结本版字段与汇总规则  
 
-### Phase 1：数据 + 最小 UI（MVP · 建议首发）
+### Phase 1：数据 + 最小 UI（MVP）— **Done（2026-07-23 关门）**
 
-**后端**
+**后端** ✅
 
 - `parentTaskId`, `sortOrder`, `wbsCode`, `nodeType`  
 - create / update / list / presentTask 扩展  
 - 循环、深度、父级只读校验  
-- 列表/详情可选返回 rollup  
+- 列表/详情 rollup（读时）  
 
-**前端**
+**前端** ✅
 
-- 表格：WBS 号或缩进  
-- 创建：可选父级  
+- 表格：WBS 号 / 树展开 / 层内加子  
+- 创建：级联父级选择  
 - 详情：面包屑、子列表、父级日程只读汇总  
-- 看板：默认仅叶子  
+- 看板：默认仅叶子 + 范围模式  
 
-**验收**
+**验收** ✅（见 §13 / §15）
 
 - 无 WBS 的旧项目体验不变  
-- 可建 2 层父子  
+- 可建 2～3 层父子  
 - 父级予定/実績工数与进度可从子级看到汇总  
 - 叶子详情 3×2 日程与着色不变  
 
-### Phase 2：WBS 专用视图
+### Phase 2：WBS 专用视图 — **Next**
 
 - 导航增加 WBS  
 - 缩进 / 排序 / 重编号  
@@ -537,41 +539,78 @@ interface Task {
 
 ## 13. 正式开发准备清单（Phase 1）
 
-### 13.1 工程任务拆分（建议 PR 顺序）
+### 13.1 工程任务拆分（建议 PR 顺序）— **全部完成**
 
-1. **Backend 类型 + schema + repository**  
-   - `parentTaskId`, `sortOrder`, `wbsCode`, `nodeType`  
-   - 校验：循环、深度、父级禁止写进度/日程/工数（可选严格模式）  
-2. **Backend list/get rollup**  
-   - 读时计算或轻量缓存  
-3. **Frontend types + 表格缩进/WBS 列**  
-4. **Frontend 创建/编辑：父级选择**  
-5. **Frontend 详情：面包屑 + 子列表 + 父级只读汇总**  
-6. **Frontend 看板：叶子过滤**  
-7. **单测 / 回归**：旧字段 presentTask、AssigneeIndex 镜像、无父任务路径  
+1. ✅ **Backend 类型 + schema + repository**  
+2. ✅ **Backend list/get rollup**（读时计算）  
+3. ✅ **Frontend types + 表格缩进/WBS 列**  
+4. ✅ **Frontend 创建/编辑：父级选择**  
+5. ✅ **Frontend 详情：面包屑 + 子列表 + 父级只读汇总**  
+6. ✅ **Frontend 看板：叶子过滤**（+ 范围模式）  
+7. ✅ **单测 / 回归**：`wbs.test.ts` + service 父锁定/深度等  
 
-### 13.2 测试要点
+### 13.2 测试要点 — **已覆盖（单元 + 手工）**
 
-- 旧任务无 WBS 字段：列表/看板/时间线/详情全绿  
+- 旧任务无 WBS 字段：列表/看板/时间线/详情  
 - 建 1→1.1 父子后父级予定工数=子合计  
 - 删除/移动不产生环与孤儿（按 D4）  
 - 叶子仍可拖时间线写 `plannedStartDate`  
-- 父级 PATCH status / 改工数应失败或被忽略（按实现约定）  
+- 父级改工数/进度 API 拒绝；看板 PATCH status **仅叶子**  
 
-### 13.3 文档同步（Phase 1 合并后）
+### 13.3 文档同步 — **本关门 PR 完成**
 
-- 更新 `docs/TaskVista-システム説明.html`（字段与 WBS）  
-- 更新 `docs/TaskVista-機能紹介.html`（用户向）  
-- 本方案版本号 bump 到 1.0（实现完成时）  
+- ✅ 更新 `docs/TaskVista-システム説明.html`（字段与 WBS）  
+- ✅ 更新 `docs/TaskVista-機能紹介.html`（用户向）  
+- ✅ 本方案版本号 **1.0**  
 
 ---
 
 ## 14. 总结
 
-- 现行任务在 **予定/実績** 维度已可用，但缺少 **WBS 分解结构**。  
-- WBS 修正核心仍是 **`parentTaskId` + 排序 + 类型 + 按予定/実績的汇总规则**。  
-- UI 上 **WBS 管结构，看板/时间线跑叶子，详情保持 3×2 予定·実績对照**。  
-- **§12.1 已确认，可按 §13 开始 Phase 1 正式开发。**  
+- **予定/実績** 与 **WBS 父子结构（Phase 1）** 均已落地。  
+- 核心仍是 **`parentTaskId` + 排序 + 类型 + 按予定/実績的汇总规则**。  
+- UI 上 **表管结构，看板/时间线跑叶子，详情保持 3×2 予定·実績对照**。  
+- **Phase 1 已关门。下一步：Phase 2 WBS 专用视图（缩进/排序/重编号/时间线父条）。**  
+
+---
+
+## 15. Phase 1 实现纪要（1.0 · 2026-07-23）
+
+### 已交付
+
+- 字段：`parentTaskId` / `sortOrder` / `wbsCode` / `nodeType`（optional）  
+- 校验：同项目父、环、深度 ≤ 3、改父含子孙高度  
+- 父（有子）：进度・予定/実績・担当 **只读**（API 拒绝）；详情/表单只读展示  
+- 父 status：子策略受限（`forced_progress` 等）；**看板 PATCH status 仅叶子**  
+- rollup：读时计算（前后端）；予定/実績工数 **合计**（1 位小数）；进度 **工数加权** / 无工数 **等权**  
+- 実績終了汇总：仅当子 **全部完了** 后取 `max(actualDueDate)`  
+- 删除父：级联逻辑删除子孙（D4）  
+- `wbsCode`：缺码自动补全；改父 renumber 子树  
+- UI：表树 / WBS 列、创建级联父选择、详情面包屑 + 子列表 + 3×2 汇总、看板默认叶子 + 范围（最小単位 / 階層 / すべて）、卡片 WBS 号、列整高 drop 区  
+
+### 刻意未做（Phase 2+）
+
+- 独立 WBS 树导航屏  
+- 依赖（`predecessorIds`）、里程碑产品行为  
+- 专用 REST：`POST /children` / `/move` / `/wbs/renumber`  
+- `GET ...?view=tree`  
+- 同级 `sortOrder` 拖拽持久化  
+- 时间线父级浅条  
+
+### 与方案正文的接受微差
+
+- 无 `view=flat|tree`：全量 flat + 前端建树（小规模足够）  
+- 无独立 move/renumber API：能力在 update + 内部 renumber  
+- 父 status 策略细于 §4.4 简单表  
+
+### 相关代码入口
+
+| 层 | 路径 |
+|----|------|
+| 后端纯逻辑 | `backend/src/tasks/wbs.ts` |
+| 后端编排 | `backend/src/tasks/service.ts` |
+| 前端工具 | `frontend/src/utils/wbs.ts` |
+| 表 / 看板 / 详情 | `TaskTableView` / `TaskBoardView` / `TaskDetail` |
 
 ---
 
@@ -614,4 +653,4 @@ Project: 客户门户改版
 
 ---
 
-*本文档 0.2 为正式开发基线方案。§12.1 已于 2026-07-22 确认，可按 §13 拆分 PR 实现 Phase 1。*
+*本文档 1.0：Phase 1 已实现并关门（2026-07-23）。下一阶段见 §7 Phase 2。*

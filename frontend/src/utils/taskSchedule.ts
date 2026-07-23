@@ -1,15 +1,15 @@
 /**
  * タスクのスケジュール期間を算出する（タイムライン / カレンダー用）
  *
- * 【方針】予定開始日がタイムラインの基準。予定締切からの逆算はしない。
+ * 【方針】予定開始日がタイムラインの基準。予定終了日からの逆算はしない。
  *
  * バーを描画する条件:
  *   - 予定開始日があること（必須）
  *   - 長さ = 予定工数（人日）。未設定時は 1 日
  *
- * 予定締切日:
+ * 予定終了日:
  *   - 期間バーの位置・長さには使わない（フラグ表示のみ）
- *   - 予定開始日が無いタスクは「日程未設定」（締切だけあってもバーを出さない）
+ *   - 予定開始日が無いタスクは「日程未設定」（終了日だけあってもバーを出さない）
  */
 import type { Task } from '@/types/task'
 import { getPlannedDueDate, getPlannedStartDate } from '@/types/task'
@@ -100,7 +100,7 @@ function buildRange(
 
 /**
  * 予定開始日を基準に期間を決める。
- * ステータス（完了など）や予定締切日はバー位置に影響しない。
+ * ステータス（完了など）や予定終了日はバー位置に影響しない。
  */
 export function resolveTaskSchedule(task: Task): TaskSchedule {
   const start = parseDateOnly(getPlannedStartDate(task))
@@ -156,7 +156,7 @@ export function computeTimelineRange(
     if (s.endExclusive && s.endExclusive > maxEx) maxEx = s.endExclusive
   }
 
-  // 予定締切フラグが見切れないよう、予定締切日もレンジに含める（バー位置は変えない）
+  // 予定終了フラグが見切れないよう、予定終了日もレンジに含める（バー位置は変えない）
   for (const t of tasks) {
     const due = parseDateOnly(getPlannedDueDate(t))
     if (!due) continue
