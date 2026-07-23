@@ -132,6 +132,12 @@ function completionOf(t: Task): number {
 
 /**
  * 子の有効ステータスから親の制約を決める
+ *
+ * - 全完了 → 完了 / レビュー待ちを選択可
+ * - 全未着手 → 未着手 / 保留
+ * - 全保留 → 保留 / 未着手
+ * - それ以外（進行中・レビュー待ち・完了と未着手の混在など「途中」）
+ *   → 親は必ず進行中（進捗 0〜99 と整合）
  */
 export function deriveParentStatusPolicy(childStatuses: TaskStatus[]): {
   mode: ParentStatusMode
@@ -139,25 +145,48 @@ export function deriveParentStatusPolicy(childStatuses: TaskStatus[]): {
   forcedStatus?: TaskStatus
   defaultStatus: TaskStatus
 } {
-  if (childStatuses.some((s) => s === '進行中')) {
+  if (childStatuses.length === 0) {
     return {
-      mode: 'forced_progress',
-      allowedStatuses: ['進行中'],
-      forcedStatus: '進行中',
-      defaultStatus: '進行中',
+      mode: 'idle_choice',
+      allowedStatuses: ['未着手', '保留'],
+      defaultStatus: '未着手',
     }
   }
-  if (childStatuses.length > 0 && childStatuses.every((s) => s === '完了')) {
+
+  // すべて完了
+  if (childStatuses.every((s) => s === '完了')) {
     return {
       mode: 'all_done_choice',
       allowedStatuses: ['完了', 'レビュー待ち'],
       defaultStatus: '完了',
     }
   }
+
+  // すべて未着手のみ（まだ何も進んでいない）
+  if (childStatuses.every((s) => s === '未着手')) {
+    return {
+      mode: 'idle_choice',
+      allowedStatuses: ['未着手', '保留'],
+      defaultStatus: '未着手',
+    }
+  }
+
+  // すべて保留
+  if (childStatuses.every((s) => s === '保留')) {
+    return {
+      mode: 'idle_choice',
+      allowedStatuses: ['保留', '未着手'],
+      defaultStatus: '保留',
+    }
+  }
+
+  // 進行中 / レビュー待ち / 完了+未着手の混在 など「途中」
+  // （例: 子が 完了 と 未着手 だけ → 親は進行中。旧ロジックは誤って未着手にしていた）
   return {
-    mode: 'idle_choice',
-    allowedStatuses: ['未着手', '保留'],
-    defaultStatus: '未着手',
+    mode: 'forced_progress',
+    allowedStatuses: ['進行中'],
+    forcedStatus: '進行中',
+    defaultStatus: '進行中',
   }
 }
 
@@ -398,6 +427,30 @@ export function renumberSubtreeCodes(
     const childCode = `${newRootCode}.${index + 1}`
     result.push(...renumberSubtreeCodes(kid.taskId, childCode, tasks))
   })
+  return result
+}
+
+/**
+ * プロジェクト全体の WBS を sortOrder / 作成順で 1, 1.1, 1.2, 2… と振り直す
+ * （番号の一括振り直し API 用）
+ */
+export function planFullWbsRenumber(
+  tasks: Task[],
+): Array<{ taskId: string; wbsCode: string; sortOrder: number }> {
+  const active = activeTasks(tasks)
+  const result: Array<{ taskId: string; wbsCode: string; sortOrder: number }> = []
+
+  function walk(parentId: string | null, parentCode: string | null) {
+    const kids = childrenOf(active, parentId)
+    kids.forEach((k, index) => {
+      const sortOrder = index
+      const wbsCode = parentCode ? `${parentCode}.${index + 1}` : String(index + 1)
+      result.push({ taskId: k.taskId, wbsCode, sortOrder })
+      walk(k.taskId, wbsCode)
+    })
+  }
+
+  walk(null, null)
   return result
 }
 

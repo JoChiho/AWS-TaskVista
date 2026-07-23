@@ -146,9 +146,9 @@ export type TaskNodeType = 'summary' | 'work_package' | 'milestone'
 
 /**
  * 親ステータスの制約モード
- * - forced_progress: 子に「進行中」あり → 親は必ず進行中
+ * - forced_progress: 作業が途中（進行中/レビュー待ち/完了と未着手の混在など）→ 親は必ず進行中
  * - all_done_choice: 子がすべて完了 → 親は完了 / レビュー待ちを手動選択可
- * - idle_choice: 進行中の子なし（かつ全完了でない）→ 未着手 / 保留を手動選択可
+ * - idle_choice: 全未着手 or 全保留 → 未着手 / 保留を手動選択可
  */
 export type ParentStatusMode =
   | 'forced_progress'

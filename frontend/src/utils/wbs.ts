@@ -8,6 +8,7 @@ import type {
   TaskRollup,
   TaskStatus,
 } from '@/types/task'
+import { getPlannedDueDate, getPlannedStartDate } from '@/types/task'
 
 export function activeTasksList(tasks: Task[]): Task[] {
   return tasks.filter((t) => !t.isDeleted)
@@ -19,6 +20,13 @@ export function parentKey(task: Task): string {
 
 export type WbsSortOrder = 'asc' | 'desc'
 
+/**
+ * 同階層の並び（表示用。WBS 番号そのものは変えない）
+ * - wbs: WBS 番号 → sortOrder → 作成日
+ * - plannedStart: 予定開始日 → 予定終了日 → WBS（甘特の既定）
+ */
+export type SiblingSortMode = 'wbs' | 'plannedStart'
+
 /** WBS 番号の自然順比較（1 < 1.2 < 2、欠落は末尾） */
 export function compareWbsCode(a?: string | null, b?: string | null): number {
   const aa = a?.trim() || ''
@@ -29,22 +37,52 @@ export function compareWbsCode(a?: string | null, b?: string | null): number {
   return aa.localeCompare(bb, undefined, { numeric: true, sensitivity: 'base' })
 }
 
+/** 予定開始日比較（無しは末尾） */
+export function comparePlannedStart(a: Task, b: Task): number {
+  const as = getPlannedStartDate(a) || ''
+  const bs = getPlannedStartDate(b) || ''
+  if (!as && !bs) return 0
+  if (!as) return 1
+  if (!bs) return -1
+  return as.localeCompare(bs)
+}
+
+function compareWbsThenSortOrder(
+  a: Task,
+  b: Task,
+  dir: number,
+): number {
+  const byWbs = compareWbsCode(a.wbsCode, b.wbsCode)
+  if (byWbs !== 0) return byWbs * dir
+  const ao = a.sortOrder ?? 0
+  const bo = b.sortOrder ?? 0
+  if (ao !== bo) return (ao - bo) * dir
+  return (a.createdAt || '').localeCompare(b.createdAt || '') * dir
+}
+
 export function childrenOf(
   tasks: Task[],
   parentId: string | null | undefined,
   wbsOrder: WbsSortOrder = 'asc',
+  siblingSort: SiblingSortMode = 'wbs',
 ): Task[] {
   const key = parentId || ''
   const dir = wbsOrder === 'asc' ? 1 : -1
   return activeTasksList(tasks)
     .filter((t) => parentKey(t) === key)
     .sort((a, b) => {
-      const byWbs = compareWbsCode(a.wbsCode, b.wbsCode)
-      if (byWbs !== 0) return byWbs * dir
-      const ao = a.sortOrder ?? 0
-      const bo = b.sortOrder ?? 0
-      if (ao !== bo) return (ao - bo) * dir
-      return (a.createdAt || '').localeCompare(b.createdAt || '') * dir
+      if (siblingSort === 'plannedStart') {
+        const byStart = comparePlannedStart(a, b)
+        if (byStart !== 0) return byStart
+        // 同日なら終了日 → WBS で安定
+        const ad = getPlannedDueDate(a) || ''
+        const bd = getPlannedDueDate(b) || ''
+        if (ad && bd && ad !== bd) return ad.localeCompare(bd)
+        if (!ad && bd) return 1
+        if (ad && !bd) return -1
+        return compareWbsThenSortOrder(a, b, 1)
+      }
+      return compareWbsThenSortOrder(a, b, dir)
     })
 }
 
@@ -148,31 +186,59 @@ function depthOf(taskId: string, byId: Map<string, Task>): number {
   return depth || 1
 }
 
+/**
+ * 子の有効ステータスから親の制約を決める
+ *
+ * - 全完了 → 完了 / レビュー待ちを選択可
+ * - 全未着手 → 未着手 / 保留
+ * - 全保留 → 保留 / 未着手
+ * - それ以外（進行中・レビュー待ち・完了と未着手の混在など「途中」）
+ *   → 親は必ず進行中（進捗 0〜99 と整合）
+ */
 export function deriveParentStatusPolicy(childStatuses: TaskStatus[]): {
   mode: ParentStatusMode
   allowedStatuses: TaskStatus[]
   forcedStatus?: TaskStatus
   defaultStatus: TaskStatus
 } {
-  if (childStatuses.some((s) => s === '進行中')) {
+  if (childStatuses.length === 0) {
     return {
-      mode: 'forced_progress',
-      allowedStatuses: ['進行中'],
-      forcedStatus: '進行中',
-      defaultStatus: '進行中',
+      mode: 'idle_choice',
+      allowedStatuses: ['未着手', '保留'],
+      defaultStatus: '未着手',
     }
   }
-  if (childStatuses.length > 0 && childStatuses.every((s) => s === '完了')) {
+
+  if (childStatuses.every((s) => s === '完了')) {
     return {
       mode: 'all_done_choice',
       allowedStatuses: ['完了', 'レビュー待ち'],
       defaultStatus: '完了',
     }
   }
+
+  if (childStatuses.every((s) => s === '未着手')) {
+    return {
+      mode: 'idle_choice',
+      allowedStatuses: ['未着手', '保留'],
+      defaultStatus: '未着手',
+    }
+  }
+
+  if (childStatuses.every((s) => s === '保留')) {
+    return {
+      mode: 'idle_choice',
+      allowedStatuses: ['保留', '未着手'],
+      defaultStatus: '保留',
+    }
+  }
+
+  // 完了+未着手の混在や進行中・レビュー待ちなど → 親は進行中
   return {
-    mode: 'idle_choice',
-    allowedStatuses: ['未着手', '保留'],
-    defaultStatus: '未着手',
+    mode: 'forced_progress',
+    allowedStatuses: ['進行中'],
+    forcedStatus: '進行中',
+    defaultStatus: '進行中',
   }
 }
 
@@ -491,26 +557,73 @@ export function parentOptions(
 
 /**
  * ツリー展開用: ルートから、expanded に含まれる親の子孫だけを深さ優先で並べる
- * 兄弟は WBS 昇順 / 降順（wbsOrder）
+ * 兄弟は siblingSort（既定 wbs）で並べる
  */
 export function flattenVisibleTree(
   tasks: Task[],
   expandedIds: Set<string>,
   wbsOrder: WbsSortOrder = 'asc',
+  siblingSort: SiblingSortMode = 'wbs',
 ): Task[] {
   const active = activeTasksList(tasks)
-  const roots = childrenOf(active, null, wbsOrder)
+  const roots = childrenOf(active, null, wbsOrder, siblingSort)
   const out: Task[] = []
 
   function walk(nodes: Task[]) {
     for (const n of nodes) {
       out.push(n)
       if (expandedIds.has(n.taskId) && hasChildren(n, active)) {
-        walk(childrenOf(active, n.taskId, wbsOrder))
+        walk(childrenOf(active, n.taskId, wbsOrder, siblingSort))
       }
     }
   }
 
   walk(roots)
   return out
+}
+
+/** 深さ（ルート=0）付きの可視ツリー行 */
+export function flattenVisibleTreeWithDepth(
+  tasks: Task[],
+  expandedIds: Set<string>,
+  wbsOrder: WbsSortOrder = 'asc',
+  siblingSort: SiblingSortMode = 'wbs',
+): Array<{ task: Task; depth: number }> {
+  const active = activeTasksList(tasks)
+  const roots = childrenOf(active, null, wbsOrder, siblingSort)
+  const out: Array<{ task: Task; depth: number }> = []
+
+  function walk(nodes: Task[], depth: number) {
+    for (const n of nodes) {
+      out.push({ task: n, depth })
+      if (expandedIds.has(n.taskId) && hasChildren(n, active)) {
+        walk(childrenOf(active, n.taskId, wbsOrder, siblingSort), depth + 1)
+      }
+    }
+  }
+
+  walk(roots, 0)
+  return out
+}
+
+/** マッチしたタスクとその祖先を残す（フィルタ後も WBS 木を保つ） */
+export function includeAncestors(tasks: Task[], matchedIds: Set<string>): Task[] {
+  const active = activeTasksList(tasks)
+  const byId = new Map(active.map((t) => [t.taskId, t]))
+  const keep = new Set<string>()
+  for (const id of matchedIds) {
+    let cur = byId.get(id)
+    while (cur) {
+      if (keep.has(cur.taskId)) break
+      keep.add(cur.taskId)
+      cur = cur.parentTaskId ? byId.get(cur.parentTaskId) : undefined
+    }
+  }
+  return active.filter((t) => keep.has(t.taskId))
+}
+
+/** 親ノード id 一覧（展開初期値用） */
+export function collectParentIds(tasks: Task[]): string[] {
+  const active = activeTasksList(tasks)
+  return active.filter((t) => hasChildren(t, active)).map((t) => t.taskId)
 }

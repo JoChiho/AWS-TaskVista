@@ -57,3 +57,52 @@ export async function updateTaskStatus(
 export async function deleteTask(taskId: string): Promise<void> {
   await apiClient.delete(`/tasks/${taskId}`)
 }
+
+// ─── WBS 構造 API ───────────────────────────────────────────
+
+/** 指定タスクの直下に子を作成 */
+export async function createChildTask(
+  parentTaskId: string,
+  payload: CreateTaskPayload,
+): Promise<Task> {
+  const response = await apiClient.post<ApiResponse<Task>>(
+    `/tasks/${parentTaskId}/children`,
+    payload,
+  )
+  return response.data.data
+}
+
+/** 親の変更（ルートへは newParentId: null） */
+export async function moveTask(
+  taskId: string,
+  payload: { newParentId: string | null; sortOrder?: number | null },
+): Promise<Task> {
+  const response = await apiClient.post<ApiResponse<Task>>(
+    `/tasks/${taskId}/move`,
+    payload,
+  )
+  return response.data.data
+}
+
+/** 同一親下の sortOrder 一括更新。戻り値はプロジェクト全タスク（rollup 付き） */
+export async function reorderTasks(
+  projectId: string,
+  payload: {
+    parentTaskId?: string | null
+    items: Array<{ taskId: string; sortOrder: number }>
+  },
+): Promise<Task[]> {
+  const response = await apiClient.post<ApiResponse<Task[]>>(
+    `/projects/${projectId}/tasks/reorder`,
+    payload,
+  )
+  return response.data.data
+}
+
+/** プロジェクト内 WBS 番号の全振り直し */
+export async function renumberWbs(projectId: string): Promise<Task[]> {
+  const response = await apiClient.post<ApiResponse<Task[]>>(
+    `/projects/${projectId}/wbs/renumber`,
+  )
+  return response.data.data
+}

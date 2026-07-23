@@ -719,7 +719,7 @@
       <li>子がある親：進捗・予定/実績・担当は API で手入力不可（子から集計）。</li>
       <li>親削除：子孫も連鎖論理削除。</li>
       <li><code>PATCH /tasks/{id}/status</code>（かんばん）は<strong>リーフのみ</strong>。親の status は詳細更新＋子連動ポリシー。</li>
-      <li>専用 <code>/move</code> · <code>/wbs/renumber</code> REST は Phase 2 予定（現状は update 内で対応）。</li>
+      <li>構造 API: <code>POST /tasks/{id}/children</code> · <code>/move</code> · <code>/projects/{id}/tasks/reorder</code> · <code>/wbs/renumber</code>（update 内の親変更も継続利用可）。</li>
     </ul>
 
     <h3>プロジェクト status</h3>
@@ -760,7 +760,11 @@
       <tr><td>GET/PUT/DELETE</td><td><code>/projects/{id}</code></td><td>projects</td><td>詳細・更新・削除</td></tr>
       <tr><td>POST/DELETE</td><td><code>/projects/{id}/members…</code></td><td>projects</td><td>メンバー</td></tr>
       <tr><td>GET/POST</td><td><code>/projects/{id}/tasks</code></td><td>tasks</td><td>一覧・作成（body に <code>parentTaskId</code> 等可。一覧は WBS rollup 付き flat）</td></tr>
+      <tr><td>POST</td><td><code>/projects/{id}/tasks/reorder</code></td><td>tasks</td><td>同一親下の <code>sortOrder</code> 一括更新</td></tr>
+      <tr><td>POST</td><td><code>/projects/{id}/wbs/renumber</code></td><td>tasks</td><td>プロジェクト内 WBS 番号の全振り直し</td></tr>
       <tr><td>GET/PUT/DELETE</td><td><code>/tasks/{id}</code></td><td>tasks</td><td>詳細・更新（予定/実績・WBS・レビュアー）。親は進捗/日程/工数ロック</td></tr>
+      <tr><td>POST</td><td><code>/tasks/{id}/children</code></td><td>tasks</td><td>子タスク作成（親固定）</td></tr>
+      <tr><td>POST</td><td><code>/tasks/{id}/move</code></td><td>tasks</td><td>親変更 <code>{ newParentId, sortOrder? }</code></td></tr>
       <tr><td>PATCH</td><td><code>/tasks/{id}/status</code></td><td>tasks</td><td>かんばん用（<strong>リーフのみ</strong>）</td></tr>
       <tr><td>GET/POST/DELETE</td><td><code>/tasks/{id}/comments…</code></td><td>comments</td><td>コメント</td></tr>
       <tr><td>GET/POST/DELETE</td><td><code>/tasks/{id}/attachments…</code></td><td>attachments</td><td>添付・URL</td></tr>

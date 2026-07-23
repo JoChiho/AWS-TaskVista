@@ -74,9 +74,33 @@ const ROUTES = [
     module: 'projects',
   },
   {
+    methods: ['POST'],
+    pattern: /^\/projects\/([^/]+)\/tasks\/reorder\/?$/,
+    keys: ['projectId'],
+    module: 'tasks',
+  },
+  {
+    methods: ['POST'],
+    pattern: /^\/projects\/([^/]+)\/wbs\/renumber\/?$/,
+    keys: ['projectId'],
+    module: 'tasks',
+  },
+  {
     methods: ['GET', 'POST'],
     pattern: /^\/projects\/([^/]+)\/tasks\/?$/,
     keys: ['projectId'],
+    module: 'tasks',
+  },
+  {
+    methods: ['POST'],
+    pattern: /^\/tasks\/([^/]+)\/children\/?$/,
+    keys: ['taskId'],
+    module: 'tasks',
+  },
+  {
+    methods: ['POST'],
+    pattern: /^\/tasks\/([^/]+)\/move\/?$/,
+    keys: ['taskId'],
     module: 'tasks',
   },
   {

@@ -332,14 +332,16 @@ interface Task {
 | GET | `/tasks/{id}` | 可选 `children[]` 摘要 + 可选 `rollup` |
 | PATCH | `/tasks/{id}/status` | **仅叶子** |
 
-### 5.2 建议新增 API
+### 5.2 建议新增 API — **已实现（Phase 2 准备）**
 
-| 方法 | 路径 | 用途 |
-|------|------|------|
-| POST | `/tasks/{id}/children` | 创建子任务 |
-| POST | `/tasks/{id}/move` | `{ newParentId, sortOrder }` |
-| POST | `/projects/{id}/tasks/reorder` | 同父批量排序 |
-| POST | `/projects/{id}/wbs/renumber` | WBS 重编号 |
+| 方法 | 路径 | 用途 | 状态 |
+|------|------|------|------|
+| POST | `/tasks/{id}/children` | 创建子任务（路径固定父） | ✅ |
+| POST | `/tasks/{id}/move` | `{ newParentId, sortOrder? }` | ✅ |
+| POST | `/projects/{id}/tasks/reorder` | `{ parentTaskId?, items: [{taskId, sortOrder}] }` | ✅ |
+| POST | `/projects/{id}/wbs/renumber` | 全树 WBS 重编号 + sortOrder 正规化 | ✅ |
+
+部署时需 `deploy:backend`（含 API Gateway ルート同步）。
 
 ### 5.3 校验（重要）
 
@@ -435,11 +437,12 @@ interface Task {
 - 父级予定/実績工数与进度可从子级看到汇总  
 - 叶子详情 3×2 日程与着色不变  
 
-### Phase 2：WBS 专用视图 — **Next**
+### Phase 2：WBS 构成 + 甘特 — **Next（规划见专文）**
 
-- 导航增加 WBS  
-- 缩进 / 排序 / 重编号  
-- 时间线父级条  
+- 导航增加 **構成 / WBS**（独立第 4 视图）  
+- 缩进 / 排序 / 重编号 + move/reorder API  
+- **时间线升级为甘特**（自研：树序、父只读汇总条、叶子条拖拽/缩放）  
+- 详细范围与 PR 拆分：→ [`docs/WBS-Phase2-实施计划.md`](./WBS-Phase2-实施计划.md)  
 
 ### Phase 3：依赖与里程碑
 

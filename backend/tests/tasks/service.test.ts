@@ -412,4 +412,100 @@ describe('tasks/service', () => {
 
     expect(repository.updateTask).not.toHaveBeenCalled()
   })
+
+  it('createChildTask は親固定で子を作成する', async () => {
+    const parent = makeTask({ taskId: 'parent-1', title: '親', wbsCode: '1' })
+    vi.mocked(repository.getTaskById).mockResolvedValue(parent)
+    vi.mocked(repository.listTasksByProject).mockResolvedValue([parent])
+    vi.mocked(repository.createTask).mockImplementation(async (t) => t)
+
+    const result = await service.createChildTask('parent-1', USER_ID, {
+      title: '子タスク',
+    })
+    expect(result.title).toBe('子タスク')
+    expect(result.parentTaskId).toBe('parent-1')
+    expect(repository.createTask).toHaveBeenCalled()
+  })
+
+  it('moveTask は newParentId null でルートへ移す', async () => {
+    const root = makeTask({ taskId: 'root', title: '根', wbsCode: '1' })
+    const child = makeTask({
+      taskId: 'child-1',
+      parentTaskId: 'root',
+      title: '子',
+      wbsCode: '1.1',
+    })
+    vi.mocked(repository.getTaskById).mockResolvedValue(child)
+    vi.mocked(repository.listTasksByProject).mockResolvedValue([root, child])
+    vi.mocked(repository.updateTask).mockImplementation(async (id, updates) => {
+      const base = id === 'child-1' ? child : root
+      return {
+        ...base,
+        ...updates,
+        parentTaskId:
+          updates.parentTaskId === null ? undefined : (updates.parentTaskId ?? base.parentTaskId),
+        wbsCode:
+          updates.wbsCode === null ? undefined : ((updates.wbsCode as string) ?? base.wbsCode),
+      }
+    })
+
+    const result = await service.moveTask('child-1', USER_ID, { newParentId: null })
+    expect(result.parentTaskId).toBeUndefined()
+    expect(repository.updateTask).toHaveBeenCalled()
+  })
+
+  it('reorderSiblingTasks は同一親の sortOrder を更新する', async () => {
+    const a = makeTask({ taskId: 'a', title: 'A', sortOrder: 0, wbsCode: '1' })
+    const b = makeTask({ taskId: 'b', title: 'B', sortOrder: 1, wbsCode: '2' })
+    vi.mocked(repository.listTasksByProject).mockResolvedValue([a, b])
+    vi.mocked(repository.updateTask).mockImplementation(async (id, updates) => {
+      const base = id === 'a' ? a : b
+      return { ...base, ...updates }
+    })
+
+    const list = await service.reorderSiblingTasks(PROJECT_ID, USER_ID, {
+      parentTaskId: null,
+      items: [
+        { taskId: 'b', sortOrder: 0 },
+        { taskId: 'a', sortOrder: 1 },
+      ],
+    })
+    expect(repository.updateTask).toHaveBeenCalledWith('b', { sortOrder: 0 })
+    expect(repository.updateTask).toHaveBeenCalledWith('a', { sortOrder: 1 })
+    expect(Array.isArray(list)).toBe(true)
+  })
+
+  it('reorderSiblingTasks は親が違うと ValidationError', async () => {
+    const root = makeTask({ taskId: 'root', wbsCode: '1' })
+    const child = makeTask({ taskId: 'c', parentTaskId: 'root', wbsCode: '1.1' })
+    vi.mocked(repository.listTasksByProject).mockResolvedValue([root, child])
+
+    await expect(
+      service.reorderSiblingTasks(PROJECT_ID, USER_ID, {
+        parentTaskId: null,
+        items: [{ taskId: 'c', sortOrder: 0 }],
+      }),
+    ).rejects.toThrow(ValidationError)
+  })
+
+  it('renumberProjectWbs は wbsCode を振り直す', async () => {
+    const a = makeTask({ taskId: 'a', title: 'A', sortOrder: 1, wbsCode: '9' })
+    const b = makeTask({ taskId: 'b', title: 'B', sortOrder: 0, wbsCode: '8' })
+    vi.mocked(repository.listTasksByProject).mockResolvedValue([a, b])
+    vi.mocked(repository.updateTask).mockImplementation(async (id, updates) => {
+      const base = id === 'a' ? a : b
+      return { ...base, ...updates }
+    })
+
+    await service.renumberProjectWbs(PROJECT_ID, USER_ID)
+    // sortOrder 0 の b が 1、a が 2
+    expect(repository.updateTask).toHaveBeenCalledWith(
+      'b',
+      expect.objectContaining({ wbsCode: '1', sortOrder: 0 }),
+    )
+    expect(repository.updateTask).toHaveBeenCalledWith(
+      'a',
+      expect.objectContaining({ wbsCode: '2', sortOrder: 1 }),
+    )
+  })
 })

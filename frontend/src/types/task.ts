@@ -123,8 +123,11 @@ export interface Task {
 export type TaskNodeType = 'summary' | 'work_package' | 'milestone'
 
 export type ParentStatusMode =
+  /** 途中（進行中・完了+未着手混在など）→ 親は進行中固定 */
   | 'forced_progress'
+  /** 子がすべて完了 → 完了 / レビュー待ち */
   | 'all_done_choice'
+  /** 全未着手 or 全保留 */
   | 'idle_choice'
 
 export interface TaskRollup {

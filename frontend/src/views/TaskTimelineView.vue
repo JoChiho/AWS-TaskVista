@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// タスクタイムライン（ガント / カレンダー）ビュー
+// タスクガント図ビュー（WBS ツリー + 予定開始・工数）
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useTasksStore } from '@/stores/tasks'
@@ -16,6 +16,7 @@ import {
   resolveAssigneeDisplayName,
 } from '@/utils/displayName'
 import { prepareTaskForDetail } from '@/utils/kanbanOpen'
+import { includeAncestors } from '@/utils/wbs'
 
 const route = useRoute()
 const router = useRouter()
@@ -32,6 +33,7 @@ const filterAssignee = ref<string | null>(null)
 const filterPriority = ref<string | null>(null)
 const filterStatus = ref<string | null>(null)
 const savingStartDate = ref(false)
+const savingSchedule = ref(false)
 
 /** 全体 / 自分のタスク */
 const scope = ref<'all' | 'mine'>('all')
@@ -52,8 +54,22 @@ const scopedTasks = computed(() => {
   return base
 })
 
+/**
+ * フィルタ後にマッチしたタスク + 祖先を残し WBS 木を保つ。
+ * スコープ（自分）も matched として祖先を含める。
+ */
 const filteredTasks = computed(() => {
-  return scopedTasks.value.filter((task) => {
+  const scoped = scopedTasks.value
+  const hasFlatFilter =
+    !!filterStatus.value || !!filterAssignee.value || !!filterPriority.value
+
+  if (!hasFlatFilter && scope.value === 'all') {
+    return scoped
+  }
+
+  // 自分スコープ or フィルタ: マッチした id から祖先を含める
+  // スコープは既に scoped に反映済み。さらに属性フィルタを適用。
+  const matched = scoped.filter((task) => {
     if (filterStatus.value && task.status !== filterStatus.value) return false
     if (
       filterAssignee.value &&
@@ -61,9 +77,16 @@ const filteredTasks = computed(() => {
     ) {
       return false
     }
-    if (filterPriority.value && task.priority !== filterPriority.value) return false
+    if (filterPriority.value && task.priority !== filterPriority.value) {
+      return false
+    }
     return true
   })
+
+  // 祖先は全体ツリー（activeTasks）から取る（スコープ外の親でも木を保つ）
+  const matchedIds = new Set(matched.map((t) => t.taskId))
+  if (matchedIds.size === 0) return []
+  return includeAncestors(tasksStore.activeTasks, matchedIds)
 })
 
 const myTaskCount = computed(
@@ -95,11 +118,36 @@ async function onSetStartDate(payload: {
   if (savingStartDate.value) return
   savingStartDate.value = true
   try {
-    await tasksStore.updateTask(payload.taskId, {
-      plannedStartDate: payload.plannedStartDate,
-    })
+    await tasksStore.updateTask(
+      payload.taskId,
+      { plannedStartDate: payload.plannedStartDate },
+      { silent: true },
+    )
   } finally {
     savingStartDate.value = false
+  }
+}
+
+/** リーフバーの移動 / リサイズ */
+async function onUpdateSchedule(payload: {
+  taskId: string
+  plannedStartDate: string
+  estimatedEffortDays: number
+  task: Task
+}): Promise<void> {
+  if (savingSchedule.value) return
+  savingSchedule.value = true
+  try {
+    await tasksStore.updateTask(
+      payload.taskId,
+      {
+        plannedStartDate: payload.plannedStartDate,
+        estimatedEffortDays: payload.estimatedEffortDays,
+      },
+      { silent: true },
+    )
+  } finally {
+    savingSchedule.value = false
   }
 }
 
@@ -175,19 +223,19 @@ watch(projectId, () => {
     <div class="page-header d-flex align-center flex-wrap ga-3 mb-3">
       <div class="min-w-0">
         <h1 class="text-h6 font-weight-bold mb-0 text-truncate">
-          {{ projectsStore.currentProject?.name ?? 'タイムライン' }}
+          {{ projectsStore.currentProject?.name ?? 'ガント図' }}
         </h1>
         <p class="text-caption text-medium-emphasis mb-0 mt-1">
-          予定開始日を基準に予定工数分の期間を表示
+          WBS ツリー + 予定/実績バー切替。左列は境界ドラッグで幅変更。工数は詳細画面で編集
         </p>
       </div>
       <v-progress-circular
-        v-if="tasksStore.isRefreshing || projectsStore.isRefreshing"
+        v-if="tasksStore.isRefreshing || projectsStore.isRefreshing || savingSchedule"
         indeterminate
         size="18"
         width="2"
         color="primary"
-        title="最新データを確認中"
+        :title="savingSchedule ? 'スケジュール保存中' : '最新データを確認中'"
       />
       <v-spacer />
       <v-btn
@@ -261,9 +309,12 @@ watch(projectId, () => {
     <TaskTimeline
       v-else
       :tasks="filteredTasks"
+      :project-id="projectId"
       :saving-start-date="savingStartDate"
+      :saving-schedule="savingSchedule"
       @open="openTaskDetail"
       @set-start-date="onSetStartDate"
+      @update-schedule="onUpdateSchedule"
     />
 
     <TaskDetail v-model="showDetail" :project-id="projectId" />

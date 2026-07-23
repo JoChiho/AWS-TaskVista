@@ -266,7 +266,11 @@ export const useTasksStore = defineStore('tasks', () => {
     }
   }
 
-  async function updateTask(taskId: string, payload: UpdateTaskPayload): Promise<Task> {
+  async function updateTask(
+    taskId: string,
+    payload: UpdateTaskPayload,
+    options?: { silent?: boolean },
+  ): Promise<Task> {
     try {
       const updatedTask = await tasksApi.updateTask(taskId, payload)
       _replaceTaskInList(updatedTask)
@@ -274,7 +278,10 @@ export const useTasksStore = defineStore('tasks', () => {
         lastFetchedAt.value = Date.now()
         saveCache(currentProjectId.value)
       }
-      uiStore.showSuccess('タスクを更新しました')
+      // ガントの連続ドラッグなどでは silent でトーストを抑制
+      if (!options?.silent) {
+        uiStore.showSuccess('タスクを更新しました')
+      }
       return updatedTask
     } catch (error: unknown) {
       uiStore.showError('タスクの更新に失敗しました')
@@ -337,6 +344,91 @@ export const useTasksStore = defineStore('tasks', () => {
     }
   }
 
+  /** 子タスク作成（WBS API） */
+  async function createChildTask(
+    parentTaskId: string,
+    payload: CreateTaskPayload,
+  ): Promise<Task> {
+    try {
+      const newTask = await tasksApi.createChildTask(parentTaskId, payload)
+      if (currentProjectId.value) {
+        tasks.value = [...tasks.value, newTask]
+        recomputeWbs()
+        lastFetchedAt.value = Date.now()
+        saveCache(currentProjectId.value)
+      }
+      useDisplayNamesStore().ingestTasks([newTask])
+      uiStore.showSuccess('子タスクを作成しました')
+      return newTask
+    } catch (error: unknown) {
+      uiStore.showError('子タスクの作成に失敗しました')
+      console.error('子タスク作成エラー:', error)
+      throw error
+    }
+  }
+
+  /** 親変更（WBS move API） */
+  async function moveTask(
+    taskId: string,
+    payload: { newParentId: string | null; sortOrder?: number | null },
+  ): Promise<Task> {
+    try {
+      const updated = await tasksApi.moveTask(taskId, payload)
+      _replaceTaskInList(updated)
+      // 子孫の wbsCode がサーバ側で変わるため一覧を再取得すると安全
+      if (currentProjectId.value) {
+        await fetchTasks(currentProjectId.value)
+      }
+      uiStore.showSuccess('タスクを移動しました')
+      return updated
+    } catch (error: unknown) {
+      uiStore.showError('タスクの移動に失敗しました')
+      console.error('タスク移動エラー:', error)
+      throw error
+    }
+  }
+
+  /** 同一親下の並べ替え */
+  async function reorderTasks(
+    projectId: string,
+    payload: {
+      parentTaskId?: string | null
+      items: Array<{ taskId: string; sortOrder: number }>
+    },
+  ): Promise<void> {
+    try {
+      const list = await tasksApi.reorderTasks(projectId, payload)
+      if (currentProjectId.value === projectId) {
+        tasks.value = list
+        recomputeWbs()
+        lastFetchedAt.value = Date.now()
+        saveCache(projectId)
+      }
+    } catch (error: unknown) {
+      uiStore.showError('並び順の更新に失敗しました')
+      console.error('タスク並べ替えエラー:', error)
+      throw error
+    }
+  }
+
+  /** WBS 番号の全振り直し */
+  async function renumberWbs(projectId: string): Promise<void> {
+    try {
+      const list = await tasksApi.renumberWbs(projectId)
+      if (currentProjectId.value === projectId) {
+        tasks.value = list
+        recomputeWbs()
+        lastFetchedAt.value = Date.now()
+        saveCache(projectId)
+      }
+      uiStore.showSuccess('WBS 番号を振り直しました')
+    } catch (error: unknown) {
+      uiStore.showError('WBS 番号の振り直しに失敗しました')
+      console.error('WBS 振り直しエラー:', error)
+      throw error
+    }
+  }
+
   function _replaceTaskInList(updatedTask: Task): void {
     const index = tasks.value.findIndex((t) => t.taskId === updatedTask.taskId)
     if (index !== -1) {
@@ -390,8 +482,12 @@ export const useTasksStore = defineStore('tasks', () => {
     fetchTasks,
     fetchTask,
     createTask,
+    createChildTask,
     updateTask,
     updateTaskStatus,
+    moveTask,
+    reorderTasks,
+    renumberWbs,
     deleteTask,
     invalidate,
   }

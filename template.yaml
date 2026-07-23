@@ -109,12 +109,36 @@ Resources:
             ApiId: !Ref TaskVistaHttpApi
             Path: /projects/{projectId}/tasks
             Method: ANY
+        ProjectTasksReorder:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref TaskVistaHttpApi
+            Path: /projects/{projectId}/tasks/reorder
+            Method: POST
+        ProjectWbsRenumber:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref TaskVistaHttpApi
+            Path: /projects/{projectId}/wbs/renumber
+            Method: POST
         TaskById:
           Type: HttpApi
           Properties:
             ApiId: !Ref TaskVistaHttpApi
             Path: /tasks/{taskId}
             Method: ANY
+        TaskChildren:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref TaskVistaHttpApi
+            Path: /tasks/{taskId}/children
+            Method: POST
+        TaskMove:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref TaskVistaHttpApi
+            Path: /tasks/{taskId}/move
+            Method: POST
         TaskStatus:
           Type: HttpApi
           Properties:

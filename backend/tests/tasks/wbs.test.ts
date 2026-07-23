@@ -5,6 +5,7 @@ import {
   computeRollupFromChildren,
   depthOf,
   enrichWithWbs,
+  planFullWbsRenumber,
   exceedsMaxDepth,
   buildById,
   nextWbsCode,
@@ -66,15 +67,25 @@ describe('wbs helpers', () => {
         assignees: [{ userId: 'u2', displayName: 'B' }],
       }),
     ]
-    // 進行中なし・全完了でない → idle_choice、保存 status が許容内なら維持
-    const rIdle = computeRollupFromChildren(kids, '保留')
-    expect(rIdle.estimatedEffortDaysSum).toBe(4)
-    expect(rIdle.completionPercent).toBe(50)
-    expect(rIdle.plannedStartDate).toBe('2026-08-01')
-    expect(rIdle.plannedDueDate).toBe('2026-08-10')
-    expect(rIdle.statusMode).toBe('idle_choice')
-    expect(rIdle.status).toBe('保留')
-    expect(rIdle.assignees).toHaveLength(2)
+    // 完了 + 未着手の混在 → 途中なので親は進行中（進捗 50% と整合）
+    const rMixed = computeRollupFromChildren(kids, '保留')
+    expect(rMixed.estimatedEffortDaysSum).toBe(4)
+    expect(rMixed.completionPercent).toBe(50)
+    expect(rMixed.plannedStartDate).toBe('2026-08-01')
+    expect(rMixed.plannedDueDate).toBe('2026-08-10')
+    expect(rMixed.statusMode).toBe('forced_progress')
+    expect(rMixed.status).toBe('進行中')
+    expect(rMixed.assignees).toHaveLength(2)
+
+    // 全未着手のみ → idle
+    const allIdle = [
+      makeTask({ taskId: 'i1', status: '未着手', estimatedEffortDays: 1 }),
+      makeTask({ taskId: 'i2', status: '未着手', estimatedEffortDays: 1 }),
+    ]
+    const rAllIdle = computeRollupFromChildren(allIdle, '進行中')
+    expect(rAllIdle.statusMode).toBe('idle_choice')
+    expect(rAllIdle.status).toBe('未着手')
+    expect(rAllIdle.completionPercent).toBe(0)
 
     const withProgress = [
       kids[0]!,
@@ -167,5 +178,29 @@ describe('wbs helpers', () => {
     expect(parent.childCount).toBe(1)
     expect(parent.rollup?.estimatedEffortDaysSum).toBe(3)
     expect(parent.rollup?.completionPercent).toBe(100)
+  })
+
+  it('planFullWbsRenumber assigns sequential codes by sortOrder', () => {
+    const tasks = [
+      makeTask({ taskId: 'b', sortOrder: 1, wbsCode: 'x' }),
+      makeTask({ taskId: 'a', sortOrder: 0, wbsCode: 'y' }),
+      makeTask({ taskId: 'a1', parentTaskId: 'a', sortOrder: 0, wbsCode: 'z' }),
+    ]
+    const patches = planFullWbsRenumber(tasks)
+    expect(patches.find((p) => p.taskId === 'a')).toEqual({
+      taskId: 'a',
+      wbsCode: '1',
+      sortOrder: 0,
+    })
+    expect(patches.find((p) => p.taskId === 'a1')).toEqual({
+      taskId: 'a1',
+      wbsCode: '1.1',
+      sortOrder: 0,
+    })
+    expect(patches.find((p) => p.taskId === 'b')).toEqual({
+      taskId: 'b',
+      wbsCode: '2',
+      sortOrder: 1,
+    })
   })
 })

@@ -307,7 +307,7 @@ function onDelete() {
           :disabled="!projectId"
           @click="goToTimeline"
         >
-          タイムライン
+          ガント
         </v-btn>
         <v-spacer />
         <v-btn

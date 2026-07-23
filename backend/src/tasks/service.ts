@@ -24,6 +24,7 @@ import {
   nextSortOrder,
   nextWbsCode,
   planMissingWbsCodes,
+  planFullWbsRenumber,
   renumberSubtreeCodes,
   resolveParentStatus,
   touchesParentLockedFields,
@@ -162,6 +163,33 @@ const updateTaskSchema = createTaskSchema.partial()
 
 const updateStatusSchema = z.object({
   status: statusSchema,
+})
+
+/** POST /tasks/{id}/move */
+const moveTaskSchema = z.object({
+  /** null / "" = ルートへ。必須 */
+  newParentId: z.union([z.string().min(1).max(128), z.null(), z.literal('')]),
+  sortOrder: z.number().int().min(0).max(100000).optional().nullable(),
+})
+
+/** POST /projects/{id}/tasks/reorder */
+const reorderTasksSchema = z.object({
+  /**
+   * 並べ替え対象の親（null / "" / 省略 = ルート直下）
+   * 全 items がこの親の子であることを検証する
+   */
+  parentTaskId: z
+    .union([z.string().min(1).max(128), z.null(), z.literal('')])
+    .optional(),
+  items: z
+    .array(
+      z.object({
+        taskId: z.string().min(1).max(128),
+        sortOrder: z.number().int().min(0).max(100000),
+      }),
+    )
+    .min(1, '並べ替え対象を 1 件以上指定してください')
+    .max(500),
 })
 
 /** 完了度変更時に自動連動しないステータス */
@@ -1199,4 +1227,153 @@ export async function deleteTask(
     await repository.softDeleteTask(id)
   }
   return repository.softDeleteTask(taskId)
+}
+
+// ─── WBS 構造 API（Phase 2 準備）────────────────────────────────
+
+/**
+ * POST /tasks/{parentTaskId}/children
+ * 指定親の直下に子タスクを作成（createTask の親固定ショートカット）
+ */
+export async function createChildTask(
+  parentTaskId: string,
+  userId: string,
+  body: unknown,
+  email?: string,
+): Promise<Task> {
+  const parent = await getAccessibleTask(parentTaskId, userId, email)
+  const raw =
+    body && typeof body === 'object' && !Array.isArray(body)
+      ? { ...(body as Record<string, unknown>) }
+      : {}
+  // 親はパスで確定（body の parentTaskId は上書き）
+  raw.parentTaskId = parent.taskId
+  return createTask(parent.projectId, userId, raw, email)
+}
+
+/**
+ * POST /tasks/{taskId}/move
+ * body: { newParentId: string | null, sortOrder?: number }
+ * 親変更・並び替え。環・深さ・子孫 WBS 振り直しは updateTask と同等。
+ */
+export async function moveTask(
+  taskId: string,
+  userId: string,
+  body: unknown,
+  email?: string,
+): Promise<Task> {
+  const parsed = moveTaskSchema.safeParse(body)
+  if (!parsed.success) {
+    throw new ValidationError('入力内容をご確認ください', toValidationFields(parsed.error))
+  }
+  const newParentId =
+    parsed.data.newParentId === '' || parsed.data.newParentId === null
+      ? null
+      : parsed.data.newParentId
+
+  const payload: Record<string, unknown> = {
+    parentTaskId: newParentId,
+  }
+  if (parsed.data.sortOrder !== undefined) {
+    payload.sortOrder = parsed.data.sortOrder
+  }
+  return updateTask(taskId, userId, payload, email)
+}
+
+/**
+ * POST /projects/{projectId}/tasks/reorder
+ * 同一親下の sortOrder を一括更新。WBS 番号は変更しない（必要なら renumber を呼ぶ）。
+ */
+export async function reorderSiblingTasks(
+  projectId: string,
+  userId: string,
+  body: unknown,
+  email?: string,
+): Promise<Task[]> {
+  await assertProjectAccess(projectId, userId, email)
+  const parsed = reorderTasksSchema.safeParse(body)
+  if (!parsed.success) {
+    throw new ValidationError('入力内容をご確認ください', toValidationFields(parsed.error))
+  }
+
+  const parentKey =
+    parsed.data.parentTaskId === undefined ||
+    parsed.data.parentTaskId === null ||
+    parsed.data.parentTaskId === ''
+      ? null
+      : parsed.data.parentTaskId
+
+  let projectTasks = (await repository.listTasksByProject(projectId)).filter((t) => !t.isDeleted)
+  const byId = buildById(projectTasks)
+
+  if (parentKey && !byId.has(parentKey)) {
+    throw new ValidationError('親タスクが見つかりません', {
+      parentTaskId: '同一プロジェクト内のタスクを指定してください',
+    })
+  }
+
+  const seen = new Set<string>()
+  for (const item of parsed.data.items) {
+    if (seen.has(item.taskId)) {
+      throw new ValidationError('並べ替えリストに重複があります', {
+        items: `重複: ${item.taskId}`,
+      })
+    }
+    seen.add(item.taskId)
+    const task = byId.get(item.taskId)
+    if (!task) {
+      throw new ValidationError('タスクが見つかりません', {
+        items: `不明な taskId: ${item.taskId}`,
+      })
+    }
+    if (task.projectId !== projectId) {
+      throw new ValidationError('他プロジェクトのタスクは並べ替えできません', {
+        items: item.taskId,
+      })
+    }
+    const taskParent = task.parentTaskId || null
+    if (taskParent !== parentKey) {
+      throw new ValidationError('同一親の子だけを並べ替えできます', {
+        items: `${item.taskId} の親が一致しません`,
+      })
+    }
+  }
+
+  for (const item of parsed.data.items) {
+    await repository.updateTask(item.taskId, { sortOrder: item.sortOrder })
+  }
+
+  return listTasksByProject(projectId, userId, email)
+}
+
+/**
+ * POST /projects/{projectId}/wbs/renumber
+ * 現在の親子・sortOrder に基づきプロジェクト内の wbsCode を全振り直し。
+ * sortOrder も兄弟内 0..n-1 に正規化する。
+ */
+export async function renumberProjectWbs(
+  projectId: string,
+  userId: string,
+  email?: string,
+): Promise<Task[]> {
+  await assertProjectAccess(projectId, userId, email)
+  let projectTasks = (await repository.listTasksByProject(projectId)).filter((t) => !t.isDeleted)
+  // 欠落番号がある状態でも親子順で振り直す
+  const patches = planFullWbsRenumber(projectTasks)
+
+  for (const p of patches) {
+    const cur = projectTasks.find((t) => t.taskId === p.taskId)
+    if (!cur) continue
+    if (cur.wbsCode === p.wbsCode && (cur.sortOrder ?? 0) === p.sortOrder) continue
+    try {
+      await repository.updateTask(p.taskId, {
+        wbsCode: p.wbsCode,
+        sortOrder: p.sortOrder,
+      })
+    } catch {
+      // 続行
+    }
+  }
+
+  return listTasksByProject(projectId, userId, email)
 }

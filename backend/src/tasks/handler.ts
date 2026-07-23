@@ -16,6 +16,38 @@ export async function handler(
     const taskId = getPathParam(event, 'taskId')
     const path = getRequestPath(event)
 
+    // ── プロジェクト配下 ──
+
+    // POST /projects/{projectId}/tasks/reorder
+    if (method === 'POST' && projectId && path.endsWith('/tasks/reorder')) {
+      const tasks = await service.reorderSiblingTasks(
+        projectId,
+        user.userId,
+        parseBody(event),
+        user.email,
+      )
+      logInfo(correlationId, 'タスクの並びを更新しました', {
+        requestId: event.requestContext.requestId,
+        userId: user.userId,
+        resourceId: projectId,
+        action: 'REORDER_TASKS',
+      })
+      return successResponse(200, tasks, correlationId)
+    }
+
+    // POST /projects/{projectId}/wbs/renumber
+    if (method === 'POST' && projectId && path.endsWith('/wbs/renumber')) {
+      const tasks = await service.renumberProjectWbs(projectId, user.userId, user.email)
+      logInfo(correlationId, 'WBS 番号を振り直しました', {
+        requestId: event.requestContext.requestId,
+        userId: user.userId,
+        resourceId: projectId,
+        action: 'RENUMBER_WBS',
+      })
+      return successResponse(200, tasks, correlationId)
+    }
+
+    // GET|POST /projects/{projectId}/tasks
     if (method === 'GET' && projectId && path.endsWith('/tasks')) {
       const tasks = await service.listTasksByProject(projectId, user.userId, user.email)
       logInfo(correlationId, 'タスク一覧を取得しました', {
@@ -38,28 +70,38 @@ export async function handler(
       return successResponse(201, task, correlationId)
     }
 
-    if (method === 'GET' && taskId && !path.includes('/status')) {
-      const task = await service.getTask(taskId, user.userId, user.email)
-      logInfo(correlationId, 'タスク詳細を取得しました', {
+    // ── タスク単体（サブパス優先）──
+
+    // POST /tasks/{taskId}/children
+    if (method === 'POST' && taskId && path.endsWith('/children')) {
+      const task = await service.createChildTask(
+        taskId,
+        user.userId,
+        parseBody(event),
+        user.email,
+      )
+      logInfo(correlationId, '子タスクを作成しました', {
+        requestId: event.requestContext.requestId,
+        userId: user.userId,
+        resourceId: task.taskId,
+        action: 'CREATE_CHILD_TASK',
+      })
+      return successResponse(201, task, correlationId)
+    }
+
+    // POST /tasks/{taskId}/move
+    if (method === 'POST' && taskId && path.endsWith('/move')) {
+      const task = await service.moveTask(taskId, user.userId, parseBody(event), user.email)
+      logInfo(correlationId, 'タスクを移動しました', {
         requestId: event.requestContext.requestId,
         userId: user.userId,
         resourceId: taskId,
-        action: 'GET_TASK',
+        action: 'MOVE_TASK',
       })
       return successResponse(200, task, correlationId)
     }
 
-    if (method === 'PUT' && taskId) {
-      const task = await service.updateTask(taskId, user.userId, parseBody(event), user.email)
-      logInfo(correlationId, 'タスクを更新しました', {
-        requestId: event.requestContext.requestId,
-        userId: user.userId,
-        resourceId: taskId,
-        action: 'UPDATE_TASK',
-      })
-      return successResponse(200, task, correlationId)
-    }
-
+    // PATCH /tasks/{taskId}/status
     if (method === 'PATCH' && taskId && path.endsWith('/status')) {
       const task = await service.updateTaskStatus(taskId, user.userId, parseBody(event), user.email)
       logInfo(correlationId, 'タスクのステータスを更新しました', {
@@ -71,7 +113,51 @@ export async function handler(
       return successResponse(200, task, correlationId)
     }
 
-    if (method === 'DELETE' && taskId) {
+    // GET /tasks/{taskId}（サブパスなし）
+    if (
+      method === 'GET' &&
+      taskId &&
+      !path.includes('/status') &&
+      !path.includes('/children') &&
+      !path.includes('/move') &&
+      !path.includes('/comments') &&
+      !path.includes('/attachments')
+    ) {
+      const task = await service.getTask(taskId, user.userId, user.email)
+      logInfo(correlationId, 'タスク詳細を取得しました', {
+        requestId: event.requestContext.requestId,
+        userId: user.userId,
+        resourceId: taskId,
+        action: 'GET_TASK',
+      })
+      return successResponse(200, task, correlationId)
+    }
+
+    // PUT /tasks/{taskId}
+    if (
+      method === 'PUT' &&
+      taskId &&
+      !path.endsWith('/status') &&
+      !path.endsWith('/children') &&
+      !path.endsWith('/move')
+    ) {
+      const task = await service.updateTask(taskId, user.userId, parseBody(event), user.email)
+      logInfo(correlationId, 'タスクを更新しました', {
+        requestId: event.requestContext.requestId,
+        userId: user.userId,
+        resourceId: taskId,
+        action: 'UPDATE_TASK',
+      })
+      return successResponse(200, task, correlationId)
+    }
+
+    // DELETE /tasks/{taskId}
+    if (
+      method === 'DELETE' &&
+      taskId &&
+      !path.includes('/comments') &&
+      !path.includes('/attachments')
+    ) {
       const task = await service.deleteTask(taskId, user.userId, user.email)
       logInfo(correlationId, 'タスクを削除しました', {
         requestId: event.requestContext.requestId,
