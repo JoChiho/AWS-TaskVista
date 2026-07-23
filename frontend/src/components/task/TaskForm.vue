@@ -12,7 +12,12 @@ import {
 import { useTasksStore } from '@/stores/tasks'
 import { useProjectsStore } from '@/stores/projects'
 import { resolveMemberDisplayName, avatarLabelFromName } from '@/utils/displayName'
-import { isParentTask, parentOptions } from '@/utils/wbs'
+import {
+  breadcrumbPath,
+  childrenOf,
+  depthOfTask,
+  isParentTask,
+} from '@/utils/wbs'
 
 const props = defineProps<{
   projectId: string
@@ -48,8 +53,107 @@ const actualDueDate = ref('')
 const estimatedEffortDays = ref<string>('')
 /** 実績工数（人日）。空文字 = 未設定 */
 const actualEffortDays = ref<string>('')
-/** WBS 親タスク（空 = ルート） */
-const parentTaskId = ref<string | null>(null)
+/**
+ * WBS 親選択（2 段階）
+ * - L1: 第1階層（ルート）から選択
+ * - L2: 選んだ L1 配下の第2階層（任意）
+ * 親として設定されるのは L2 があれば L2、なければ L1、どちらもなければルート
+ */
+const parentL1Id = ref<string | null>(null)
+const parentL2Id = ref<string | null>(null)
+
+/** 提出用の親タスク ID */
+const resolvedParentTaskId = computed<string | null>(() => {
+  if (parentL2Id.value) return parentL2Id.value
+  if (parentL1Id.value) return parentL1Id.value
+  return null
+})
+
+/** 自分と子孫は親候補から除外 */
+function isExcludedAsParent(taskId: string): boolean {
+  const selfId = props.task?.taskId
+  if (!selfId) return false
+  if (taskId === selfId) return true
+  const all = tasksStore.activeTasks
+  const stack = [selfId]
+  const exclude = new Set<string>([selfId])
+  while (stack.length) {
+    const id = stack.pop()!
+    for (const t of all) {
+      if (t.parentTaskId === id && !exclude.has(t.taskId)) {
+        exclude.add(t.taskId)
+        stack.push(t.taskId)
+      }
+    }
+  }
+  return exclude.has(taskId)
+}
+
+const parentL1Options = computed(() => {
+  const roots = childrenOf(tasksStore.activeTasks, null)
+  return roots
+    .filter((t) => !isExcludedAsParent(t.taskId))
+    .map((t) => ({
+      title: `${t.wbsCode ? t.wbsCode + ' ' : ''}${t.title}`,
+      value: t.taskId,
+    }))
+})
+
+const parentL2Options = computed(() => {
+  if (!parentL1Id.value) return []
+  return childrenOf(tasksStore.activeTasks, parentL1Id.value)
+    .filter((t) => !isExcludedAsParent(t.taskId))
+    .map((t) => ({
+      title: `${t.wbsCode ? t.wbsCode + ' ' : ''}${t.title}`,
+      value: t.taskId,
+    }))
+})
+
+/** L1 変更時に L2 をクリア（L2 が新 L1 配下でない場合） */
+watch(parentL1Id, (l1) => {
+  if (!l1) {
+    parentL2Id.value = null
+    return
+  }
+  if (parentL2Id.value) {
+    const stillUnder = childrenOf(tasksStore.activeTasks, l1).some(
+      (t) => t.taskId === parentL2Id.value,
+    )
+    if (!stillUnder) parentL2Id.value = null
+  }
+})
+
+/** 既定親 / 編集中の親から L1・L2 選択を復元 */
+function applyParentCascadeFromParentId(parentId: string | null | undefined) {
+  parentL1Id.value = null
+  parentL2Id.value = null
+  if (!parentId) return
+
+  const all = tasksStore.activeTasks
+  const parent = all.find((t) => t.taskId === parentId)
+  if (!parent) {
+    // 一覧に無い場合でも ID だけ L1 として仮置き
+    parentL1Id.value = parentId
+    return
+  }
+
+  const depth = depthOfTask(parent, all)
+  if (depth <= 0) {
+    // 親が第1層 → L1 のみ
+    parentL1Id.value = parent.taskId
+    return
+  }
+  if (depth === 1) {
+    // 親が第2層 → 祖父母を L1、親を L2
+    parentL1Id.value = parent.parentTaskId ?? null
+    parentL2Id.value = parent.taskId
+    return
+  }
+  // 第3層を親にはできない想定だが、念のため直近の第2層まで
+  const path = breadcrumbPath(parent, all)
+  if (path[0]) parentL1Id.value = path[0].taskId
+  if (path[1]) parentL2Id.value = path[1].taskId
+}
 
 /** 編集中かつ子がある親 → 予定/実績・担当は集計（手入力不可） */
 const scheduleLocked = computed(
@@ -67,10 +171,6 @@ const statusSelectItems = computed(() => {
   }
   return statusOptions
 })
-
-const parentSelectOptions = computed(() =>
-  parentOptions(tasksStore.activeTasks, props.task?.taskId),
-)
 
 const titleRules = [
   (v: string) => !!v || 'タスク名は必須項目です',
@@ -190,7 +290,7 @@ watch(modelValue, async (isOpen) => {
         : ''
     actualEffortDays.value =
       props.task.actualEffortDays != null ? String(props.task.actualEffortDays) : ''
-    parentTaskId.value = props.task.parentTaskId ?? null
+    applyParentCascadeFromParentId(props.task.parentTaskId ?? null)
     // 親は rollup 済み status / 担当を表示
     if (props.task.rollup && (props.task.childCount ?? 0) > 0) {
       status.value = props.task.rollup.status
@@ -211,7 +311,7 @@ watch(modelValue, async (isOpen) => {
     actualDueDate.value = ''
     estimatedEffortDays.value = ''
     actualEffortDays.value = ''
-    parentTaskId.value = props.defaultParentTaskId ?? null
+    applyParentCascadeFromParentId(props.defaultParentTaskId ?? null)
   }
 })
 
@@ -275,9 +375,9 @@ async function handleSubmit() {
             : {}),
           ...(actualEffort !== undefined ? { actualEffortDays: actualEffort } : {}),
         }),
-    // 親: 空文字クリア / 新規: 未選択なら送らない
-    parentTaskId: parentTaskId.value
-      ? parentTaskId.value
+    // 親: L2 優先、なければ L1。未選択ならルート（編集時は null でクリア）
+    parentTaskId: resolvedParentTaskId.value
+      ? resolvedParentTaskId.value
       : props.task
         ? null
         : undefined,
@@ -437,21 +537,49 @@ async function handleSubmit() {
                 variant="outlined"
                 density="comfortable"
               />
-              <v-select
-                v-model="parentTaskId"
-                :items="parentSelectOptions"
-                item-title="title"
-                item-value="value"
-                label="親タスク（WBS）"
-                placeholder="なし（ルート）"
-                clearable
-                hide-details="auto"
-                variant="outlined"
-                density="comfortable"
-                class="parent-select"
-                hint="未選択 = プロジェクト直下。深さは最大 3 階層"
-                persistent-hint
-              />
+            </div>
+            <div class="parent-cascade mt-3">
+              <p class="schedule-form-caption mb-2">親タスク（WBS・段階選択）</p>
+              <!-- meta-fields と同じ 2 列全幅（status / 優先度と揃える） -->
+              <div class="meta-fields parent-cascade-fields">
+                <v-select
+                  v-model="parentL1Id"
+                  :items="parentL1Options"
+                  item-title="title"
+                  item-value="value"
+                  label="第1階層"
+                  placeholder="なし（ルートとして作成）"
+                  clearable
+                  hide-details="auto"
+                  variant="outlined"
+                  density="comfortable"
+                  class="parent-cascade-select"
+                  hint="先に第1階層を選ぶと、その下の第2階層を選べます"
+                  persistent-hint
+                />
+                <v-select
+                  v-model="parentL2Id"
+                  :items="parentL2Options"
+                  item-title="title"
+                  item-value="value"
+                  label="第2階層（任意）"
+                  placeholder="未選択 = 第1階層の直下"
+                  clearable
+                  hide-details="auto"
+                  variant="outlined"
+                  density="comfortable"
+                  class="parent-cascade-select"
+                  :disabled="!parentL1Id"
+                  :hint="
+                    parentL1Id
+                      ? parentL2Options.length
+                        ? '選択すると第2階層の下に作成（第3階層）'
+                        : 'この第1階層に第2階層タスクはありません'
+                      : '第1階層を先に選択してください'
+                  "
+                  persistent-hint
+                />
+              </div>
             </div>
             <v-alert
               v-if="scheduleLocked"
@@ -739,10 +867,26 @@ async function handleSubmit() {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
+  width: 100%;
 }
 
-.parent-select {
-  grid-column: 1 / -1;
+.parent-cascade {
+  width: 100%;
+}
+
+.parent-cascade-fields {
+  width: 100%;
+  grid-template-columns: 1fr 1fr;
+}
+
+.parent-cascade-select {
+  width: 100%;
+  min-width: 0;
+}
+
+.parent-cascade-select :deep(.v-input),
+.parent-cascade-select :deep(.v-field) {
+  width: 100%;
 }
 
 .schedule-form-caption {

@@ -85,13 +85,37 @@ describe('wbs helpers', () => {
     expect(rProg.status).toBe('進行中')
 
     const allDone = [
-      makeTask({ taskId: 'd', status: '完了', estimatedEffortDays: 1 }),
-      makeTask({ taskId: 'e', status: '完了', estimatedEffortDays: 1 }),
+      makeTask({
+        taskId: 'd',
+        status: '完了',
+        estimatedEffortDays: 1,
+        actualDueDate: '2026-08-05',
+      }),
+      makeTask({
+        taskId: 'e',
+        status: '完了',
+        estimatedEffortDays: 1,
+        actualDueDate: '2026-08-12',
+      }),
     ]
     const rDone = computeRollupFromChildren(allDone, 'レビュー待ち')
     expect(rDone.statusMode).toBe('all_done_choice')
     expect(rDone.status).toBe('レビュー待ち')
     expect(rDone.allowedStatuses).toEqual(['完了', 'レビュー待ち'])
+    expect(rDone.actualDueDate).toBe('2026-08-12')
+
+    // 一部のみ完了: 実績終了は親に載せない
+    const partial = [
+      makeTask({
+        taskId: 'f',
+        status: '完了',
+        estimatedEffortDays: 1,
+        actualDueDate: '2026-08-05',
+      }),
+      makeTask({ taskId: 'g', status: '未着手', estimatedEffortDays: 1 }),
+    ]
+    const rPartial = computeRollupFromChildren(partial, '未着手')
+    expect(rPartial.actualDueDate).toBeUndefined()
   })
 
   it('nextWbsCode', () => {

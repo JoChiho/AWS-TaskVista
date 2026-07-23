@@ -119,6 +119,12 @@ function effortOf(t: Task, key: 'estimatedEffortDays' | 'actualEffortDays'): num
   return Math.max(0, Number(v))
 }
 
+/** 工数は単純合計。浮動小数のゴミを避け小数第 1 位まで */
+function roundEffort1(n: number): number {
+  if (!Number.isFinite(n)) return 0
+  return Math.round(Math.max(0, n) * 10) / 10
+}
+
 function completionOf(t: Task): number {
   if (t.completionPercent == null || Number.isNaN(Number(t.completionPercent))) return 0
   return Math.min(100, Math.max(0, Math.round(Number(t.completionPercent))))
@@ -256,15 +262,23 @@ export function computeRollupFromChildren(
 
   const resolved = resolveParentStatus(parentStoredStatus, statuses)
 
+  // 実績終了日: 子がすべて完了してから、子の実績終了の最遅日を採用
+  // （一部の子だけ完了/実績終了がある段階では親に載せない）
+  const allChildrenDone =
+    statuses.length > 0 && statuses.every((s) => s === '完了')
+  const rolledActualDue = allChildrenDone ? maxDate(actualDues) : undefined
+
   return {
     childCount: children.length,
-    estimatedEffortDaysSum: estimatedSum,
-    actualEffortDaysSum: actualSum,
+    // 工数は加重平均ではなく単純合計（小数 1 位）
+    estimatedEffortDaysSum: roundEffort1(estimatedSum),
+    actualEffortDaysSum: roundEffort1(actualSum),
+    // 進捗%は工数加重平均 → 整数（0〜100）
     completionPercent,
     plannedStartDate: minDate(plannedStarts),
     plannedDueDate: maxDate(plannedDues),
     actualStartDate: minDate(actualStarts),
-    actualDueDate: maxDate(actualDues),
+    actualDueDate: rolledActualDue,
     status: resolved.status,
     statusMode: resolved.mode,
     allowedStatuses: resolved.allowedStatuses,

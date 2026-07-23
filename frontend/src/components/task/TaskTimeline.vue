@@ -186,7 +186,12 @@ const rows = computed<TimelineRow[]>(() => {
       schedule,
       leftPx: visibleStart * dayWidth.value,
       widthPx: Math.max(widthPx, 10),
-      progress: normalizeCompletion(task.completionPercent),
+      progress: normalizeCompletion(
+        // 親は rollup 加重進捗
+        task.rollup && (task.childCount ?? 0) > 0
+          ? task.rollup.completionPercent
+          : task.completionPercent,
+      ),
       assignees: resolveAssigneeLabels(task).join('、') || '未割り当て',
       dueLeftPx,
       rangeLabel: startStr && endStr ? `${startStr}〜${endStr}` : startStr,

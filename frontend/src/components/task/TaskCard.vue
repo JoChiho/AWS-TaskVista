@@ -16,6 +16,7 @@ import {
   isPlannedDueOverdue,
   isPlannedDueSoon,
 } from '@/types/task'
+import { displaySchedule } from '@/utils/wbs'
 import {
   resolveAssigneeLabels,
   resolveReviewerLabels,
@@ -82,8 +83,9 @@ function isDueSoon(dueDate?: string): boolean {
   return isPlannedDueSoon(dueDate, props.task.status)
 }
 
+/** 親は rollup 加重進捗を表示 */
 function progress(task: Task): number {
-  return normalizeCompletion(task.completionPercent)
+  return normalizeCompletion(displaySchedule(task).completionPercent)
 }
 
 /** アバターは姓のみ（フルネームから姓を抽出） */
@@ -134,7 +136,10 @@ function onBodyClick() {
           レビュー依頼
         </div>
         <p class="text-body-2 font-weight-medium mb-1 task-title">
-          {{ task.title }}
+          <span
+            v-if="task.wbsCode"
+            class="task-wbs text-caption font-weight-bold text-medium-emphasis mr-1"
+          >{{ task.wbsCode }}</span>{{ task.title }}
         </p>
 
         <div v-if="task.requirement" class="mb-2">
@@ -335,6 +340,11 @@ function onBodyClick() {
   overflow: hidden;
   line-height: 1.4;
   word-break: break-word;
+}
+
+.task-wbs {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .task-requirement {

@@ -67,6 +67,28 @@ export function filterLeafTasks(tasks: Task[]): Task[] {
   return activeTasksList(tasks).filter((t) => isLeafTask(t, tasks))
 }
 
+/**
+ * かんばん表示範囲
+ * - leaf: 最小単位（子のないタスク）のみ
+ * - level: 指定階層のみ（1=第1層 … 3=第3層）
+ * - all: 全タスク
+ */
+export type KanbanScopeMode = 'leaf' | 'level' | 'all'
+
+export function matchesKanbanScope(
+  task: Task,
+  all: Task[],
+  mode: KanbanScopeMode,
+  level: 1 | 2 | 3 = 1,
+): boolean {
+  if (task.isDeleted) return false
+  if (mode === 'all') return true
+  if (mode === 'leaf') return isLeafTask(task, all)
+  // level: depth 0 → 第1層
+  const depth = depthOfTask(task, all)
+  return depth === level - 1
+}
+
 export function breadcrumbPath(task: Task, all: Task[]): Task[] {
   const byId = new Map(all.map((t) => [t.taskId, t]))
   const path: Task[] = []
@@ -89,6 +111,12 @@ function effortOf(t: Task, key: 'estimatedEffortDays' | 'actualEffortDays'): num
   const v = t[key]
   if (v == null || Number.isNaN(Number(v))) return 0
   return Math.max(0, Number(v))
+}
+
+/** 工数は単純合計。浮動小数のゴミを避け小数第 1 位まで */
+function roundEffort1(n: number): number {
+  if (!Number.isFinite(n)) return 0
+  return Math.round(Math.max(0, n) * 10) / 10
 }
 
 function completionOf(t: Task): number {
@@ -247,15 +275,22 @@ export function computeRollupFromChildren(
 
   const resolved = resolveParentStatus(parentStoredStatus, statuses)
 
+  // 実績終了日: 子がすべて完了してから、子の実績終了の最遅日を採用
+  const allChildrenDone =
+    statuses.length > 0 && statuses.every((s) => s === '完了')
+  const rolledActualDue = allChildrenDone ? maxDate(actualDues) : undefined
+
   return {
     childCount: children.length,
-    estimatedEffortDaysSum: estimatedSum,
-    actualEffortDaysSum: actualSum,
+    // 工数は加重平均ではなく単純合計（小数 1 位）
+    estimatedEffortDaysSum: roundEffort1(estimatedSum),
+    actualEffortDaysSum: roundEffort1(actualSum),
+    // 進捗%は工数加重平均 → 整数（0〜100）
     completionPercent,
     plannedStartDate: minDate(plannedStarts),
     plannedDueDate: maxDate(plannedDues),
     actualStartDate: minDate(actualStarts),
-    actualDueDate: maxDate(actualDues),
+    actualDueDate: rolledActualDue,
     status: resolved.status,
     statusMode: resolved.mode,
     allowedStatuses: resolved.allowedStatuses,
@@ -392,8 +427,14 @@ export function displaySchedule(task: Task): {
       plannedDueDate: r?.plannedDueDate,
       actualStartDate: r?.actualStartDate,
       actualDueDate: r?.actualDueDate,
-      estimatedEffortDays: r?.estimatedEffortDaysSum,
-      actualEffortDays: r?.actualEffortDaysSum,
+      estimatedEffortDays:
+        r?.estimatedEffortDaysSum != null
+          ? roundEffort1(r.estimatedEffortDaysSum)
+          : undefined,
+      actualEffortDays:
+        r?.actualEffortDaysSum != null
+          ? roundEffort1(r.actualEffortDaysSum)
+          : undefined,
       completionPercent: r?.completionPercent ?? 0,
       isRollup: true,
     }
@@ -403,8 +444,14 @@ export function displaySchedule(task: Task): {
     plannedDueDate: task.plannedDueDate ?? task.dueDate,
     actualStartDate: task.actualStartDate,
     actualDueDate: task.actualDueDate,
-    estimatedEffortDays: task.estimatedEffortDays,
-    actualEffortDays: task.actualEffortDays,
+    estimatedEffortDays:
+      task.estimatedEffortDays != null
+        ? roundEffort1(Number(task.estimatedEffortDays))
+        : undefined,
+    actualEffortDays:
+      task.actualEffortDays != null
+        ? roundEffort1(Number(task.actualEffortDays))
+        : undefined,
     completionPercent: completionOf(task),
     isRollup: false,
   }
