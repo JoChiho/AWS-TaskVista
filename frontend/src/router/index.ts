@@ -55,6 +55,13 @@ const router = createRouter({
       meta: { requiresAuth: true },
     },
     {
+      // WBS 構成（マインドマップ型ツリー）
+      path: '/projects/:projectId/wbs',
+      name: 'task-wbs',
+      component: () => import('@/views/TaskWbsView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
       // 存在しないページへのフォールバック
       path: '/:pathMatch(.*)*',
       redirect: '/',

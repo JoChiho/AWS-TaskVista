@@ -22,10 +22,11 @@ export type WbsSortOrder = 'asc' | 'desc'
 
 /**
  * 同階層の並び（表示用。WBS 番号そのものは変えない）
- * - wbs: WBS 番号 → sortOrder → 作成日
+ * - wbs: WBS 番号 → sortOrder → 作成日（詳細マップ・甘特 WBS 順）
+ * - sortOrder: sortOrder → 作成日（構成編集：DnD 後の並びを維持）
  * - plannedStart: 予定開始日 → 予定終了日 → WBS（甘特の既定）
  */
-export type SiblingSortMode = 'wbs' | 'plannedStart'
+export type SiblingSortMode = 'wbs' | 'sortOrder' | 'plannedStart'
 
 /** WBS 番号の自然順比較（1 < 1.2 < 2、欠落は末尾） */
 export function compareWbsCode(a?: string | null, b?: string | null): number {
@@ -60,6 +61,16 @@ function compareWbsThenSortOrder(
   return (a.createdAt || '').localeCompare(b.createdAt || '') * dir
 }
 
+function compareSortOrderOnly(a: Task, b: Task, dir: number): number {
+  const ao = a.sortOrder ?? 0
+  const bo = b.sortOrder ?? 0
+  if (ao !== bo) return (ao - bo) * dir
+  // 同値時は WBS → 作成日で安定（振り直し前の一時状態でも破綻しにくい）
+  const byWbs = compareWbsCode(a.wbsCode, b.wbsCode)
+  if (byWbs !== 0) return byWbs * dir
+  return (a.createdAt || '').localeCompare(b.createdAt || '') * dir
+}
+
 export function childrenOf(
   tasks: Task[],
   parentId: string | null | undefined,
@@ -81,6 +92,9 @@ export function childrenOf(
         if (!ad && bd) return 1
         if (ad && !bd) return -1
         return compareWbsThenSortOrder(a, b, 1)
+      }
+      if (siblingSort === 'sortOrder') {
+        return compareSortOrderOnly(a, b, dir)
       }
       return compareWbsThenSortOrder(a, b, dir)
     })
@@ -626,4 +640,61 @@ export function includeAncestors(tasks: Task[], matchedIds: Set<string>): Task[]
 export function collectParentIds(tasks: Task[]): string[] {
   const active = activeTasksList(tasks)
   return active.filter((t) => hasChildren(t, active)).map((t) => t.taskId)
+}
+
+/**
+ * フロントの深さ（ルート=0）上限。
+ * バックエンド WBS_MAX_DEPTH=3（ルート=1）と同等 → 第1〜第3層。
+ */
+export const WBS_MAX_DEPTH_INDEX = 2
+
+/** サブツリー高さ（自身含む。葉=1） */
+export function subtreeHeight(task: Task, all: Task[]): number {
+  const kids = childrenOf(all, task.taskId, 'asc', 'wbs')
+  if (!kids.length) return 1
+  let max = 0
+  for (const k of kids) {
+    max = Math.max(max, subtreeHeight(k, all))
+  }
+  return 1 + max
+}
+
+/** 同一親下の直前兄弟（WBS 順） */
+export function previousSibling(
+  task: Task,
+  all: Task[],
+  siblingSort: SiblingSortMode = 'wbs',
+): Task | null {
+  const siblings = childrenOf(all, task.parentTaskId ?? null, 'asc', siblingSort)
+  const idx = siblings.findIndex((t) => t.taskId === task.taskId)
+  if (idx <= 0) return null
+  return siblings[idx - 1] ?? null
+}
+
+/** 子を追加できるか（第3層には子を付けられない） */
+export function canAddChild(task: Task, all: Task[]): boolean {
+  return depthOfTask(task, all) < WBS_MAX_DEPTH_INDEX
+}
+
+/**
+ * 字下げ（直前兄弟の子にする）可能か
+ * - 直前兄弟がいる
+ * - 移動後の最大深さが L3 以内
+ */
+export function canIndent(
+  task: Task,
+  all: Task[],
+  siblingSort: SiblingSortMode = 'wbs',
+): boolean {
+  const prev = previousSibling(task, all, siblingSort)
+  if (!prev) return false
+  // 新 depth(task) = depth(prev) + 1；子孫も +1 相当
+  const newRootDepth = depthOfTask(prev, all) + 1
+  const maxDepthAfter = newRootDepth + subtreeHeight(task, all) - 1
+  return maxDepthAfter <= WBS_MAX_DEPTH_INDEX
+}
+
+/** 字上げ（親の兄弟にする）可能か — ルート以外 */
+export function canOutdent(task: Task): boolean {
+  return Boolean(task.parentTaskId)
 }

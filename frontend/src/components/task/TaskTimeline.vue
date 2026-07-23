@@ -40,7 +40,10 @@ import {
   isLeafTask,
   type SiblingSortMode,
 } from '@/utils/wbs'
-import { resolveAssigneeLabels } from '@/utils/displayName'
+import {
+  avatarLabelFromName,
+  resolveAssigneeLabels,
+} from '@/utils/displayName'
 
 const DND_MIME = 'application/x-taskvista-task-id'
 
@@ -148,30 +151,61 @@ interface TimelineRow {
   statusTone: 'done' | 'progress' | 'todo' | 'hold' | 'review'
 }
 
+type LabelMetaSeg = {
+  kind: 'status' | 'assignee' | 'metric'
+  text: string
+}
+
+/** 担当表示: 姓のみ（複数は 姓+N）。フルネームは title 用 row.assignees */
+function assigneeMetaLabel(row: TimelineRow): string {
+  const labels = resolveAssigneeLabels(row.task)
+  if (!labels.length && row.task.rollup?.assignees?.length) {
+    for (const a of row.task.rollup.assignees) {
+      const n = a.displayName?.trim() || a.userId
+      if (n) labels.push(n)
+    }
+  }
+  if (!labels.length) return '未担当'
+  const families = labels.map((n) => avatarLabelFromName(n) || n)
+  if (families.length === 1) return families[0]!
+  return `${families[0]}+${families.length - 1}`
+}
+
 /**
  * 左列タスク名下のメタ行（ビュー別）
- * 進捗: status ｜ 進捗 n%
- * 予定: status ｜ 予 n人日
- * 実績: status ｜ 実 n人日
- * 対照: status ｜ 予 n ｜ 実 n
+ * 進捗: status ｜ 担当 ｜ 進捗 n%
+ * 予定: status ｜ 担当 ｜ 予 n人日
+ * 実績: status ｜ 担当 ｜ 実 n人日
+ * 対照: status ｜ 担当 ｜ 予 n ｜ 実 n
  */
-function labelMetaSegments(row: TimelineRow): string[] {
-  const segs: string[] = [row.task.status]
+function labelMetaSegments(row: TimelineRow): LabelMetaSeg[] {
+  const segs: LabelMetaSeg[] = [
+    { kind: 'status', text: row.task.status },
+    { kind: 'assignee', text: assigneeMetaLabel(row) },
+  ]
   if (dateMode.value === 'progress') {
-    segs.push(`進捗 ${row.progress}%`)
+    segs.push({ kind: 'metric', text: `進捗 ${row.progress}%` })
     return segs
   }
   if (dateMode.value === 'planned') {
-    if (row.plannedEffortText) segs.push(`予 ${row.plannedEffortText}人日`)
+    if (row.plannedEffortText) {
+      segs.push({ kind: 'metric', text: `予 ${row.plannedEffortText}人日` })
+    }
     return segs
   }
   if (dateMode.value === 'actual') {
-    if (row.actualEffortText) segs.push(`実 ${row.actualEffortText}人日`)
+    if (row.actualEffortText) {
+      segs.push({ kind: 'metric', text: `実 ${row.actualEffortText}人日` })
+    }
     return segs
   }
   // 対照
-  if (row.plannedEffortText) segs.push(`予 ${row.plannedEffortText}`)
-  if (row.actualEffortText) segs.push(`実 ${row.actualEffortText}`)
+  if (row.plannedEffortText) {
+    segs.push({ kind: 'metric', text: `予 ${row.plannedEffortText}` })
+  }
+  if (row.actualEffortText) {
+    segs.push({ kind: 'metric', text: `実 ${row.actualEffortText}` })
+  }
   return segs
 }
 
@@ -634,7 +668,19 @@ const rows = computed<TimelineRow[]>(() => {
       depth,
       isParent,
       progress,
-      assignees: resolveAssigneeLabels(task).join('、') || '未割り当て',
+      assignees: (() => {
+        const labels = resolveAssigneeLabels(task)
+        if (labels.length) return labels.join('、')
+        if (task.rollup?.assignees?.length) {
+          return (
+            task.rollup.assignees
+              .map((a) => a.displayName?.trim() || a.userId)
+              .filter(Boolean)
+              .join('、') || '未担当'
+          )
+        }
+        return '未担当'
+      })(),
       plannedEffortText: formatEffortLabel(plannedEffort),
       actualEffortText: formatEffortLabel(actualEffort),
       planned,
@@ -1469,7 +1515,14 @@ const cssVars = computed(() => ({
               }}</span>
               <span class="label-title">{{ row.task.title }}</span>
             </div>
-            <div class="label-meta">
+            <div
+              class="label-meta"
+              :title="`${row.task.status} ｜ ${row.assignees}${
+                dateMode === 'progress'
+                  ? ` ｜ 進捗 ${row.progress}%`
+                  : ''
+              }`"
+            >
               <span
                 class="status-dot"
                 :class="`dot-${STATUS_COLORS[row.task.status]}`"
@@ -1481,8 +1534,12 @@ const cssVars = computed(() => ({
                 <span v-if="si > 0" class="meta-sep" aria-hidden="true">｜</span>
                 <span
                   class="meta-seg"
-                  :class="{ 'is-status': si === 0 }"
-                >{{ seg }}</span>
+                  :class="{
+                    'is-status': seg.kind === 'status',
+                    'is-assignee': seg.kind === 'assignee',
+                    'is-metric': seg.kind === 'metric',
+                  }"
+                >{{ seg.text }}</span>
               </template>
             </div>
             <div
@@ -2200,10 +2257,22 @@ const cssVars = computed(() => ({
 }
 .meta-seg {
   white-space: nowrap;
+  max-width: 9em;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .meta-seg.is-status {
   font-weight: 600;
   color: rgba(var(--v-theme-on-surface), 0.72);
+  max-width: none;
+}
+.meta-seg.is-assignee {
+  font-weight: 600;
+  color: rgba(var(--v-theme-on-surface), 0.62);
+}
+.meta-seg.is-metric {
+  font-variant-numeric: tabular-nums;
+  color: rgba(var(--v-theme-on-surface), 0.55);
 }
 .status-dot {
   width: 7px;

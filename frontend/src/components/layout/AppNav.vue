@@ -18,11 +18,12 @@ const currentProjectId = computed(() => route.params.projectId as string | undef
 // プロジェクト詳細ページかどうかを判定する
 const isProjectPage = computed(() => !!currentProjectId.value)
 
-// 現在のビューモードを判定する（かんばん / テーブル / ガント）
+// 現在のビューモードを判定する
 const currentView = computed(() => {
   if (route.name === 'task-board') return 'board'
   if (route.name === 'task-table') return 'table'
   if (route.name === 'task-timeline') return 'timeline'
+  if (route.name === 'task-wbs') return 'wbs'
   return null
 })
 
@@ -44,6 +45,13 @@ function switchToTable() {
 function switchToTimeline() {
   if (currentProjectId.value) {
     router.push({ name: 'task-timeline', params: { projectId: currentProjectId.value } })
+  }
+}
+
+/** WBS 構成ビューに切り替える */
+function switchToWbs() {
+  if (currentProjectId.value) {
+    router.push({ name: 'task-wbs', params: { projectId: currentProjectId.value } })
   }
 }
 
@@ -90,6 +98,14 @@ const userInitials = computed(() => authStore.avatarLabel || '?')
         @click="switchToTimeline"
       >
         ガント
+      </v-btn>
+      <v-btn
+        :variant="currentView === 'wbs' ? 'tonal' : 'text'"
+        prepend-icon="mdi-file-tree"
+        :color="currentView === 'wbs' ? 'primary' : undefined"
+        @click="switchToWbs"
+      >
+        構成
       </v-btn>
     </template>
 

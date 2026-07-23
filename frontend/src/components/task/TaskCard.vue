@@ -64,16 +64,49 @@ const reviewerLabels = computed(() => {
   return resolveReviewerLabels(props.task)
 })
 
-const plannedStart = computed(() => getPlannedStartDate(props.task))
-const plannedDue = computed(() => getPlannedDueDate(props.task))
+const schedule = computed(() => displaySchedule(props.task))
 
-function formatDueDate(dueDate: string): string {
-  const d = new Date(dueDate)
+/** 親は rollup 日程、葉は自身（displaySchedule 経由） */
+const plannedStart = computed(
+  () => schedule.value.plannedStartDate || getPlannedStartDate(props.task),
+)
+const plannedDue = computed(
+  () => schedule.value.plannedDueDate || getPlannedDueDate(props.task),
+)
+
+/** 構成マインドマップと同じ MM/DD */
+function shortMd(iso?: string | null): string {
+  if (!iso) return ''
+  // YYYY-MM-DD を優先（タイムゾーンずれを避ける）
+  const raw = iso.slice(0, 10)
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    return `${raw.slice(5, 7)}/${raw.slice(8, 10)}`
+  }
+  const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return ''
   const m = String(d.getMonth() + 1).padStart(2, '0')
   const day = String(d.getDate()).padStart(2, '0')
-  return `${m}.${day}`
+  return `${m}/${day}`
 }
+
+/** 予定期間: 07/22→07/28（片方だけでも可） */
+const plannedRangeText = computed(() => {
+  const s = shortMd(plannedStart.value)
+  const e = shortMd(plannedDue.value)
+  if (s && e) return `${s}→${e}`
+  if (s) return `${s}→`
+  if (e) return `→${e}`
+  return ''
+})
+
+const plannedRangeTitle = computed(() => {
+  const s = shortMd(plannedStart.value)
+  const e = shortMd(plannedDue.value)
+  if (s && e) return `予定 ${s} → ${e}`
+  if (s) return `予定開始 ${s}`
+  if (e) return `予定終了 ${e}`
+  return '日程未設定'
+})
 
 function isOverdue(dueDate?: string): boolean {
   return isPlannedDueOverdue(dueDate, props.task.status)
@@ -87,6 +120,16 @@ function isDueSoon(dueDate?: string): boolean {
 function progress(task: Task): number {
   return normalizeCompletion(displaySchedule(task).completionPercent)
 }
+
+/** 予/実 工数（構成ビューと同じ略記） */
+const effortHint = computed(() => {
+  const est = schedule.value.estimatedEffortDays
+  const act = schedule.value.actualEffortDays
+  const parts: string[] = []
+  if (est != null) parts.push(`予${est}`)
+  if (act != null) parts.push(`実${act}`)
+  return parts.join(' ')
+})
 
 /** アバターは姓のみ（フルネームから姓を抽出） */
 function avatarText(fullName: string): string {
@@ -205,21 +248,11 @@ function onBodyClick() {
 
           <v-spacer />
 
+          <!-- 予定期間: 構成ビューと同じ 07/22→07/28 -->
           <span
-            v-if="plannedStart"
-            class="text-caption text-medium-emphasis"
-            :title="`予定開始 ${formatDueDate(plannedStart)}`"
-          >
-            <v-icon size="10" class="mr-1">mdi-play-circle-outline</v-icon>
-            {{ formatDueDate(plannedStart) }}
-            <template v-if="task.estimatedEffortDays != null">
-              · 予{{ task.estimatedEffortDays }}人日
-            </template>
-          </span>
-
-          <span
-            v-if="plannedDue"
-            class="text-caption"
+            v-if="plannedRangeText"
+            class="text-caption planned-range"
+            :title="plannedRangeTitle"
             :class="{
               'text-error font-weight-bold': isOverdue(plannedDue),
               'text-warning font-weight-bold':
@@ -228,8 +261,11 @@ function onBodyClick() {
                 !isOverdue(plannedDue) && !isDueSoon(plannedDue),
             }"
           >
-            <v-icon size="10" class="mr-1">mdi-calendar</v-icon>
-            {{ formatDueDate(plannedDue) }}
+            <v-icon size="12" class="mr-1">mdi-calendar-range</v-icon>
+            {{ plannedRangeText }}
+            <template v-if="effortHint">
+              <span class="planned-effort"> · {{ effortHint }}</span>
+            </template>
           </span>
         </div>
 
@@ -345,6 +381,18 @@ function onBodyClick() {
 .task-wbs {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+.planned-range {
+  display: inline-flex;
+  align-items: center;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  letter-spacing: 0.01em;
+}
+.planned-effort {
+  font-weight: 600;
+  opacity: 0.85;
 }
 
 .task-requirement {

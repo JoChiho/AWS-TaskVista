@@ -371,6 +371,7 @@ export const useTasksStore = defineStore('tasks', () => {
   async function moveTask(
     taskId: string,
     payload: { newParentId: string | null; sortOrder?: number | null },
+    options?: { silent?: boolean },
   ): Promise<Task> {
     try {
       const updated = await tasksApi.moveTask(taskId, payload)
@@ -379,22 +380,27 @@ export const useTasksStore = defineStore('tasks', () => {
       if (currentProjectId.value) {
         await fetchTasks(currentProjectId.value)
       }
-      uiStore.showSuccess('タスクを移動しました')
+      if (!options?.silent) {
+        uiStore.showSuccess('タスクを移動しました')
+      }
       return updated
     } catch (error: unknown) {
-      uiStore.showError('タスクの移動に失敗しました')
+      if (!options?.silent) {
+        uiStore.showError('タスクの移動に失敗しました')
+      }
       console.error('タスク移動エラー:', error)
       throw error
     }
   }
 
-  /** 同一親下の並べ替え */
+  /** 同一親下の並べ替え（WBS 番号は変えない） */
   async function reorderTasks(
     projectId: string,
     payload: {
       parentTaskId?: string | null
       items: Array<{ taskId: string; sortOrder: number }>
     },
+    options?: { silent?: boolean },
   ): Promise<void> {
     try {
       const list = await tasksApi.reorderTasks(projectId, payload)
@@ -405,7 +411,9 @@ export const useTasksStore = defineStore('tasks', () => {
         saveCache(projectId)
       }
     } catch (error: unknown) {
-      uiStore.showError('並び順の更新に失敗しました')
+      if (!options?.silent) {
+        uiStore.showError('並び順の更新に失敗しました')
+      }
       console.error('タスク並べ替えエラー:', error)
       throw error
     }
