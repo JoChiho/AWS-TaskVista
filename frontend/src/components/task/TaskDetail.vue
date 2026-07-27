@@ -14,6 +14,9 @@ import {
   getPlannedDueDate,
   getPlannedStartDate,
   isPlannedDueOverdue,
+  type Attachment,
+  type DeliverableCheckItem,
+  type Task,
 } from '@/types/task'
 import CommentThread from '@/components/comment/CommentThread.vue'
 import TaskForm from './TaskForm.vue'
@@ -32,6 +35,12 @@ import {
   displaySchedule,
   isParentTask,
 } from '@/utils/wbs'
+import {
+  completeBlockMessage,
+  newCheckItem,
+  reviewSoftWarnMessage,
+} from '@/utils/deliverable'
+import { useAuthStore } from '@/stores/auth'
 
 const props = defineProps<{
   projectId: string
@@ -41,13 +50,19 @@ const modelValue = defineModel<boolean>({ default: false })
 const tasksStore = useTasksStore()
 const commentsStore = useCommentsStore()
 const uiStore = useUiStore()
+const authStore = useAuthStore()
 
 const showEditForm = ref(false)
 const showDeleteConfirm = ref(false)
 const isUploading = ref(false)
 const isSavingProgress = ref(false)
+const isSavingDeliverable = ref(false)
 /** 詳細画面上の完了度スライダー（即時反映用） */
 const localCompletion = ref(0)
+/** 添付時に成果物として提出するか */
+const uploadAsDeliverable = ref(false)
+/** 選択済み・未アップロードのファイル（即時 API しない） */
+const pendingUploadFile = ref<File | null>(null)
 
 const task = computed(() => tasksStore.currentTask)
 
@@ -92,6 +107,48 @@ const childTasks = computed(() => {
 const isParent = computed(
   () => !!(task.value && isParentTask(task.value, tasksStore.activeTasks)),
 )
+
+/** 子孫タスクから集めた成果物ファイル（親詳細用・通常添付は含めない） */
+const descendantDeliverables = computed(() => {
+  if (!task.value || !isParent.value) return [] as Array<{
+    attachment: Attachment
+    source: Task
+  }>
+  const rootId = task.value.taskId
+  const all = tasksStore.activeTasks
+  const byParent = new Map<string, Task[]>()
+  for (const t of all) {
+    const key = t.parentTaskId || ''
+    if (!byParent.has(key)) byParent.set(key, [])
+    byParent.get(key)!.push(t)
+  }
+  const descendants: Task[] = []
+  const stack = [...(byParent.get(rootId) ?? [])]
+  while (stack.length) {
+    const cur = stack.pop()!
+    descendants.push(cur)
+    const kids = byParent.get(cur.taskId)
+    if (kids?.length) stack.push(...kids)
+  }
+  const out: Array<{ attachment: Attachment; source: Task }> = []
+  for (const t of descendants) {
+    for (const a of t.attachments ?? []) {
+      if (a.kind === 'deliverable') {
+        out.push({ attachment: a, source: t })
+      }
+    }
+  }
+  // WBS 順っぽく: ソースの wbs → ファイル名
+  out.sort((a, b) => {
+    const wa = a.source.wbsCode || ''
+    const wb = b.source.wbsCode || ''
+    if (wa !== wb) {
+      return wa.localeCompare(wb, undefined, { numeric: true })
+    }
+    return a.attachment.filename.localeCompare(b.attachment.filename, 'ja')
+  })
+  return out
+})
 
 /**
  * 実績 vs 予定の比較クラス
@@ -226,39 +283,169 @@ async function commitCompletion(value: number) {
   // レビュー待ち・保留は完了度を変えてもステータス維持
   const nextStatus = resolveStatusAfterCompletionChange(next, task.value.status)
 
+  if (nextStatus === '完了' || (next === 100 && nextStatus === '完了')) {
+    const block = completeBlockMessage(task.value)
+    if (block) {
+      localCompletion.value = normalizeCompletion(task.value.completionPercent)
+      uiStore.showError(block)
+      return
+    }
+  }
+
   isSavingProgress.value = true
   try {
     await tasksStore.updateTask(task.value.taskId, {
       completionPercent: next,
       ...(nextStatus !== task.value.status ? { status: nextStatus } : {}),
     })
-  } catch {
+  } catch (e: unknown) {
     localCompletion.value = normalizeCompletion(task.value.completionPercent)
-    uiStore.showError('進捗の更新に失敗しました')
+    const msg =
+      e && typeof e === 'object' && 'response' in e
+        ? // axios-style
+          String(
+            (e as { response?: { data?: { error?: { message?: string } } } })
+              .response?.data?.error?.message || '進捗の更新に失敗しました',
+          )
+        : '進捗の更新に失敗しました'
+    uiStore.showError(msg)
   } finally {
     isSavingProgress.value = false
   }
 }
 
-async function handleFileUpload(file: File) {
+async function persistDeliverable(
+  patch: {
+    deliverableEnabled?: boolean
+    deliverableChecklist?: DeliverableCheckItem[]
+  },
+): Promise<boolean> {
+  if (!task.value || isParent.value) return false
+  isSavingDeliverable.value = true
+  try {
+    await tasksStore.updateTask(task.value.taskId, patch)
+    return true
+  } catch (e: unknown) {
+    const msg =
+      e && typeof e === 'object' && 'response' in e
+        ? String(
+            (e as { response?: { data?: { error?: { message?: string } } } })
+              .response?.data?.error?.message || '成果物の更新に失敗しました',
+          )
+        : '成果物の更新に失敗しました'
+    uiStore.showError(msg)
+    await tasksStore.fetchTask(task.value.taskId)
+    return false
+  } finally {
+    isSavingDeliverable.value = false
+  }
+}
+
+async function onToggleDeliverableEnabled(enabled: boolean | null) {
+  if (!task.value || enabled == null) return
+  const checklist =
+    enabled && !(task.value.deliverableChecklist?.length)
+      ? [newCheckItem('成果物を確認した')]
+      : task.value.deliverableChecklist
+  await persistDeliverable({
+    deliverableEnabled: enabled,
+    ...(enabled && checklist ? { deliverableChecklist: checklist } : {}),
+  })
+}
+
+async function onToggleCheckItem(item: DeliverableCheckItem, done: boolean | null) {
+  if (!task.value || done == null) return
+  const list = [...(task.value.deliverableChecklist ?? [])]
+  const idx = list.findIndex((i) => i.itemId === item.itemId)
+  if (idx < 0) return
+  const uid = authStore.currentUser?.sub
+  list[idx] = {
+    ...list[idx]!,
+    done,
+    doneAt: done ? new Date().toISOString() : undefined,
+    doneBy: done ? uid : undefined,
+  }
+  await persistDeliverable({ deliverableChecklist: list })
+}
+
+async function onAddCheckItem() {
   if (!task.value) return
+  const list = [...(task.value.deliverableChecklist ?? [])]
+  const item = newCheckItem()
+  item.sortOrder = list.length
+  list.push(item)
+  await persistDeliverable({
+    deliverableEnabled: true,
+    deliverableChecklist: list,
+  })
+}
+
+async function onRemoveCheckItem(itemId: string) {
+  if (!task.value) return
+  const list = (task.value.deliverableChecklist ?? []).filter(
+    (i) => i.itemId !== itemId,
+  )
+  await persistDeliverable({ deliverableChecklist: list })
+}
+
+async function onRenameCheckItem(item: DeliverableCheckItem, title: string) {
+  if (!task.value) return
+  const t = title.trim()
+  if (!t || t === item.title) return
+  const list = (task.value.deliverableChecklist ?? []).map((i) =>
+    i.itemId === item.itemId ? { ...i, title: t } : i,
+  )
+  await persistDeliverable({ deliverableChecklist: list })
+}
+
+async function onToggleRequired(item: DeliverableCheckItem, required: boolean | null) {
+  if (!task.value || required == null) return
+  const list = (task.value.deliverableChecklist ?? []).map((i) =>
+    i.itemId === item.itemId ? { ...i, required } : i,
+  )
+  await persistDeliverable({ deliverableChecklist: list })
+}
+
+function onPickUploadFile(files: File | File[] | null) {
+  const file = Array.isArray(files) ? files[0] : files
+  if (!file) {
+    pendingUploadFile.value = null
+    return
+  }
   const MAX_SIZE = 50 * 1024 * 1024
   if (file.size > MAX_SIZE) {
     uiStore.showError('ファイルサイズが上限（50MB）を超えています')
+    pendingUploadFile.value = null
     return
   }
+  pendingUploadFile.value = file
+}
+
+function clearPendingUpload() {
+  pendingUploadFile.value = null
+}
+
+async function confirmUploadPending() {
+  const file = pendingUploadFile.value
+  if (!task.value || !file) return
 
   isUploading.value = true
   try {
     const { uploadUrl } = await getUploadUrl(task.value.taskId, {
       filename: file.name,
-      contentType: file.type,
+      contentType: file.type || 'application/octet-stream',
       sizeBytes: file.size,
+      kind: uploadAsDeliverable.value ? 'deliverable' : 'general',
     })
     await axios.put(uploadUrl, file, {
-      headers: { 'Content-Type': file.type },
+      headers: { 'Content-Type': file.type || 'application/octet-stream' },
     })
-    uiStore.showSuccess('ファイルをアップロードしました')
+    uiStore.showSuccess(
+      uploadAsDeliverable.value
+        ? '成果物をアップロードしました'
+        : 'ファイルをアップロードしました',
+    )
+    pendingUploadFile.value = null
     await tasksStore.fetchTask(task.value.taskId)
   } catch {
     uiStore.showError('ファイルのアップロードに失敗しました')
@@ -267,10 +454,11 @@ async function handleFileUpload(file: File) {
   }
 }
 
-async function handleDownload(attachmentId: string) {
-  if (!task.value) return
+async function handleDownload(attachmentId: string, ownerTaskId?: string) {
+  const tid = ownerTaskId || task.value?.taskId
+  if (!tid) return
   try {
-    const downloadUrl = await getDownloadUrl(task.value.taskId, attachmentId)
+    const downloadUrl = await getDownloadUrl(tid, attachmentId)
     window.open(downloadUrl, '_blank')
   } catch {
     uiStore.showError('ダウンロード URL の取得に失敗しました')
@@ -686,11 +874,178 @@ function initials(name: string): string {
 
         <v-divider class="mb-4 mx-5" />
 
-        <!-- 添付 -->
-        <section class="detail-section mx-5 mb-4">
+        <!-- 成果物チェック（任意・葉のみ） -->
+        <section v-if="!isParent" class="detail-section mx-5 mb-4">
+          <div class="section-label mb-2 d-flex align-center flex-wrap ga-2">
+            <span class="d-inline-flex align-center">
+              <v-icon size="18" class="mr-1">mdi-clipboard-check-outline</v-icon>
+              成果物チェック
+            </span>
+            <v-switch
+              :model-value="Boolean(task.deliverableEnabled)"
+              color="primary"
+              density="compact"
+              hide-details
+              inset
+              class="deliverable-switch"
+              :disabled="isSavingDeliverable"
+              label="このタスクで使う"
+              @update:model-value="onToggleDeliverableEnabled"
+            />
+          </div>
+          <p class="text-caption text-medium-emphasis mb-2">
+            任意設定です。有効にすると必須項目の未チェック時に「完了」へ進めません（レビュー待ちは警告のみ）。
+          </p>
+
+          <template v-if="task.deliverableEnabled">
+            <div
+              v-if="task.deliverableChecklist?.length"
+              class="checklist-box mb-2"
+            >
+              <div
+                v-for="item in task.deliverableChecklist"
+                :key="item.itemId"
+                class="checklist-row"
+              >
+                <v-checkbox
+                  :model-value="item.done"
+                  color="primary"
+                  density="compact"
+                  hide-details
+                  :disabled="isSavingDeliverable"
+                  class="checklist-check"
+                  @update:model-value="(v) => onToggleCheckItem(item, v)"
+                />
+                <v-text-field
+                  :model-value="item.title"
+                  density="compact"
+                  variant="plain"
+                  hide-details
+                  class="checklist-title"
+                  :class="{
+                    'is-placeholder-title':
+                      item.title.includes('クリックして編集'),
+                  }"
+                  :disabled="isSavingDeliverable"
+                  placeholder="項目名を入力"
+                  @focus="
+                    (e: FocusEvent) => {
+                      const el = e.target as HTMLInputElement
+                      if (item.title.includes('クリックして編集')) {
+                        el.select()
+                      }
+                    }
+                  "
+                  @blur="
+                    (e: FocusEvent) =>
+                      onRenameCheckItem(
+                        item,
+                        (e.target as HTMLInputElement)?.value ?? item.title,
+                      )
+                  "
+                  @keydown.enter.prevent="
+                    ($event.target as HTMLInputElement)?.blur()
+                  "
+                />
+                <v-chip
+                  size="x-small"
+                  :color="item.required ? 'warning' : 'default'"
+                  variant="tonal"
+                  label
+                  class="checklist-req"
+                  :disabled="isSavingDeliverable"
+                  @click="onToggleRequired(item, !item.required)"
+                >
+                  {{ item.required ? '必須' : '任意' }}
+                </v-chip>
+                <v-btn
+                  icon="mdi-close"
+                  size="x-small"
+                  variant="text"
+                  density="compact"
+                  :disabled="isSavingDeliverable"
+                  @click="onRemoveCheckItem(item.itemId)"
+                />
+              </div>
+            </div>
+            <div v-else class="empty-block mb-2">チェック項目がありません</div>
+            <v-btn
+              size="small"
+              variant="tonal"
+              color="primary"
+              prepend-icon="mdi-plus"
+              :loading="isSavingDeliverable"
+              @click="onAddCheckItem"
+            >
+              項目を追加
+            </v-btn>
+          </template>
+        </section>
+
+        <v-divider class="mb-4 mx-5" />
+
+        <!-- 親: 子孫の成果物ファイルのみ（チェックリストは出さない） -->
+        <section v-if="isParent" class="detail-section mx-5 mb-4">
+          <div class="section-label mb-2">
+            <v-icon size="18" class="mr-1">mdi-package-variant-closed-check</v-icon>
+            子の成果物ファイル（{{ descendantDeliverables.length }} 件）
+          </div>
+          <p class="text-caption text-medium-emphasis mb-2">
+            子孫タスクで「成果物として提出」されたファイルのみ表示します（通常添付・チェックリストは含みません）。
+          </p>
+          <div
+            v-if="descendantDeliverables.length"
+            class="attachment-list mb-1"
+          >
+            <div
+              v-for="{ attachment, source } in descendantDeliverables"
+              :key="`${source.taskId}-${attachment.attachmentId}`"
+              class="attachment-row is-deliverable"
+            >
+              <v-icon
+                size="18"
+                class="mr-2 flex-shrink-0"
+                color="primary"
+              >
+                mdi-package-variant-closed-check
+              </v-icon>
+              <div class="attachment-meta flex-grow-1 min-w-0">
+                <span
+                  class="text-body-2 text-primary text-truncate attachment-name d-block"
+                  @click="
+                    handleDownload(attachment.attachmentId, source.taskId)
+                  "
+                >
+                  {{ attachment.filename }}
+                </span>
+                <span class="text-caption text-medium-emphasis">
+                  {{ source.wbsCode ? `${source.wbsCode} · ` : ''
+                  }}{{ source.title }}
+                  · {{ formatFileSize(attachment.sizeBytes) }}
+                </span>
+              </div>
+              <v-chip
+                size="small"
+                color="primary"
+                variant="flat"
+                label
+                class="attachment-deliverable-badge flex-shrink-0"
+                prepend-icon="mdi-check-decagram"
+              >
+                成果物
+              </v-chip>
+            </div>
+          </div>
+          <div v-else class="empty-block">
+            子孫に成果物ファイルはまだありません
+          </div>
+        </section>
+
+        <!-- 葉: 添付 / 成果物提出 -->
+        <section v-else class="detail-section mx-5 mb-4">
           <div class="section-label mb-2">
             <v-icon size="18" class="mr-1">mdi-paperclip</v-icon>
-            添付ファイル（{{ task.attachments?.length ?? 0 }} 件）
+            添付 / 成果物提出（{{ task.attachments?.length ?? 0 }} 件）
           </div>
 
           <div v-if="task.attachments?.length" class="attachment-list mb-3">
@@ -698,42 +1053,132 @@ function initials(name: string): string {
               v-for="attachment in task.attachments"
               :key="attachment.attachmentId"
               class="attachment-row"
+              :class="{
+                'is-deliverable': attachment.kind === 'deliverable',
+              }"
             >
-              <v-icon size="18" class="mr-2 text-medium-emphasis">mdi-file-outline</v-icon>
+              <v-icon
+                size="18"
+                class="mr-2 flex-shrink-0"
+                :color="
+                  attachment.kind === 'deliverable' ? 'primary' : undefined
+                "
+                :class="
+                  attachment.kind === 'deliverable'
+                    ? ''
+                    : 'text-medium-emphasis'
+                "
+              >
+                {{
+                  attachment.kind === 'deliverable'
+                    ? 'mdi-package-variant-closed-check'
+                    : 'mdi-file-outline'
+                }}
+              </v-icon>
               <span
                 class="text-body-2 text-primary flex-grow-1 text-truncate attachment-name"
                 @click="handleDownload(attachment.attachmentId)"
               >
                 {{ attachment.filename }}
               </span>
-              <span class="text-caption text-medium-emphasis mr-2">
+              <span class="text-caption text-medium-emphasis mr-2 flex-shrink-0">
                 {{ formatFileSize(attachment.sizeBytes) }}
               </span>
+              <v-chip
+                v-if="attachment.kind === 'deliverable'"
+                size="small"
+                color="primary"
+                variant="flat"
+                label
+                class="attachment-deliverable-badge flex-shrink-0 mr-1"
+                prepend-icon="mdi-check-decagram"
+              >
+                成果物
+              </v-chip>
               <v-btn
                 icon="mdi-delete-outline"
                 variant="text"
                 size="x-small"
                 color="error"
                 density="compact"
+                class="flex-shrink-0"
                 @click="handleDeleteAttachment(attachment.attachmentId)"
               />
             </div>
           </div>
 
+          <div class="upload-options mb-2">
+            <v-checkbox
+              v-model="uploadAsDeliverable"
+              density="compact"
+              hide-details
+              color="primary"
+              class="upload-deliverable-check"
+            >
+              <template #label>
+                <span class="text-body-2">
+                  成果物として提出
+                  <span class="text-caption text-medium-emphasis">
+                    （一覧右端に「成果物」バッジが付きます）
+                  </span>
+                </span>
+              </template>
+            </v-checkbox>
+          </div>
           <v-file-input
-            label="ファイルを添付"
-            prepend-icon="mdi-upload"
+            :model-value="pendingUploadFile"
+            :label="
+              uploadAsDeliverable
+                ? '成果物ファイルを選択'
+                : '添付ファイルを選択'
+            "
+            :prepend-icon="
+              uploadAsDeliverable ? 'mdi-package-variant-closed' : 'mdi-upload'
+            "
             hide-details
             density="compact"
             variant="outlined"
-            :loading="isUploading"
-            @update:model-value="
-              (files: File | File[]) => {
-                const file = Array.isArray(files) ? files[0] : files
-                if (file) handleFileUpload(file)
-              }
-            "
+            clearable
+            :color="uploadAsDeliverable ? 'primary' : undefined"
+            :disabled="isUploading"
+            show-size
+            @update:model-value="onPickUploadFile"
+            @click:clear="clearPendingUpload"
           />
+          <div
+            v-if="pendingUploadFile"
+            class="upload-pending-bar d-flex align-center flex-wrap ga-2 mt-2"
+          >
+            <span class="text-caption text-medium-emphasis min-w-0 text-truncate">
+              選択中:
+              <strong class="text-high-emphasis">{{
+                pendingUploadFile.name
+              }}</strong>
+              （{{ formatFileSize(pendingUploadFile.size) }}）
+              · まだアップロードされていません
+            </span>
+            <v-spacer />
+            <v-btn
+              size="small"
+              variant="text"
+              rounded="lg"
+              :disabled="isUploading"
+              @click="clearPendingUpload"
+            >
+              クリア
+            </v-btn>
+            <v-btn
+              size="small"
+              color="primary"
+              variant="flat"
+              rounded="lg"
+              prepend-icon="mdi-cloud-upload-outline"
+              :loading="isUploading"
+              @click="confirmUploadPending"
+            >
+              {{ uploadAsDeliverable ? '成果物をアップロード' : 'アップロード' }}
+            </v-btn>
+          </div>
         </section>
 
         <v-divider class="mb-4 mx-5" />
@@ -957,6 +1402,45 @@ function initials(name: string): string {
   background: rgba(var(--v-theme-primary), 0.05);
   border: 1px solid rgba(var(--v-theme-primary), 0.12);
   overflow: visible;
+}
+
+.deliverable-switch {
+  margin-inline-start: auto;
+  flex: 0 0 auto;
+}
+.deliverable-switch :deep(.v-label) {
+  font-size: 0.75rem;
+  text-transform: none;
+  letter-spacing: 0;
+  opacity: 0.8;
+}
+.checklist-box {
+  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  border-radius: 10px;
+  padding: 4px 8px;
+  background: rgba(var(--v-theme-on-surface), 0.02);
+}
+.checklist-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 40px;
+}
+.checklist-check {
+  flex: 0 0 auto;
+  margin-inline-end: 0;
+}
+.checklist-title {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.checklist-title :deep(input) {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+.checklist-req {
+  flex: 0 0 auto;
+  cursor: pointer;
 }
 
 .completion-row {
@@ -1198,18 +1682,50 @@ function initials(name: string): string {
   align-items: center;
   padding: 12px 14px;
   border-bottom: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  gap: 4px;
 }
 
 .attachment-row:last-child {
   border-bottom: none;
 }
 
+.attachment-row.is-deliverable {
+  background: rgba(var(--v-theme-primary), 0.06);
+  border-left: 3px solid rgb(var(--v-theme-primary));
+}
+
+.attachment-deliverable-badge {
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
 .attachment-name {
   cursor: pointer;
+  min-width: 0;
 }
 
 .attachment-name:hover {
   text-decoration: underline;
+}
+
+.attachment-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.upload-pending-bar {
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(var(--v-theme-primary), 0.05);
+  border: 1px dashed rgba(var(--v-theme-primary), 0.25);
+}
+
+.checklist-title.is-placeholder-title :deep(input) {
+  color: rgba(var(--v-theme-on-surface), 0.45);
+  font-style: italic;
+  font-weight: 500;
 }
 
 .min-w-0 {

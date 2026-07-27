@@ -18,6 +18,11 @@ import {
   depthOfTask,
   isParentTask,
 } from '@/utils/wbs'
+import {
+  completeBlockMessage,
+  reviewSoftWarnMessage,
+} from '@/utils/deliverable'
+import { useUiStore } from '@/stores/ui'
 
 const props = defineProps<{
   projectId: string
@@ -34,6 +39,7 @@ const emit = defineEmits<{
 const modelValue = defineModel<boolean>()
 const tasksStore = useTasksStore()
 const projectsStore = useProjectsStore()
+const uiStore = useUiStore()
 
 const title = ref('')
 const description = ref('')
@@ -381,6 +387,25 @@ async function handleSubmit() {
       : props.task
         ? null
         : undefined,
+  }
+
+  // 成果物チェック: 完了はハードブロック / レビュー待ちはソフト警告
+  if (props.task && payload.status === '完了') {
+    const block = completeBlockMessage({
+      deliverableEnabled: props.task.deliverableEnabled,
+      deliverableChecklist: props.task.deliverableChecklist,
+    })
+    if (block) {
+      uiStore.showError(block)
+      return
+    }
+  }
+  if (props.task && payload.status === 'レビュー待ち') {
+    const warn = reviewSoftWarnMessage({
+      deliverableEnabled: props.task.deliverableEnabled,
+      deliverableChecklist: props.task.deliverableChecklist,
+    })
+    if (warn && !window.confirm(warn)) return
   }
 
   let saved: Task

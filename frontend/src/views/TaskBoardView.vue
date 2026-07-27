@@ -21,6 +21,10 @@ import {
   matchesKanbanScope,
   type KanbanScopeMode,
 } from '@/utils/wbs'
+import {
+  completeBlockMessage,
+  reviewSoftWarnMessage,
+} from '@/utils/deliverable'
 import { useUiStore } from '@/stores/ui'
 
 const route = useRoute()
@@ -184,9 +188,33 @@ async function handleDragChange(
     return
   }
 
+  // 成果物チェック: 完了はハードブロック / レビュー待ちはソフト警告
+  if (targetStatus === '完了') {
+    const block = completeBlockMessage(task)
+    if (block) {
+      uiStore.showError(block)
+      isDragging.value = false
+      syncColumnListsFromStore()
+      return
+    }
+  }
+  if (targetStatus === 'レビュー待ち') {
+    const warn = reviewSoftWarnMessage(task)
+    if (warn && !window.confirm(warn)) {
+      isDragging.value = false
+      syncColumnListsFromStore()
+      return
+    }
+  }
+
   // 楽観的に element の status も揃えておく（直後の再描画で列をまたがない）
   task.status = targetStatus
-  await tasksStore.updateTaskStatus(task.taskId, targetStatus)
+  try {
+    await tasksStore.updateTaskStatus(task.taskId, targetStatus)
+  } catch {
+    isDragging.value = false
+    syncColumnListsFromStore()
+  }
 }
 
 function openCreateForm(status: TaskStatus) {

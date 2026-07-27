@@ -136,6 +136,10 @@ export type TaskUpdateFields = Partial<
   nodeType?: Task['nodeType'] | null
   /** 評価者一覧。null で属性削除 */
   reviewers?: Task['reviewers'] | null
+  /** 成果物チェックを使うか */
+  deliverableEnabled?: boolean
+  /** 成果物チェックリスト（配列全体を置換） */
+  deliverableChecklist?: Task['deliverableChecklist']
   /** true のとき assigneeId / assigneeName を REMOVE（GSI から外す） */
   clearAssignees?: boolean
 }
@@ -178,6 +182,8 @@ export async function updateTask(
     ['nodeType', 'nodeType'],
     ['assignees', 'assignees'],
     ['reviewers', 'reviewers'],
+    ['deliverableEnabled', 'deliverableEnabled'],
+    ['deliverableChecklist', 'deliverableChecklist'],
   ]
 
   for (const [key, attr] of fieldMap) {

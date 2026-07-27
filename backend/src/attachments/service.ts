@@ -15,6 +15,9 @@ const uploadUrlSchema = z.object({
     .int()
     .positive()
     .max(MAX_FILE_SIZE, 'ファイルサイズが上限（50MB）を超えています'),
+  /** general | deliverable（成果物提出） */
+  kind: z.enum(['general', 'deliverable']).optional(),
+  note: z.string().max(500).optional(),
 })
 
 async function getAccessibleTask(taskId: string, userId: string, email?: string) {
@@ -72,6 +75,10 @@ export async function getUploadUrl(
     sizeBytes: parsed.data.sizeBytes,
     uploadedBy: userId,
     uploadedAt: new Date().toISOString(),
+    kind: parsed.data.kind ?? 'general',
+    ...(parsed.data.note?.trim()
+      ? { note: parsed.data.note.trim() }
+      : {}),
   }
   attachments.push(meta)
   await repository.updateTaskAttachments(taskId, attachments)

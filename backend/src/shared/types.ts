@@ -41,6 +41,9 @@ export type TaskStatus = '未着手' | '進行中' | 'レビュー待ち' | '完
 export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent'
 
 /** 添付ファイルメタデータ */
+/** 添付の用途 */
+export type AttachmentKind = 'general' | 'deliverable'
+
 export interface AttachmentMeta {
   attachmentId: string
   filename: string
@@ -49,6 +52,25 @@ export interface AttachmentMeta {
   sizeBytes: number
   uploadedBy: string
   uploadedAt: string
+  /**
+   * general: 通常添付（既定）
+   * deliverable: 成果物として提出
+   */
+  kind?: AttachmentKind
+  /** 任意メモ（成果物の説明など） */
+  note?: string
+}
+
+/** 成果物チェックリスト 1 項目 */
+export interface DeliverableCheckItem {
+  itemId: string
+  title: string
+  done: boolean
+  /** 完了時に必須か */
+  required: boolean
+  doneAt?: string
+  doneBy?: string
+  sortOrder: number
 }
 
 /** タスク担当者（複数対応） */
@@ -134,6 +156,12 @@ export interface Task {
    * 読取時のみ: 子孫から集計した値（子があるとき）
    */
   rollup?: TaskRollup
+  /**
+   * 成果物チェックをこのタスクで使うか（任意・既定 false）
+   */
+  deliverableEnabled?: boolean
+  /** 成果物チェックリスト（deliverableEnabled 時） */
+  deliverableChecklist?: DeliverableCheckItem[]
   attachments: AttachmentMeta[]
   createdBy: string
   createdAt: string

@@ -23,6 +23,9 @@ export interface GetUploadUrlPayload {
   filename: string
   contentType: string
   sizeBytes: number
+  /** general | deliverable（成果物提出） */
+  kind?: 'general' | 'deliverable'
+  note?: string
 }
 
 /** アップロード URL レスポンス */

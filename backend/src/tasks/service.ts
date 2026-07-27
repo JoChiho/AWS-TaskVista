@@ -32,6 +32,10 @@ import {
   WBS_MAX_DEPTH,
 } from './wbs.js'
 import type { TaskStatus as SharedTaskStatus } from '../shared/types.js'
+import {
+  blocksCompleteStatus,
+  normalizeChecklist,
+} from './deliverable.js'
 
 const statusSchema = z.enum(['未着手', '進行中', 'レビュー待ち', '完了', '保留'])
 const prioritySchema = z.enum(['low', 'medium', 'high', 'urgent'])
@@ -131,6 +135,23 @@ const createTaskSchema = z.object({
   sortOrder: z.number().int().min(0).max(100000).optional().nullable(),
   /** ノード種別 */
   nodeType: z.enum(['summary', 'work_package', 'milestone']).optional().nullable(),
+  /** 成果物チェックを使うか */
+  deliverableEnabled: z.boolean().optional(),
+  /** 成果物チェックリスト */
+  deliverableChecklist: z
+    .array(
+      z.object({
+        itemId: z.string().min(1).max(64),
+        title: z.string().min(1).max(300),
+        done: z.boolean(),
+        required: z.boolean(),
+        doneAt: z.string().optional(),
+        doneBy: z.string().optional(),
+        sortOrder: z.number().int().min(0).max(10000).optional(),
+      }),
+    )
+    .max(50)
+    .optional(),
 })
 
 /** 日付フィールド: 空 / null → 削除、YYYY-MM-DD → 保存、undefined → 触らない */
@@ -800,6 +821,49 @@ export async function updateTask(
     }
   }
 
+  // 成果物チェック: 完了への遷移は必須項目未完了なら拒否
+  {
+    const probe = {
+      deliverableEnabled:
+        parsed.data.deliverableEnabled !== undefined
+          ? parsed.data.deliverableEnabled
+          : existing.deliverableEnabled,
+      deliverableChecklist:
+        parsed.data.deliverableChecklist !== undefined
+          ? normalizeChecklist(parsed.data.deliverableChecklist)
+          : existing.deliverableChecklist,
+    }
+    let willBeComplete = parsed.data.status === '完了'
+    if (
+      !willBeComplete &&
+      parsed.data.completionPercent !== undefined &&
+      parsed.data.status === undefined
+    ) {
+      willBeComplete =
+        resolveStatusAfterCompletionChange(
+          parsed.data.completionPercent,
+          existing.status,
+        ) === '完了'
+    }
+    if (
+      !willBeComplete &&
+      parsed.data.completionPercent !== undefined &&
+      parsed.data.status !== undefined &&
+      !COMPLETION_PROTECTED_STATUSES.includes(parsed.data.status as TaskStatus) &&
+      clampCompletion(parsed.data.completionPercent) === 100
+    ) {
+      willBeComplete = true
+    }
+    if (willBeComplete) {
+      const blockMsg = blocksCompleteStatus(probe, '完了')
+      if (blockMsg) {
+        throw new ValidationError(blockMsg, {
+          deliverableChecklist: '必須の成果物チェックを完了してください',
+        })
+      }
+    }
+  }
+
   // 明示的に更新フィールドを組み立て（スプレッドだと意図しないキーが混ざるのを避ける）
   const updates: Parameters<typeof repository.updateTask>[1] = {}
 
@@ -810,6 +874,14 @@ export async function updateTask(
   if (parsed.data.requirement !== undefined) updates.requirement = parsed.data.requirement
   if (parsed.data.completionPercent !== undefined) {
     updates.completionPercent = clampCompletion(parsed.data.completionPercent)
+  }
+  if (parsed.data.deliverableEnabled !== undefined) {
+    updates.deliverableEnabled = parsed.data.deliverableEnabled
+  }
+  if (parsed.data.deliverableChecklist !== undefined) {
+    updates.deliverableChecklist = normalizeChecklist(
+      parsed.data.deliverableChecklist,
+    )
   }
   if (parsed.data.estimatedEffortDays !== undefined) {
     updates.estimatedEffortDays =
@@ -1188,6 +1260,15 @@ export async function updateTaskStatus(
       '子タスクがある親は、かんばんからステータスを変更できません',
       { status: '子から集計されます。子タスクを編集するか、詳細から許可された候補を選んでください' },
     )
+  }
+
+  if (status === '完了') {
+    const blockMsg = blocksCompleteStatus(existing, '完了')
+    if (blockMsg) {
+      throw new ValidationError(blockMsg, {
+        deliverableChecklist: '必須の成果物チェックを完了してください',
+      })
+    }
   }
 
   // かんばん: 完了→100% / 未着手→0%。レビュー待ち・保留は完了度を触らない

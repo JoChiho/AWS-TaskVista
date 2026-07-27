@@ -43,6 +43,9 @@ export const STATUS_COLORS: Record<TaskStatus, string> = {
   保留: 'error',
 }
 
+/** 添付の用途 */
+export type AttachmentKind = 'general' | 'deliverable'
+
 /** 添付ファイルのメタデータ */
 export interface Attachment {
   attachmentId: string
@@ -52,6 +55,21 @@ export interface Attachment {
   sizeBytes: number
   uploadedBy: string
   uploadedAt: string
+  /** general: 通常 / deliverable: 成果物提出 */
+  kind?: AttachmentKind
+  note?: string
+}
+
+/** 成果物チェックリスト 1 項目 */
+export interface DeliverableCheckItem {
+  itemId: string
+  title: string
+  done: boolean
+  /** 完了時に必須か */
+  required: boolean
+  doneAt?: string
+  doneBy?: string
+  sortOrder: number
 }
 
 /** タスク担当者（複数対応） */
@@ -112,6 +130,12 @@ export interface Task {
   childCount?: number
   /** 子から集計した値（親ノード） */
   rollup?: TaskRollup
+  /**
+   * 成果物チェックをこのタスクで使うか（任意・既定 false）
+   */
+  deliverableEnabled?: boolean
+  /** 成果物チェックリスト */
+  deliverableChecklist?: DeliverableCheckItem[]
   attachments: Attachment[]
   createdBy: string
   createdAt: string
@@ -167,6 +191,8 @@ export interface CreateTaskPayload {
   wbsCode?: string | null
   sortOrder?: number | null
   nodeType?: TaskNodeType | null
+  deliverableEnabled?: boolean
+  deliverableChecklist?: DeliverableCheckItem[]
 }
 
 /** タスク更新リクエスト */
@@ -191,6 +217,8 @@ export interface UpdateTaskPayload {
   wbsCode?: string | null
   sortOrder?: number | null
   nodeType?: TaskNodeType | null
+  deliverableEnabled?: boolean
+  deliverableChecklist?: DeliverableCheckItem[]
 }
 
 /** 予定開始日（旧 startDate フォールバック） */
