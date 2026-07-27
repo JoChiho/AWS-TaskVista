@@ -283,7 +283,7 @@ async function commitCompletion(value: number) {
   // レビュー待ち・保留は完了度を変えてもステータス維持
   const nextStatus = resolveStatusAfterCompletionChange(next, task.value.status)
 
-  if (nextStatus === '完了' || (next === 100 && nextStatus === '完了')) {
+  if (nextStatus === '完了') {
     const block = completeBlockMessage(task.value)
     if (block) {
       localCompletion.value = normalizeCompletion(task.value.completionPercent)
