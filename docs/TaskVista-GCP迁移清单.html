@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TaskVista — Google Cloud 迁移清单</title>
+  <style>
+    :root { --ink:#1b2638; --muted:#64748b; --line:#dce4ee; --blue:#2563eb; --bg:#f6f8fc; --card:#fff; --green:#047857; --amber:#b45309; }
+    * { box-sizing:border-box; }
+    body { margin:0; font-family:"Microsoft YaHei","Noto Sans SC",Arial,sans-serif; color:var(--ink); background:var(--bg); line-height:1.7; }
+    header { color:#fff; background:linear-gradient(125deg,#123b75,#2563eb); padding:58px max(24px,calc((100% - 1080px)/2)); }
+    h1 { margin:0 0 8px; font-size:clamp(28px,4vw,42px); line-height:1.25; }
+    header p { max-width:760px; margin:0; opacity:.9; font-size:17px; }
+    main { max-width:1080px; margin:30px auto 64px; padding:0 24px; }
+    .meta, .note, section { background:var(--card); border:1px solid var(--line); border-radius:12px; box-shadow:0 2px 8px rgba(15,23,42,.04); }
+    .meta { display:flex; flex-wrap:wrap; gap:22px; padding:16px 22px; color:var(--muted); }
+    .note { margin:20px 0; padding:16px 20px; border-left:5px solid #f59e0b; background:#fffbeb; }
+    section { margin-top:20px; padding:24px; }
+    h2 { margin:0 0 12px; font-size:23px; color:#123b75; }
+    h3 { margin:22px 0 8px; font-size:17px; }
+    p { margin:8px 0; }
+    ul { margin:8px 0; padding-left:24px; }
+    li { margin:5px 0; }
+    .check { list-style:none; padding-left:0; }
+    .check li::before { content:"☐"; margin-right:9px; color:var(--blue); font-weight:bold; }
+    table { width:100%; margin:14px 0; border-collapse:collapse; font-size:14px; overflow:hidden; border-radius:8px; }
+    th,td { padding:10px 12px; text-align:left; vertical-align:top; border:1px solid var(--line); }
+    th { background:#eef4ff; color:#163e78; }
+    code { padding:2px 5px; border-radius:4px; background:#eef2f7; color:#334155; font-family:Consolas,monospace; }
+    pre { margin:12px 0; padding:16px; overflow:auto; border-radius:8px; background:#10223e; color:#e5efff; line-height:1.5; }
+    a { color:var(--blue); }
+    .tag { display:inline-block; padding:2px 8px; margin-right:5px; border-radius:999px; color:#065f46; background:#d1fae5; font-size:13px; }
+    .phase { color:var(--green); font-weight:700; }
+    footer { max-width:1080px; margin:0 auto 36px; padding:0 24px; color:var(--muted); font-size:13px; }
+    @media print { body{background:#fff} header{padding:28px;color:#111;background:#fff;border-bottom:2px solid #2563eb} section,.meta,.note{box-shadow:none} main{margin-top:16px} }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>TaskVista Google Cloud 迁移清单</h1>
+    <p>将现有 AWS Serverless 应用迁移为 GCP 无服务器架构的实施、验证与上线清单。</p>
+  </header>
+  <main>
+    <div class="meta"><span><strong>项目：</strong> AWS-TaskVista</span><span><strong>建议区域：</strong> asia-northeast1（东京）</span><span><strong>推荐架构：</strong> Cloud Run + Cloud SQL</span></div>
+    <section>
+      <h2>目标架构</h2>
+      <pre>浏览器 ── Firebase Hosting（Vue 3 SPA / CDN）
+  ├── Identity Platform（登录与 JWT）
+  └── Cloud Run（TaskVista HTTP API）
+        ├── Cloud SQL for PostgreSQL（业务数据）
+        ├── Cloud Storage（任务附件）
+        └── Logging / Monitoring / Secret Manager</pre>
+      <p><span class="tag">前端</span><span class="tag">后端</span><span class="tag">认证</span><span class="tag">数据</span> 选择 Cloud SQL 的原因是项目、成员、任务、评论和 WBS 层级存在强关联，且看板筛选与 Dashboard 汇总更适合 SQL 查询。</p>
+    </section>
+    <section>
+      <h2>1. 迁移前确认</h2>
+      <ul class="check">
+        <li>确认 GCP Organization、Billing Account 与项目，例如 <code>taskvista-prod</code>。</li>
+        <li>确认域名：<code>app.example.com</code> 与 <code>api.example.com</code>。</li>
+        <li>备份 DynamoDB 的 Projects、Tasks、Comments、Users 表；备份 S3 的附件 bucket。</li>
+        <li>确定数据冻结、停机或双写窗口，防止两端数据分叉。</li>
+        <li>确认 Cognito 用户迁移策略：重设密码，或短期以 OIDC 联邦方式保留 Cognito。</li>
+      </ul>
+      <div class="note"><strong>重要：</strong>Cognito 密码通常不可导出。因此必须在正式迁移前明确首次登录重设密码或临时联邦登录方案，并保留旧用户 ID 的映射表。</div>
+    </section>
+    <section>
+      <h2>2. 创建 GCP 资源</h2>
+      <ul class="check">
+        <li>启用 Cloud Run、Cloud SQL Admin、Cloud Storage、Artifact Registry、Cloud Build、Secret Manager、Identity Platform、Cloud Logging 与 Monitoring API。</li>
+        <li>创建 Artifact Registry 仓库，用于保存 API 容器镜像。</li>
+        <li>创建 Cloud Run 服务：<code>taskvista-api</code>。</li>
+        <li>创建 Cloud SQL PostgreSQL 实例和数据库：<code>taskvista</code>。</li>
+        <li>创建私有 Cloud Storage bucket：<code>taskvista-attachments-&lt;project-id&gt;</code>。</li>
+        <li>创建 Firebase 项目并启用 Firebase Hosting。</li>
+        <li>启用 Identity Platform，配置邮箱密码、Google 登录或所需企业 SSO。</li>
+        <li>在 Secret Manager 中保存数据库连接信息及其他机密。</li>
+        <li>为 Cloud Run 创建专用服务账号，并最小化授予 Cloud SQL、Storage 与 Secret Manager 权限。</li>
+      </ul>
+    </section>
+    <section>
+      <h2>3. AWS 到 GCP 服务映射</h2>
+      <table><thead><tr><th>AWS</th><th>GCP</th><th>TaskVista 用途</th></tr></thead><tbody>
+        <tr><td>Lambda + API Gateway</td><td>Cloud Run</td><td>项目、任务、评论、附件、Dashboard API</td></tr>
+        <tr><td>DynamoDB</td><td>Cloud SQL for PostgreSQL</td><td>关系数据、筛选、WBS 与聚合查询</td></tr>
+        <tr><td>S3</td><td>Cloud Storage</td><td>附件、交付物和临时访问 URL</td></tr>
+        <tr><td>Cognito</td><td>Identity Platform</td><td>用户登录、令牌和 SSO</td></tr>
+        <tr><td>CloudFront + S3</td><td>Firebase Hosting</td><td>Vue SPA、CDN、HTTPS 与自定义域名</td></tr>
+        <tr><td>CloudWatch</td><td>Cloud Logging / Monitoring</td><td>日志、指标、告警和错误跟踪</td></tr>
+        <tr><td>SAM / 部署脚本</td><td>Terraform + Cloud Build</td><td>基础设施与持续部署</td></tr>
+      </tbody></table>
+    </section>
+    <section>
+      <h2>4. 数据建模与数据迁移</h2>
+      <table><thead><tr><th>现有来源</th><th>PostgreSQL 目标</th><th>关键项</th></tr></thead><tbody>
+        <tr><td>TaskVista-Projects</td><td><code>projects</code>, <code>project_members</code></td><td>项目—成员多对多</td></tr>
+        <tr><td>TaskVista-Tasks</td><td><code>tasks</code>, <code>task_assignees</code>, <code>task_reviewers</code>, <code>task_attachments</code></td><td>project_id、parent_task_id、wbs_code、状态索引</td></tr>
+        <tr><td>TaskVista-Comments</td><td><code>comments</code></td><td><code>(task_id, created_at)</code> 索引</td></tr>
+        <tr><td>TaskVista-Users</td><td><code>users</code></td><td>identity_provider_uid、email 唯一约束</td></tr>
+        <tr><td>S3 对象</td><td>Cloud Storage 对象</td><td>保留 <code>tasks/{taskId}/...</code> 路径</td></tr>
+      </tbody></table>
+      <ul class="check">
+        <li>创建 SQL migration：表、外键、软删除字段、索引及 <code>(project_id, wbs_code)</code> 唯一约束。</li>
+        <li>导出 DynamoDB；按 Users → Projects → Members → Tasks → Comments → Attachments metadata 顺序导入。</li>
+        <li>复制 S3 附件到 Cloud Storage，并核对每个元数据对象实际存在。</li>
+        <li>核对记录数、每项目任务数、WBS 父子关系、排序、评论作者和成员关联。</li>
+      </ul>
+    </section>
+    <section>
+      <h2>5. 后端代码改造</h2>
+      <ul class="check">
+        <li>将 <code>backend/src/shared/dynamodb.ts</code> 改为 PostgreSQL 连接模块。</li>
+        <li>将 projects、tasks、comments、users Repository 中的 DynamoDB Command 改为 SQL 查询。</li>
+        <li>将 <code>attachments/repository.ts</code> 的 S3 SDK 改为 <code>@google-cloud/storage</code>。</li>
+        <li>保留预签名 URL 行为：上传 15 分钟、下载 60 分钟；维持 50MB 限制、MIME 校验及项目访问控制。</li>
+        <li>将 <code>shared/cognito.ts</code> 的用户查找改为查询 <code>users</code> 表。</li>
+        <li>新增 Identity Platform JWT 校验中间件，并保持 <code>Authorization: Bearer &lt;token&gt;</code> API 合约。</li>
+        <li>将现有 5 个 Lambda handler 合并为一个 Cloud Run HTTP 服务；保留现有 REST 路径和响应格式。</li>
+        <li>使用 Secret Manager 注入机密，增加 <code>/healthz</code> 健康检查与 PostgreSQL integration test。</li>
+      </ul>
+    </section>
+    <section>
+      <h2>6. 前端认证与发布改造</h2>
+      <ul class="check">
+        <li>在 Identity Platform 配置生产与本地回调 URL。</li>
+        <li>用 Firebase / Identity Platform Web SDK 改造 <code>frontend/src/stores/auth.ts</code>。</li>
+        <li>移除 Cognito 授权 URL、token 端点和相关环境变量。</li>
+        <li>将用户 <code>sub</code> 映射到 <code>identity_provider_uid</code>，保证历史成员、负责人、评论作者能对应。</li>
+        <li>更新 <code>VITE_API_BASE_URL</code> 和 Firebase 前端配置。</li>
+        <li>发布至 Firebase Hosting，设置 SPA rewrite、自定义域名、CORS 及 HTTPS。</li>
+      </ul>
+    </section>
+    <section>
+      <h2>7. IaC、CI/CD 与生产保护</h2>
+      <ul class="check">
+        <li>新建 <code>infra/gcp/</code>，以 Terraform 管理 Cloud Run、Cloud SQL、Storage、IAM、Secret 与告警。</li>
+        <li>新增 <code>cloudbuild.yaml</code>：前后端测试 → 构建镜像 → 推送 Artifact Registry → 部署 Cloud Run → 发布 Hosting。</li>
+        <li>分离 dev、staging、prod 项目或资源配置。</li>
+        <li>Cloud SQL 启用自动备份、PITR；生产环境启用高可用。</li>
+        <li>Cloud Storage 启用软删除／版本控制及生命周期规则。</li>
+        <li>配置错误率、延迟、5xx、数据库连接数和附件失败告警。</li>
+        <li>生产 API 接入 Cloud Armor 的 WAF 与限流策略。</li>
+      </ul>
+    </section>
+    <section>
+      <h2>8. 上线验收与切换</h2>
+      <ul class="check">
+        <li>在 staging 完成登录、项目／成员、任务 CRUD、WBS 重排、看板、时间线、评论、附件和 Dashboard 验收。</li>
+        <li>验证未授权用户不能读取项目、任务或附件。</li>
+        <li>执行数据库备份和恢复演练。</li>
+        <li>生产发布使用 Cloud Run revision 灰度流量；观察日志、错误率和用户反馈后全量切换。</li>
+        <li>确认 GCP 数据无误并完成回退窗口后，再下线 AWS 资源与访问密钥。</li>
+      </ul>
+      <p><span class="phase">推荐顺序：</span>基础设施与数据库 → 后端改造与测试 → 数据／附件迁移 → 身份认证与前端 → staging 验收 → 生产灰度切换。</p>
+    </section>
+    <section>
+      <h2>官方参考</h2>
+      <ul>
+        <li><a href="https://cloud.google.com/run/docs/overview/what-is-cloud-run">Cloud Run 概览</a></li>
+        <li><a href="https://cloud.google.com/sql/postgresql">Cloud SQL for PostgreSQL</a></li>
+        <li><a href="https://cloud.google.com/storage/docs/introduction">Cloud Storage 概览</a></li>
+        <li><a href="https://cloud.google.com/security/products/identity-platform">Identity Platform</a></li>
+        <li><a href="https://cloud.google.com/build/docs/overview">Cloud Build 概览</a></li>
+        <li><a href="https://cloud.google.com/armor/docs/cloud-armor-overview">Cloud Armor 概览</a></li>
+      </ul>
+    </section>
+  </main>
+  <footer>TaskVista GCP Migration Checklist · 根据当前仓库的 AWS Lambda、DynamoDB、S3 与 Cognito 架构编制。</footer>
+</body>
+</html>

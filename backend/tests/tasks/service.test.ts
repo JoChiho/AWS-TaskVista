@@ -300,6 +300,168 @@ describe('tasks/service', () => {
     expect(toFull.completionPercent).toBe(100)
   })
 
+  it('成果物必須未完了のとき status=完了 は ValidationError', async () => {
+    const task = makeTask({
+      status: '進行中',
+      completionPercent: 80,
+      deliverableEnabled: true,
+      deliverableChecklist: [
+        {
+          itemId: 'c1',
+          title: '動作確認',
+          done: false,
+          required: true,
+          sortOrder: 0,
+        },
+      ],
+    })
+    vi.mocked(repository.getTaskById).mockResolvedValue(task)
+    vi.mocked(repository.listTasksByProject).mockResolvedValue([task])
+
+    await expect(
+      service.updateTask(TASK_ID, USER_ID, { status: '完了' }),
+    ).rejects.toThrow(ValidationError)
+    expect(repository.updateTask).not.toHaveBeenCalled()
+  })
+
+  it('成果物必須未完了のとき completionPercent=100 は ValidationError', async () => {
+    const task = makeTask({
+      status: '進行中',
+      completionPercent: 50,
+      deliverableEnabled: true,
+      deliverableChecklist: [
+        {
+          itemId: 'c1',
+          title: '必須項目',
+          done: false,
+          required: true,
+          sortOrder: 0,
+        },
+      ],
+    })
+    vi.mocked(repository.getTaskById).mockResolvedValue(task)
+    vi.mocked(repository.listTasksByProject).mockResolvedValue([task])
+
+    await expect(
+      service.updateTask(TASK_ID, USER_ID, { completionPercent: 100 }),
+    ).rejects.toThrow(ValidationError)
+  })
+
+  it('成果物必須完了済みなら完了にできる', async () => {
+    const task = makeTask({
+      status: '進行中',
+      completionPercent: 80,
+      deliverableEnabled: true,
+      deliverableChecklist: [
+        {
+          itemId: 'c1',
+          title: '動作確認',
+          done: true,
+          required: true,
+          sortOrder: 0,
+        },
+      ],
+    })
+    vi.mocked(repository.getTaskById).mockResolvedValue(task)
+    vi.mocked(repository.listTasksByProject).mockResolvedValue([task])
+    vi.mocked(repository.updateTask).mockImplementation(async (_id, updates) => ({
+      ...task,
+      ...updates,
+    }))
+
+    const result = await service.updateTask(TASK_ID, USER_ID, { status: '完了' })
+    expect(result.status).toBe('完了')
+  })
+
+  it('成果物未完了でもレビュー待ちへは更新できる（ソフト警告はフロント）', async () => {
+    const task = makeTask({
+      status: '進行中',
+      completionPercent: 50,
+      deliverableEnabled: true,
+      deliverableChecklist: [
+        {
+          itemId: 'c1',
+          title: '必須',
+          done: false,
+          required: true,
+          sortOrder: 0,
+        },
+      ],
+    })
+    vi.mocked(repository.getTaskById).mockResolvedValue(task)
+    vi.mocked(repository.listTasksByProject).mockResolvedValue([task])
+    vi.mocked(repository.updateTask).mockImplementation(async (_id, updates) => ({
+      ...task,
+      ...updates,
+    }))
+
+    const result = await service.updateTask(TASK_ID, USER_ID, {
+      status: 'レビュー待ち',
+    })
+    expect(result.status).toBe('レビュー待ち')
+  })
+
+  it('かんばん updateTaskStatus: 成果物未完了の完了は ValidationError', async () => {
+    const task = makeTask({
+      status: '進行中',
+      deliverableEnabled: true,
+      deliverableChecklist: [
+        {
+          itemId: 'c1',
+          title: '必須',
+          done: false,
+          required: true,
+          sortOrder: 0,
+        },
+      ],
+    })
+    vi.mocked(repository.getTaskById).mockResolvedValue(task)
+    vi.mocked(repository.listTasksByProject).mockResolvedValue([task])
+
+    await expect(
+      service.updateTaskStatus(TASK_ID, USER_ID, { status: '完了' }),
+    ).rejects.toThrow(ValidationError)
+  })
+
+  it('deliverableChecklist を更新できる', async () => {
+    const task = makeTask({ status: '進行中' })
+    vi.mocked(repository.getTaskById).mockResolvedValue(task)
+    vi.mocked(repository.listTasksByProject).mockResolvedValue([task])
+    vi.mocked(repository.updateTask).mockImplementation(async (_id, updates) => ({
+      ...task,
+      ...updates,
+    }))
+
+    const checklist = [
+      {
+        itemId: 'x1',
+        title: '  確認  ',
+        done: true,
+        required: true,
+        sortOrder: 0,
+      },
+    ]
+    await service.updateTask(TASK_ID, USER_ID, {
+      deliverableEnabled: true,
+      deliverableChecklist: checklist,
+    })
+    expect(repository.updateTask).toHaveBeenCalledWith(
+      TASK_ID,
+      expect.objectContaining({
+        deliverableEnabled: true,
+        deliverableChecklist: [
+          expect.objectContaining({
+            itemId: 'x1',
+            title: '確認',
+            done: true,
+            required: true,
+            sortOrder: 0,
+          }),
+        ],
+      }),
+    )
+  })
+
   it('レビュー待ち・保留は完了度を変えてもステータスを維持する', async () => {
     const task = makeTask({ status: 'レビュー待ち', completionPercent: 30 })
     vi.mocked(repository.getTaskById).mockResolvedValue(task)

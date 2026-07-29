@@ -54,6 +54,32 @@ describe('attachments/service', () => {
     expect(result.uploadUrl).toBe('https://s3.example.com/upload')
     expect(result.s3Key).toContain('tasks/task-001/')
     expect(repository.updateTaskAttachments).toHaveBeenCalled()
+    const saved = vi.mocked(repository.updateTaskAttachments).mock.calls[0]![1]
+    expect(saved[saved.length - 1]).toMatchObject({
+      filename: 'doc.pdf',
+      kind: 'general',
+    })
+  })
+
+  it('kind=deliverable で成果物としてメタを保存する', async () => {
+    vi.mocked(repository.getTaskById).mockResolvedValue(makeTask({ attachments: [] }))
+    vi.mocked(repository.createUploadUrl).mockResolvedValue('https://s3.example.com/upload')
+    vi.mocked(repository.updateTaskAttachments).mockResolvedValue(makeTask())
+
+    await service.getUploadUrl(TASK_ID, USER_ID, {
+      filename: 'spec.pdf',
+      contentType: 'application/pdf',
+      sizeBytes: 100,
+      kind: 'deliverable',
+      note: '設計書',
+    })
+
+    const saved = vi.mocked(repository.updateTaskAttachments).mock.calls[0]![1]
+    expect(saved[0]).toMatchObject({
+      filename: 'spec.pdf',
+      kind: 'deliverable',
+      note: '設計書',
+    })
   })
 
   it('50MB 超のファイルは ValidationError', async () => {
