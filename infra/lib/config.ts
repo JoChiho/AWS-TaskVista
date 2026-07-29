@@ -133,17 +133,36 @@ export function tableNames(config: EnvironmentConfig) {
   }
 }
 
-/** S3 バケット名（グローバル一意。account サフィックスで衝突回避） */
+export interface BucketNames {
+  frontend?: string
+  attachments?: string
+}
+
+/**
+ * S3 バケット名。
+ *
+ * 具体的な 12 桁アカウント ID がある場合だけサフィックスへ利用する。
+ * 環境非依存 synth では account が unresolved token になるため、その場合は
+ * 物理名を指定せず CloudFormation にグローバル一意な名前を生成させる。
+ */
 export function bucketNames(config: EnvironmentConfig, account: string) {
   if (config.useLegacyResourceNames) {
     return {
       frontend: 'taskvista-frontend',
       attachments: 'taskvista-attachments',
-    }
+    } satisfies BucketNames
   }
+
+  if (!/^\d{12}$/.test(account)) {
+    return {
+      frontend: undefined,
+      attachments: undefined,
+    } satisfies BucketNames
+  }
+
   const short = account.slice(-8)
   return {
     frontend: `taskvista-${config.envName}-frontend-${short}`.toLowerCase(),
     attachments: `taskvista-${config.envName}-attachments-${short}`.toLowerCase(),
-  }
+  } satisfies BucketNames
 }

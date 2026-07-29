@@ -144,7 +144,7 @@
     <h2><span class="num">1</span>システム概要</h2>
     <p class="lead">
       <strong>TaskVista</strong> は、5〜15 名規模のチーム向けタスク管理システムです。
-      プロジェクト単位でメンバーを共有し、かんばん・テーブル・タイムライン・ダッシュボードで進捗と日程を可視化します。
+      プロジェクト単位でメンバーを共有し、かんばん・テーブル・ガント・構成・ダッシュボードで進捗、日程、WBS 構造を可視化します。
       フロントエンドは SPA、バックエンドは AWS Serverless で構成します。
     </p>
     <div class="grid2">
@@ -183,11 +183,15 @@
       </tr>
       <tr><td>テーブル</td><td>ソート・フィルタ・一覧（開始日・工数・レビュアー列含む）</td></tr>
       <tr>
-        <td>タイムライン</td>
+        <td>ガント</td>
         <td>
-          予定開始日 + 予定工数（人日）によるガント風カレンダー。
-          未設定タスクのドラッグで予定開始日設定、全体/自分切替
+          WBS ツリーと日付軸、親タスクの読み取り専用集計バー。
+          リーフバー全体のドラッグで予定開始日を移動
         </td>
+      </tr>
+      <tr>
+        <td>構成</td>
+        <td>WBS のマップ／アウトライン表示、階層移動、同階層の並べ替え、番号の振り直し</td>
       </tr>
       <tr>
         <td>タスク詳細</td>
@@ -734,13 +738,14 @@
       <tr><td>1〜99%</td><td>進行中</td></tr>
       <tr><td>100%</td><td>完了</td></tr>
     </table>
-    <h3>日程の解釈（タイムライン）</h3>
+    <h3>日程の解釈（ガント）</h3>
     <table>
-      <tr><th>条件</th><th>タイムラインバー</th></tr>
-      <tr><td>予定開始日あり + 予定工数</td><td>予定開始日から工数分（人日）をカレンダー上に表示</td></tr>
+      <tr><th>条件</th><th>ガントバー</th></tr>
+      <tr><td>予定開始日 + 予定終了日</td><td>両日を含むカレンダー期間として表示</td></tr>
+      <tr><td>予定開始日 + 予定工数（終了日なし）</td><td>予定開始日から工数分（人日）をカレンダー上に表示</td></tr>
       <tr><td>予定開始日のみ</td><td>1 日分のバー</td></tr>
       <tr><td>予定開始日なし</td><td>バーなし（予定終了日からの逆算は行わない）</td></tr>
-      <tr><td>予定終了日</td><td>フラグ表示のみ（長さには使わない）</td></tr>
+      <tr><td>編集</td><td>リーフバー全体のドラッグは予定開始日のみ変更。左右端のリサイズは提供せず、工数・終了日は詳細画面で編集</td></tr>
     </table>
     <h3>レビュアー（reviewers）</h3>
     <p>
@@ -796,17 +801,23 @@
       <div class="card">
         <h4>タスク（基本 + WBS）</h4>
         <p style="margin:0;font-size:.9rem;color:var(--c-sub)">
-          かんばん / テーブル / タイムライン、複数担当、進捗連動、
+          かんばん / テーブル / ガント / 構成、複数担当、進捗連動、
           予定·実績の日付と工数、親子（最大 3 層）・WBS 番号・親集計、
           要件・説明、コメント、添付。
         </p>
       </div>
       <div class="card">
-        <h4>タイムライン（ガント風カレンダー）</h4>
+        <h4>ガント（WBS 日程）</h4>
         <p style="margin:0;font-size:.9rem;color:var(--c-sub)">
-          予定開始日を基準に予定工数分のバーを表示。全体 / 自分のタスク切替。
-          予定開始日未設定（保留以外）は日付へドラッグして設定。
-          ドラッグ中は他タスクを隠し、日付カレンダーのみ表示。
+          WBS ツリーと日付軸、親の集計バー、リーフの日程バーを表示。
+          バー全体のドラッグは予定開始日のみ変更し、工数の誤変更を防ぐため左右端のリサイズは行いません。
+        </p>
+      </div>
+      <div class="card">
+        <h4>構成（WBS）</h4>
+        <p style="margin:0;font-size:.9rem;color:var(--c-sub)">
+          マップとアウトラインで分解構造を確認し、同階層の並べ替え、階層移動、
+          子／同階層タスクの追加、WBS 番号の振り直しを行います。
         </p>
       </div>
       <div class="card">
@@ -824,7 +835,8 @@
       <tr><th>ビュー</th><th>パス</th><th>用途</th></tr>
       <tr><td>かんばん</td><td><code>/projects/:id/board</code></td><td>ステータス移動（リーフ）· 表示範囲 · 要レビュー</td></tr>
       <tr><td>テーブル</td><td><code>/projects/:id/table</code></td><td>WBS ツリー · 一覧 · ソート · 親選択作成</td></tr>
-      <tr><td>タイムライン</td><td><code>/projects/:id/timeline</code></td><td>日程バー · ドラッグで予定開始日設定</td></tr>
+      <tr><td>ガント</td><td><code>/projects/:id/timeline</code></td><td>WBS 日程 · 親集計 · リーフ全体ドラッグ</td></tr>
+      <tr><td>構成</td><td><code>/projects/:id/wbs</code></td><td>WBS マップ／アウトライン · 構造編集 · 重番号</td></tr>
     </table>
 
     <h3>ダッシュボード構成</h3>
@@ -987,11 +999,11 @@ npm run deploy:routes       # API Gateway ルート同期のみ</code></pre>
   </section>
 
   <footer>
-    TaskVista システム説明書 · 2026-07-23（Phase 1 WBS 同期） ·
+    TaskVista システム説明書 · 2026-07-29（Phase 2 ガント・構成同期） ·
     図は eg.html と同様の SVG 方式 ·
     アイコン:
     <a href="https://aws.amazon.com/architecture/icons/">AWS Architecture Icons</a>
-    · 設計詳細: <code>docs/WBSタスク管理-修正方案.md</code> v1.0
+    · 設計詳細: <code>docs/WBSタスク管理-修正方案.md</code> v2.0
   </footer>
 </div>
 </body>
