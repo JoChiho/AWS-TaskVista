@@ -1,102 +1,55 @@
 <script setup lang="ts">
-// ダッシュボードページ
-// プロジェクト横断の統計と自分の担当タスクを表示する
-import { ref, onMounted, computed } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import type { ProjectSummary } from '@/types/project'
-import { projectStatusLabel, projectStatusColor } from '@/types/project'
-import type { Task } from '@/types/task'
-import { STATUS_COLORS, PRIORITY_LABELS, PRIORITY_COLORS } from '@/types/task'
-import { fetchDashboardSummary, fetchMyTasks, fetchMyReviewTasks } from '@/api/dashboard'
+import DashboardTaskList from '@/components/dashboard/DashboardTaskList.vue'
+import {
+  fetchDashboardSummary,
+  fetchMyReviewTasks,
+  fetchMyTasks,
+} from '@/api/dashboard'
 import { useUiStore } from '@/stores/ui'
-import { formatReviewerList } from '@/utils/displayName'
+import type { ProjectSummary } from '@/types/project'
+import {
+  projectStatusColor,
+  projectStatusLabel,
+} from '@/types/project'
+import type { DashboardTask } from '@/types/task'
 
 const router = useRouter()
 const uiStore = useUiStore()
 
-// プロジェクト概要データ
 const summaries = ref<ProjectSummary[]>([])
-// 自分の担当タスク
-const myTasks = ref<Task[]>([])
-// 自分へのレビュー依頼（レビュー待ち & 自分がレビュアー）
-const reviewTasks = ref<Task[]>([])
-// ローディング状態
+const myTasks = ref<DashboardTask[]>([])
+const reviewTasks = ref<DashboardTask[]>([])
 const isLoading = ref(false)
 
-/** projectId → プロジェクト名（担当タスク行の右列表示用） */
-const projectNameById = computed(() => {
-  const map = new Map<string, string>()
-  for (const s of summaries.value) {
-    map.set(s.projectId, s.name)
-  }
-  return map
-})
-
-/** 予定終了日が近いタスクかどうかを判定する（3 日以内） */
-function taskDueDate(task: { plannedDueDate?: string; dueDate?: string }): string | undefined {
-  return task.plannedDueDate || task.dueDate || undefined
-}
-
-function isDueSoon(dueDate?: string, status?: string): boolean {
-  if (status === '完了' || status === 'レビュー待ち' || status === '保留') {
-    return false
-  }
-  if (!dueDate) return false
-  const due = new Date(dueDate)
-  const now = new Date()
-  const diffDays = (due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
-  return diffDays >= 0 && diffDays <= 3
-}
-
-/** 予定終了日が過ぎているかを判定する（完了・レビュー待ち・保留はハイライトしない） */
-function isOverdue(dueDate?: string, status?: string): boolean {
-  if (status === '完了' || status === 'レビュー待ち' || status === '保留') {
-    return false
-  }
-  if (!dueDate) return false
-  return new Date(dueDate) < new Date()
-}
-
-/**
- * ダッシュボード用の短い日付（テーブルと同様 2026.07.15）
- * 長文だと右列が折り返して横スペースを活かせないため
- */
-function formatDueDate(dueDate?: string): string {
-  if (!dueDate) return '期限なし'
-  const d = new Date(dueDate)
-  if (Number.isNaN(d.getTime())) return '期限なし'
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}.${m}.${day}`
-}
-
-function projectLabel(projectId: string): string {
-  return projectNameById.value.get(projectId) || 'プロジェクト'
-}
-
-/** 更新日（タスク最新更新日）の短い表示 */
-function formatUpdatedAt(dateStr?: string): string {
-  if (!dateStr) return '—'
-  const d = new Date(dateStr)
-  if (Number.isNaN(d.getTime())) return '—'
-  return d.toLocaleDateString('ja-JP', {
+function formatUpdatedAt(value?: string): string {
+  if (!value) return '—'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '—'
+  return date.toLocaleDateString('ja-JP', {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
   })
 }
 
-/** プロジェクトへ移動する（概要カードなど） */
+function formatProjectDate(value?: string): string {
+  if (!value) return '未設定'
+  const date = value.slice(0, 10)
+  return date.length === 10 ? date.slice(5).replace('-', '/') : value
+}
+
+function formatEffort(value?: number): string {
+  if (value == null || !Number.isFinite(value)) return '0'
+  return Number.isInteger(value) ? String(value) : value.toFixed(1)
+}
+
 function goToProject(projectId: string) {
   router.push({ name: 'task-board', params: { projectId } })
 }
 
-/**
- * 担当タスク行からかんばんへ遷移し、該当タスクの詳細をすぐ開く
- * query.taskId を TaskBoardView が読み取ってドロワーを開く
- */
-function goToMyTask(task: Task) {
+function goToMyTask(task: DashboardTask) {
   router.push({
     name: 'task-board',
     params: { projectId: task.projectId },
@@ -104,8 +57,7 @@ function goToMyTask(task: Task) {
   })
 }
 
-/** レビュー待ち → かんばんのレビュー列ハイライト付きで開く */
-function goToReviewTask(task: Task) {
+function goToReviewTask(task: DashboardTask) {
   router.push({
     name: 'task-board',
     params: { projectId: task.projectId },
@@ -113,7 +65,6 @@ function goToReviewTask(task: Task) {
   })
 }
 
-/** ダッシュボードデータを読み込む */
 async function loadDashboard() {
   isLoading.value = true
   try {
@@ -132,17 +83,19 @@ async function loadDashboard() {
   }
 }
 
-onMounted(() => {
-  loadDashboard()
-})
+onMounted(loadDashboard)
 </script>
 
 <template>
-  <v-container class="py-6">
-    <!-- ページタイトル -->
+  <v-container class="py-6 dashboard-container">
     <div class="d-flex align-center mb-6">
       <v-icon size="32" color="primary" class="mr-3">mdi-view-dashboard</v-icon>
-      <h1 class="text-h5 font-weight-bold">ダッシュボード</h1>
+      <div>
+        <h1 class="text-h5 font-weight-bold">ダッシュボード</h1>
+        <p class="text-caption text-medium-emphasis mb-0">
+          プロジェクト横断の WBS 進捗と、自分が対応する実行タスク
+        </p>
+      </div>
       <v-spacer />
       <v-btn
         variant="tonal"
@@ -155,29 +108,38 @@ onMounted(() => {
       </v-btn>
     </div>
 
-    <!-- ローディング中のスケルトン表示 -->
     <template v-if="isLoading">
       <v-row>
-        <v-col v-for="i in 3" :key="i" cols="12" md="4">
+        <v-col v-for="index in 3" :key="index" cols="12" md="4">
           <v-skeleton-loader type="card" />
         </v-col>
       </v-row>
     </template>
 
     <template v-else>
-      <!-- プロジェクト概要セクション -->
-      <h2 class="text-h6 font-weight-bold mb-4">
-        <v-icon class="mr-2">mdi-folder-multiple</v-icon>
-        プロジェクト概要
-      </h2>
+      <div class="d-flex align-center mb-4">
+        <h2 class="text-h6 font-weight-bold mb-0">
+          <v-icon class="mr-2">mdi-folder-multiple</v-icon>
+          プロジェクト概要
+        </h2>
+        <v-chip
+          v-if="summaries.length > 0"
+          size="small"
+          color="primary"
+          variant="tonal"
+          class="ml-3"
+        >
+          {{ summaries.length }} 件
+        </v-chip>
+      </div>
 
       <v-row v-if="summaries.length > 0" class="mb-6">
         <v-col
           v-for="summary in summaries"
           :key="summary.projectId"
           cols="12"
-          sm="6"
-          lg="4"
+          md="6"
+          xl="4"
         >
           <v-card
             hover
@@ -199,58 +161,132 @@ onMounted(() => {
                 {{ projectStatusLabel(summary.status) }}
               </v-chip>
             </v-card-title>
+
             <v-card-text>
-              <!-- メンバー数・更新日（一覧カードに揃える） -->
-              <div class="d-flex align-center text-caption text-medium-emphasis mb-3">
+              <div class="d-flex align-center text-caption text-medium-emphasis mb-4">
                 <v-icon size="14" class="mr-1">mdi-account-group</v-icon>
                 {{ summary.memberCount ?? '—' }} 人
                 <v-spacer />
                 <v-icon size="14" class="mr-1">mdi-update</v-icon>
-                最終更新: {{ formatUpdatedAt(summary.lastUpdatedAt) }}
+                {{ formatUpdatedAt(summary.lastUpdatedAt) }}
               </div>
 
-              <!-- タスク総数 -->
-              <div class="d-flex align-center justify-space-between mb-3">
-                <span class="text-body-2 text-medium-emphasis">タスク数</span>
-                <v-chip size="small" color="primary" variant="tonal">
-                  {{ summary.totalTasks }} 件
+              <div class="d-flex align-end justify-space-between mb-2">
+                <div>
+                  <div class="text-caption text-medium-emphasis">全体進捗</div>
+                  <div class="text-h5 font-weight-bold text-primary">
+                    {{ summary.completionPercent ?? 0 }}%
+                  </div>
+                </div>
+                <div class="text-right text-caption text-medium-emphasis">
+                  <div>予定期間</div>
+                  <strong class="text-body-2 text-high-emphasis">
+                    {{ formatProjectDate(summary.plannedStartDate) }}
+                    →
+                    {{ formatProjectDate(summary.plannedDueDate) }}
+                  </strong>
+                </div>
+              </div>
+
+              <v-progress-linear
+                :model-value="summary.completionPercent ?? 0"
+                color="primary"
+                height="9"
+                rounded
+                class="mb-4"
+              />
+
+              <div class="project-metrics mb-4">
+                <div class="project-metric">
+                  <span>実行</span>
+                  <strong>{{ summary.leafTaskCount ?? summary.totalTasks }}</strong>
+                </div>
+                <div class="project-metric">
+                  <span>完了</span>
+                  <strong class="text-success">
+                    {{ summary.leafTasksByStatus?.['完了'] ?? summary.tasksByStatus['完了'] ?? 0 }}
+                  </strong>
+                </div>
+                <div class="project-metric">
+                  <span>期限超過</span>
+                  <strong :class="{ 'text-error': (summary.overdueTaskCount ?? 0) > 0 }">
+                    {{ summary.overdueTaskCount ?? 0 }}
+                  </strong>
+                </div>
+                <div class="project-metric">
+                  <span>レビュー</span>
+                  <strong :class="{ 'text-warning': (summary.reviewTaskCount ?? 0) > 0 }">
+                    {{ summary.reviewTaskCount ?? 0 }}
+                  </strong>
+                </div>
+              </div>
+
+              <div class="d-flex flex-wrap ga-2">
+                <v-chip size="x-small" variant="tonal">
+                  WBS {{ summary.totalNodeCount ?? summary.totalTasks }} ノード
+                </v-chip>
+                <v-chip size="x-small" variant="tonal">
+                  親 {{ summary.summaryTaskCount ?? 0 }}
+                </v-chip>
+                <v-chip
+                  v-if="(summary.dueSoonTaskCount ?? 0) > 0"
+                  size="x-small"
+                  color="warning"
+                  variant="tonal"
+                >
+                  7日以内 {{ summary.dueSoonTaskCount ?? 0 }}
                 </v-chip>
               </div>
 
-              <!-- ステータス別の進捗バー -->
-              <div v-for="(count, status) in summary.tasksByStatus" :key="status" class="mb-2">
-                <div class="d-flex justify-space-between mb-1">
-                  <span class="text-caption">{{ status }}</span>
-                  <span class="text-caption font-weight-bold">{{ count }}</span>
-                </div>
-                <v-progress-linear
-                  :model-value="summary.totalTasks > 0 ? (count / summary.totalTasks) * 100 : 0"
-                  :color="(STATUS_COLORS as Record<string, string>)[status] || 'grey'"
-                  height="6"
-                  rounded
-                />
+              <div class="d-flex justify-space-between mt-3 text-caption">
+                <span class="text-medium-emphasis">予定工数</span>
+                <strong>{{ formatEffort(summary.estimatedEffortDays) }} 人日</strong>
+              </div>
+              <div class="d-flex justify-space-between mt-1 text-caption">
+                <span class="text-medium-emphasis">実績工数</span>
+                <strong>{{ formatEffort(summary.actualEffortDays) }} 人日</strong>
               </div>
             </v-card-text>
-            <v-card-actions>
+
+            <v-card-actions class="px-4 pb-4 ga-1">
               <v-btn
-                variant="text"
+                variant="tonal"
                 color="primary"
                 size="small"
-                append-icon="mdi-arrow-right"
+                prepend-icon="mdi-view-kanban"
+                :to="{ name: 'task-board', params: { projectId: summary.projectId } }"
+                @click.stop
               >
-                開く
+                かんばん
+              </v-btn>
+              <v-btn
+                variant="text"
+                size="small"
+                prepend-icon="mdi-chart-gantt"
+                :to="{ name: 'task-timeline', params: { projectId: summary.projectId } }"
+                @click.stop
+              >
+                ガント
+              </v-btn>
+              <v-btn
+                variant="text"
+                size="small"
+                prepend-icon="mdi-file-tree"
+                :to="{ name: 'task-wbs', params: { projectId: summary.projectId } }"
+                @click.stop
+              >
+                構成
               </v-btn>
             </v-card-actions>
           </v-card>
         </v-col>
       </v-row>
 
-      <!-- プロジェクトが存在しない場合の空状態 -->
-      <v-card v-else class="mb-6 text-center pa-8" rounded="lg" variant="tonal">
-        <v-icon size="48" color="medium-emphasis" class="mb-3">mdi-folder-open-outline</v-icon>
-        <p class="text-body-1 text-medium-emphasis">
-          プロジェクトがまだありません
-        </p>
+      <v-card v-else class="mb-8 text-center pa-8" rounded="lg" variant="tonal">
+        <v-icon size="48" color="medium-emphasis" class="mb-3">
+          mdi-folder-open-outline
+        </v-icon>
+        <p class="text-body-1 text-medium-emphasis">プロジェクトがまだありません</p>
         <v-btn
           color="primary"
           class="mt-3"
@@ -261,8 +297,7 @@ onMounted(() => {
         </v-btn>
       </v-card>
 
-      <!-- 自分の担当タスク -->
-      <div class="d-flex align-center mb-4">
+      <div class="d-flex align-center mb-1">
         <h2 class="text-h6 font-weight-bold mb-0">
           <v-icon class="mr-2">mdi-account-check</v-icon>
           担当タスク
@@ -277,121 +312,29 @@ onMounted(() => {
           {{ myTasks.length }} 件
         </v-chip>
       </div>
+      <p class="text-caption text-medium-emphasis mb-4">
+        自分が担当する、子を持たない実行タスクのみ表示します
+      </p>
 
-      <v-card v-if="myTasks.length > 0" rounded="lg" class="my-tasks-panel mb-8">
-        <div class="my-task-header d-none d-md-flex px-4 py-2 text-caption text-medium-emphasis">
-          <div class="my-task-col-main">タスク / 要件</div>
-          <div class="my-task-col-meta">プロジェクト</div>
-          <div class="my-task-col-status">ステータス</div>
-          <div class="my-task-col-priority">優先度</div>
-          <div class="my-task-col-due">予定終了</div>
-          <div class="my-task-col-action" />
-        </div>
-        <v-divider class="d-none d-md-flex" />
-
-        <div
-          v-for="(task, index) in myTasks"
-          :key="task.taskId"
-        >
-          <div
-            class="my-task-row px-4 py-3"
-            role="button"
-            tabindex="0"
-            @click="goToMyTask(task)"
-            @keydown.enter="goToMyTask(task)"
-          >
-            <div class="my-task-col-main">
-              <div class="text-body-1 font-weight-medium my-task-title">
-                {{ task.title }}
-              </div>
-              <div
-                v-if="task.requirement"
-                class="text-body-2 text-medium-emphasis mt-1 my-task-requirement"
-              >
-                <span class="text-caption font-weight-medium mr-1">要件</span>
-                {{ task.requirement }}
-              </div>
-            </div>
-
-            <div class="my-task-col-meta">
-              <v-icon size="14" class="mr-1 text-medium-emphasis">mdi-folder-outline</v-icon>
-              <span class="text-body-2 text-medium-emphasis text-truncate">
-                {{ projectLabel(task.projectId) }}
-              </span>
-            </div>
-
-            <div class="my-task-col-status">
-              <v-chip
-                :color="STATUS_COLORS[task.status]"
-                size="small"
-                label
-                variant="tonal"
-              >
-                {{ task.status }}
-              </v-chip>
-            </div>
-
-            <div class="my-task-col-priority">
-              <v-chip
-                :color="PRIORITY_COLORS[task.priority]"
-                size="small"
-                label
-                variant="tonal"
-              >
-                {{ PRIORITY_LABELS[task.priority] }}
-              </v-chip>
-            </div>
-
-            <div class="my-task-col-due">
-              <div
-                class="d-flex align-center justify-end"
-                :class="{
-                  'text-error font-weight-bold': isOverdue(
-                    taskDueDate(task),
-                    task.status,
-                  ),
-                  'text-warning font-weight-medium':
-                    isDueSoon(taskDueDate(task), task.status) &&
-                    !isOverdue(taskDueDate(task), task.status),
-                }"
-              >
-                <v-icon
-                  v-if="isOverdue(taskDueDate(task), task.status)"
-                  size="16"
-                  color="error"
-                  class="mr-1"
-                  title="期限超過"
-                >
-                  mdi-alert-circle
-                </v-icon>
-                <v-icon
-                  v-else
-                  size="14"
-                  class="mr-1 text-medium-emphasis"
-                >
-                  mdi-calendar
-                </v-icon>
-                <span class="text-body-2 cell-date">{{ formatDueDate(taskDueDate(task)) }}</span>
-              </div>
-            </div>
-
-            <div class="my-task-col-action">
-              <v-icon color="medium-emphasis" size="20">mdi-chevron-right</v-icon>
-            </div>
-          </div>
-          <v-divider v-if="index < myTasks.length - 1" />
-        </div>
-      </v-card>
-
-      <v-card v-else class="text-center pa-6 mb-8" rounded="lg" variant="tonal">
+      <DashboardTaskList
+        v-if="myTasks.length > 0"
+        :tasks="myTasks"
+        class="mb-8"
+        @open="goToMyTask"
+      />
+      <v-card
+        v-else
+        class="text-center pa-6 mb-8"
+        rounded="lg"
+        variant="tonal"
+      >
         <v-icon size="40" color="success" class="mb-2">mdi-check-all</v-icon>
         <p class="text-body-1 text-medium-emphasis mb-0">
-          担当中のタスクはありません
+          担当中の実行タスクはありません
         </p>
       </v-card>
 
-      <!-- レビュー待ち（自分がレビュアー）— 担当タスクの下 -->
-      <div class="d-flex align-center mb-4">
+      <div class="d-flex align-center mb-1">
         <h2 class="text-h6 font-weight-bold mb-0">
           <v-icon class="mr-2" color="warning">mdi-clipboard-check-outline</v-icon>
           レビュー待ちのタスク
@@ -406,98 +349,20 @@ onMounted(() => {
           {{ reviewTasks.length }} 件
         </v-chip>
       </div>
-      <p class="text-caption text-medium-emphasis mb-3">
-        ステータスが「レビュー待ち」で、あなたがレビュアーのタスク
+      <p class="text-caption text-medium-emphasis mb-4">
+        自分がレビュアーに指定された、子を持たない実行タスク
       </p>
 
-      <v-card v-if="reviewTasks.length > 0" rounded="lg" class="my-tasks-panel review-tasks-panel">
-        <div class="my-task-header d-none d-md-flex px-4 py-2 text-caption text-medium-emphasis">
-          <div class="my-task-col-main">タスク / 要件</div>
-          <div class="my-task-col-meta">プロジェクト</div>
-          <div class="my-task-col-status">ステータス</div>
-          <div class="my-task-col-priority">優先度</div>
-          <div class="my-task-col-due">予定終了</div>
-          <div class="my-task-col-action" />
-        </div>
-        <v-divider class="d-none d-md-flex" />
-
-        <div v-for="(task, index) in reviewTasks" :key="task.taskId">
-          <div
-            class="my-task-row px-4 py-3 review-row"
-            role="button"
-            tabindex="0"
-            @click="goToReviewTask(task)"
-            @keydown.enter="goToReviewTask(task)"
-          >
-            <div class="my-task-col-main">
-              <div class="text-body-1 font-weight-medium my-task-title">
-                {{ task.title }}
-              </div>
-              <div
-                v-if="task.requirement"
-                class="text-body-2 text-medium-emphasis mt-1 my-task-requirement"
-              >
-                <span class="text-caption font-weight-medium mr-1">要件</span>
-                {{ task.requirement }}
-              </div>
-              <div
-                v-if="formatReviewerList(task)"
-                class="text-caption text-medium-emphasis mt-1"
-              >
-                <v-icon size="12" class="mr-1">mdi-account-check-outline</v-icon>
-                レビュアー: {{ formatReviewerList(task) }}
-              </div>
-            </div>
-            <div class="my-task-col-meta">
-              <v-icon size="14" class="mr-1 text-medium-emphasis">mdi-folder-outline</v-icon>
-              <span class="text-body-2 text-medium-emphasis text-truncate">
-                {{ projectLabel(task.projectId) }}
-              </span>
-            </div>
-            <div class="my-task-col-status">
-              <v-chip color="warning" size="small" label variant="flat">
-                レビュー待ち
-              </v-chip>
-            </div>
-            <div class="my-task-col-priority">
-              <v-chip
-                :color="PRIORITY_COLORS[task.priority]"
-                size="small"
-                label
-                variant="tonal"
-              >
-                {{ PRIORITY_LABELS[task.priority] }}
-              </v-chip>
-            </div>
-            <div class="my-task-col-due">
-              <div
-                class="d-flex align-center justify-end"
-                :class="{
-                  'text-error font-weight-bold': isOverdue(
-                    taskDueDate(task),
-                    task.status,
-                  ),
-                  'text-warning font-weight-medium':
-                    isDueSoon(taskDueDate(task), task.status) &&
-                    !isOverdue(taskDueDate(task), task.status),
-                }"
-              >
-                <v-icon size="14" class="mr-1 text-medium-emphasis">mdi-calendar</v-icon>
-                <span class="text-body-2 cell-date">{{ formatDueDate(taskDueDate(task)) }}</span>
-              </div>
-            </div>
-            <div class="my-task-col-action">
-              <v-icon color="warning" size="20">mdi-chevron-right</v-icon>
-            </div>
-          </div>
-          <v-divider v-if="index < reviewTasks.length - 1" />
-        </div>
-      </v-card>
-
+      <DashboardTaskList
+        v-if="reviewTasks.length > 0"
+        :tasks="reviewTasks"
+        review-mode
+        @open="goToReviewTask"
+      />
       <v-card v-else class="text-center pa-6" rounded="lg" variant="tonal">
         <v-icon size="40" color="success" class="mb-2">mdi-clipboard-check</v-icon>
         <p class="text-body-1 text-medium-emphasis mb-0">
-          レビュー待ちのタスクはありません
+          レビュー待ちの実行タスクはありません
         </p>
       </v-card>
     </template>
@@ -505,149 +370,40 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.my-tasks-panel {
-  overflow: hidden;
+.dashboard-container {
+  max-width: 1500px;
 }
 
-.review-tasks-panel {
-  border: 1px solid rgba(var(--v-theme-warning), 0.35);
+.dashboard-project-card {
+  border: 1px solid rgba(var(--v-theme-primary), 0.12);
 }
 
-.review-row:hover {
-  background-color: rgba(var(--v-theme-warning), 0.06) !important;
+.project-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
 }
 
-/* デスクトップ: 1 行に情報を横展開 */
-.my-task-header,
-.my-task-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
+.project-metric {
+  padding: 8px 4px;
+  border-radius: 8px;
+  background: rgba(var(--v-theme-on-surface), 0.035);
+  text-align: center;
 }
 
-.my-task-row {
-  cursor: pointer;
-  transition: background-color 0.15s ease;
+.project-metric span,
+.project-metric strong {
+  display: block;
 }
 
-.my-task-row:hover {
-  background-color: rgba(var(--v-theme-on-surface), 0.04);
+.project-metric span {
+  font-size: 0.7rem;
+  color: rgba(var(--v-theme-on-surface), 0.62);
 }
 
-.my-task-col-main {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.my-task-col-meta {
-  flex: 0 0 140px;
-  display: flex;
-  align-items: center;
-  min-width: 0;
-}
-
-.my-task-col-status {
-  flex: 0 0 110px;
-  display: flex;
-  justify-content: flex-start;
-}
-
-.my-task-col-priority {
-  flex: 0 0 80px;
-  display: flex;
-  justify-content: flex-start;
-}
-
-.my-task-col-due {
-  flex: 0 0 120px;
-  text-align: right;
-}
-
-.my-task-col-action {
-  flex: 0 0 28px;
-  display: flex;
-  justify-content: flex-end;
-}
-
-.my-task-title {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.my-task-requirement {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
-  line-height: 1.4;
-  word-break: break-word;
-}
-
-.cell-date {
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-}
-
-/* モバイル: 縦積みにしてメタを折り返し */
-@media (max-width: 959px) {
-  .my-task-header {
-    display: none;
-  }
-
-  .my-task-row {
-    flex-wrap: wrap;
-    align-items: flex-start;
-  }
-
-  .my-task-col-main {
-    flex: 1 1 100%;
-    order: 1;
-    padding-right: 28px;
-  }
-
-  .my-task-col-action {
-    position: absolute;
-    right: 12px;
-    top: 16px;
-  }
-
-  .my-task-row {
-    position: relative;
-  }
-
-  .my-task-col-meta {
-    flex: 1 1 40%;
-    order: 2;
-    margin-top: 8px;
-  }
-
-  .my-task-col-status {
-    flex: 0 0 auto;
-    order: 3;
-    margin-top: 8px;
-  }
-
-  .my-task-col-priority {
-    flex: 0 0 auto;
-    order: 4;
-    margin-top: 8px;
-  }
-
-  .my-task-col-due {
-    flex: 1 1 auto;
-    order: 5;
-    margin-top: 8px;
-    text-align: left;
-    justify-content: flex-start;
-  }
-
-  .my-task-title {
-    white-space: normal;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
+@media (max-width: 600px) {
+  .project-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 </style>

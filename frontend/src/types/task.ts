@@ -169,6 +169,19 @@ export interface TaskRollup {
   assignees: TaskAssignee[]
 }
 
+export interface DashboardWbsPathItem {
+  taskId: string
+  wbsCode?: string
+  title: string
+}
+
+/** 既存 Task に Dashboard 専用の WBS 文脈を追加した応答 */
+export interface DashboardTask extends Task {
+  projectName: string
+  /** 自身を除くルートから親までのパス */
+  wbsPath: DashboardWbsPathItem[]
+}
+
 /** タスク作成リクエスト */
 export interface CreateTaskPayload {
   title: string

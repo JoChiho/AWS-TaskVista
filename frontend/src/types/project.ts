@@ -116,6 +116,21 @@ export interface ProjectSummary {
    * タスクが無い場合はプロジェクト自体の updatedAt
    */
   lastUpdatedAt: string
+  /** 互換フィールド。WBS 対応後は実行単位（リーフ）の件数 */
   totalTasks: number
+  /** 互換フィールド。WBS 対応後はリーフのみのステータス件数 */
   tasksByStatus: Record<string, number>
+  totalNodeCount: number
+  rootTaskCount: number
+  leafTaskCount: number
+  summaryTaskCount: number
+  leafTasksByStatus: Record<string, number>
+  completionPercent: number
+  estimatedEffortDays: number
+  actualEffortDays: number
+  plannedStartDate?: string
+  plannedDueDate?: string
+  overdueTaskCount: number
+  dueSoonTaskCount: number
+  reviewTaskCount: number
 }

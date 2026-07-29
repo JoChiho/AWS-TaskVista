@@ -226,8 +226,42 @@ export interface ProjectSummary {
    * タスクが無い場合はプロジェクト自体の updatedAt
    */
   lastUpdatedAt: string
+  /** 互換フィールド。WBS 対応後は実行単位（リーフ）の件数 */
   totalTasks: number
+  /** 互換フィールド。WBS 対応後はリーフのみのステータス件数 */
   tasksByStatus: Record<string, number>
+  /** 親を含む WBS ノード総数 */
+  totalNodeCount: number
+  /** プロジェクト直下のルート数 */
+  rootTaskCount: number
+  /** 実行単位（子を持たないタスク）数 */
+  leafTaskCount: number
+  /** 子を持つ集計ノード数 */
+  summaryTaskCount: number
+  /** リーフのみのステータス件数 */
+  leafTasksByStatus: Record<string, number>
+  /** 予定工数加重。工数未設定時はリーフの単純平均 */
+  completionPercent: number
+  estimatedEffortDays: number
+  actualEffortDays: number
+  plannedStartDate?: string
+  plannedDueDate?: string
+  overdueTaskCount: number
+  dueSoonTaskCount: number
+  reviewTaskCount: number
+}
+
+export interface DashboardWbsPathItem {
+  taskId: string
+  wbsCode?: string
+  title: string
+}
+
+/** 既存 Task 互換のまま Dashboard 表示情報を追加する */
+export interface DashboardTask extends Task {
+  projectName: string
+  /** 自身を除くルートから親までのパス */
+  wbsPath: DashboardWbsPathItem[]
 }
 
 export const TASK_STATUSES: TaskStatus[] = [
