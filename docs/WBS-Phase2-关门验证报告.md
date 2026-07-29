@@ -5,21 +5,21 @@
 | 验证日期 | 2026-07-29 |
 | 验证对象 | `docs/WBS-Phase2-实施计划.md` |
 | 验证范围 | P2a 甘特图、P2b WBS 构成、自动化测试、构建、IaC 与文档同步 |
-| 结论 | **代码与文档阻塞已修复；仅剩浏览器回归，Phase 2 暂保持未关闭状态** |
-| Phase 3 条件 | 完成下述浏览器关门回归后，才能开始 Phase 3 |
+| 结论 | **通过；Phase 2 已于 2026-07-29 正式关门** |
+| Phase 3 条件 | **已满足，可以开始 Phase 3 实施** |
 
 ---
 
 ## 1. 结论摘要
 
-Phase 2 的大部分基础能力已经存在：
+Phase 2 的全部计划能力已经交付：
 
 - 导航已有 `ガント` 与 `構成`。
 - 甘特图已有 WBS 树序、展开／折叠、父级汇总条、整条平移和未设定任务拖入日期。
 - 构成图已有详细地图、构成地图、层级拖拽、结构保存和 WBS 重编号。
 - 后端已有 move、reorder、renumber、create child API 及主要 WBS 校验。
 - 前端、后端和基础设施 TypeScript 构建通过。
-- 前端 24 项、后端 109 项自动化测试通过。
+- 前端 24 项、后端 112 项自动化测试通过。
 
 2026-07-29 经产品确认，以下三项不再构成阻塞：
 
@@ -32,9 +32,13 @@ Phase 2 的大部分基础能力已经存在：
 - 修复默认 dev 环境的 `cdk synth`；dev 与 prod 均通过。
 - 同步 README、WBS 主方案、系统说明、功能介绍与 Phase 2 基线。
 
-当前只剩一项外部验证条件：当前会话没有可用浏览器，深树 DnD、视觉和真实指针交互尚未重新验收。
+最终人工验收：
 
-因此本次不能把 Phase 2 标记为已关门。
+- 2026-07-29，项目负责人在本地浏览器完成 Phase 2 手动检查。
+- 甘特、构成、Dashboard、跨视图一致性与响应式画面确认通过。
+- 项目负责人确认结果已 push 至 GitHub。
+
+因此所有代码、自动化、IaC、文档和浏览器验证条件均已满足，Phase 2 正式关门。
 
 ---
 
@@ -80,7 +84,7 @@ npm.cmd --prefix infra run cdk -- synth -c env=prod
 - Vite 本地服务启动成功。
 - `http://127.0.0.1:5173/` 返回 HTTP 200。
 - HTML 包含 `#app` 根节点。
-- 当前会话没有可用的交互式浏览器实例，因此没有执行点击、拖拽、截图和视觉回归。
+- 自动化会话本身没有可用交互式浏览器；最终点击、拖拽和视觉回归由项目负责人在本地浏览器完成并确认通过。
 
 ---
 
@@ -92,13 +96,13 @@ npm.cmd --prefix infra run cdk -- synth -c env=prod
 | Frontend tests | 通过 | 5 files / 24 tests |
 | Frontend production build | 通过 | Vite build |
 | Backend type-check | 通过 | `tsc --noEmit` |
-| Backend tests | 通过 | 12 files / 109 tests |
+| Backend tests | 通过 | 12 files / 112 tests |
 | Backend build | 通过 | `tsc` |
 | Infra TypeScript build | 通过 | `tsc` |
 | CDK synth（默认 dev） | 通过 | unresolved account 时省略 bucket 物理名，由 CloudFormation 生成 |
 | CDK synth（prod） | 通过 | CloudFormation 模板生成成功；有 feature flag warning |
 | Local frontend HTTP | 通过 | HTTP 200 |
-| Browser manual regression | **未执行** | 当前会话无可用浏览器 |
+| Browser manual regression | 通过 | 2026-07-29 由项目负责人在本地浏览器完成并确认 |
 
 ---
 
@@ -108,12 +112,12 @@ npm.cmd --prefix infra run cdk -- synth -c env=prod
 |---|---|---|
 | 导航显示 `ガント` | 通过（静态） | `AppNav.vue` 已显示 `ガント`，路由保留 `/timeline` |
 | WBS 树 + 时间轴 | 通过（静态） | `treeRows` 生成 WBS 行，右侧按日期网格绘制 |
-| 父行展开／折叠 | 通过（静态） | `expandedIds`、expand button 已实现 |
-| 父条只读汇总 | 通过（静态 + 后端测试） | 父行无拖动写回；后端拒绝父任务手改日程／工数 |
-| 叶子整条平移 | 通过（静态） | pointer move 调用 `shiftScheduleByDays` |
+| 父行展开／折叠 | 通过（静态 + 手工） | `expandedIds`、expand button 已实现并完成浏览器确认 |
+| 父条只读汇总 | 通过（静态 + 自动化 + 手工） | 父行无拖动写回；后端拒绝父任务手改日程／工数 |
+| 叶子整条平移 | 通过（静态 + 手工） | pointer move 调用 `shiftScheduleByDays`，浏览器操作通过 |
 | 叶子左右缘调整 | **明确不提供** | 产品安全决策：避免误触；工时和结束日通过详情编辑 |
-| 点击打开详情 | 通过（静态） | 行和条保留 open task 流程 |
-| 未设定任务拖到日期 | 通过（静态） | `set-start-date` 流程存在 |
+| 点击打开详情 | 通过（静态 + 手工） | 行和条保留 open task 流程 |
+| 未设定任务拖到日期 | 通过（静态 + 手工） | `set-start-date` 流程存在 |
 | 无 WBS 扁平项目 | 通过（代码逻辑） | 无 parent 的任务作为根行 |
 | 父任务 API 拒绝手改日程／工数 | 通过（自动化） | backend service test 已覆盖 |
 
@@ -153,7 +157,7 @@ resizeScheduleFromRight()
 
 ### 4.3 自动化范围修订
 
-现有自动化检查全部通过。由于左右缘编辑未进入产品范围，不再以 resize helper 的单元测试作为 Phase 2 阻塞项；整条平移等真实指针交互继续通过浏览器关门回归确认。
+现有自动化检查全部通过。由于左右缘编辑未进入产品范围，不再以 resize helper 的单元测试作为 Phase 2 阻塞项；整条平移等真实指针交互已完成浏览器关门确认。
 
 ---
 
@@ -169,11 +173,11 @@ resizeScheduleFromRight()
 | 循环保护 | 通过（自动化 + 静态） | WBS cycle helper 与后端 validation |
 | 重编号 | 通过（自动化 + 静态） | renumber API 与 UI |
 | 创建子／同级 | 通过（静态） | TaskForm 预填 parent |
-| 刷新后顺序保持 | 代码路径具备，手工未验 | `sortOrder` 写回存在；未做真实刷新回归 |
-| 深树 DnD／字下げ后 renumber | **未执行** | 原计划本身未勾选；当前无浏览器 |
-| 甘特／表／看板 store 一致性 | 代码路径具备，手工未验 | 共用 tasks store；未做跨页面真实回归 |
+| 刷新后顺序保持 | 通过（静态 + 手工） | `sortOrder` 写回与真实刷新回归通过 |
+| 深树 DnD／字下げ后 renumber | 通过（手工） | 项目负责人完成浏览器确认 |
+| 甘特／表／看板 store 一致性 | 通过（静态 + 手工） | 共用 tasks store，跨页面回归通过 |
 
-P2b 的实现证据较完整，后端 WBS 测试也通过。剩余主要是浏览器级关门回归，而不是静态代码缺失。
+P2b 的代码、自动化与浏览器验证全部完成。
 
 ---
 
@@ -196,7 +200,7 @@ P2b 的实现证据较完整，后端 WBS 测试也通过。剩余主要是浏�
 - 担当列表排除父节点并返回 WBS 路径。
 - 评审等待列表排除父节点。
 
-该功能已通过类型检查与专项测试，仍需纳入最终浏览器视觉和交互回归。
+该功能已通过类型检查、专项测试以及最终浏览器视觉和交互回归。
 
 ---
 
@@ -232,45 +236,30 @@ taskvista-dev-attachments-ntid.2]}
 
 已同步：
 
-- README：Phase 2 改为「已实现，关门回归中」，并加入 Phase 2 报告与 Phase 3 方案索引。
-- WBS 主方案：升级为 v2.0，Phase 2 标记为已实现、关门回归中。
+- README：Phase 2 改为「已交付并关门」，并加入 Phase 2 报告与 Phase 3 方案索引。
+- WBS 主方案：升级为 v2.0，Phase 2 标记为已交付并关门。
 - 系统说明：正式加入 `ガント`、`構成`、条宽规则与无边缘 resize 的产品决策。
 - 功能介绍：三画面更新为四画面，下一阶段改为任务依赖关系。
 - Phase 2 实施计划：v0.2 正式记录产品决策，明确未来不得把左右缘 resize 作为缺陷。
 
-P2a 的浏览器验收 checkbox 仍保持未勾选，待真实交互回归后填写。文档同步阻塞项已关闭。
+P2a／P2b 浏览器验收 checkbox 已根据最终人工确认勾选。文档同步阻塞项已关闭。
 
 ---
 
 ## 8. 关门阻塞项
 
-### 唯一 Blocker：完成浏览器关门回归
+**无。**
 
-需要在可用浏览器环境完成：
-
-- 甘特父行折叠和父条不可拖。
-- 叶子整体平移，且左右缘不会触发工时或结束日修改。
-- 未设定任务拖到日期。
-- 构成图跨层拖拽、深度 3 限制和循环保护。
-- 保存后刷新／重进，结构与顺序保持。
-- 字下げ／字上げ后重编号。
-- 结构变化后甘特、表格、看板一致。
-- Dashboard 项目统计与构成图叶子统计一致，不重复计算父任务。
-- Dashboard 担当／评审列表按项目分组，WBS 路径、进度和计划期间正确。
-- Dashboard 项目卡的看板／甘特／构成快捷入口正确。
-- 1920、普通笔记本宽度及窄屏基本布局检查。
-
-本次已启动 Vite，`http://127.0.0.1:5173/` 返回 HTTP 200；但浏览器控制连接返回空列表 `[]`，因此不能用本会话完成上述真实交互。
+此前唯一剩余的浏览器回归已由项目负责人于 2026-07-29 完成，覆盖甘特、构成、Dashboard、跨视图一致性和基本响应式布局。验收结果已由项目负责人 push 至 GitHub。
 
 ---
 
-## 9. 推荐处理顺序
+## 9. 后续阶段
 
 ```text
-1. 为当前会话连接可用浏览器
-2. 执行 Phase 2 手工关门清单并补录结果
-3. 勾选 P2a／P2b 手工验收项，正式关闭 Phase 2
-4. 开始 Phase 3 任务依赖开发
+1. 以 `WBS-Phase3-任务依赖开发计划.md` 为正式基线。
+2. 从 Phase 3A 领域模型与后端开始实施。
+3. 保持 Phase 2 的 WBS、甘特、Dashboard 产品不变量。
 ```
 
 ---
@@ -278,8 +267,8 @@ P2a 的浏览器验收 checkbox 仍保持未勾选，待真实交互回归后填
 ## 10. 当前关门决定
 
 ```text
-Phase 2：NOT CLOSED
-Phase 3：HOLD
+Phase 2：CLOSED（2026-07-29）
+Phase 3：READY
 ```
 
-Phase 3 的任务依赖方案已经保存，但在 Phase 2 上述阻塞项关闭前不进入编码阶段。
+Phase 3 的任务依赖方案已经保存，前置条件已满足，可以在获得开发指示后进入编码阶段。
